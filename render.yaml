@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: crampon
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DB_PATH
+        value: /var/data/crampon.db
+      - key: SECRET
+        generateValue: true
+    disk:
+      name: crampon-data
+      mountPath: /var/data
+      sizeGB: 1
