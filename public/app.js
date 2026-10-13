@@ -1,0 +1,480 @@
+'use strict';
+
+const $ = (s, el = document) => el.querySelector(s);
+const app = $('#app');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/[ʼ'’`.\-]/g, ' ').replace(/[^a-z0-9ıİşğøæœß ]/g, '').replace(/\s+/g, ' ').trim()
+  .replace(/ø/g, 'o').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g');
+
+async function api(path, body) {
+  const r = await fetch('/api/' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Erreur réseau');
+  return j;
+}
+
+const fmtDate = (d, opts = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) =>
+  new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC', ...opts });
+
+// ——— Température ———
+function heat(t) {
+  const stops = [[0, [47, 93, 138]], [35, [120, 130, 120]], [60, [185, 130, 28]], [100, [196, 55, 29]]];
+  let a = stops[0], b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; }
+  const k = (t - a[0]) / (b[0] - a[0] || 1);
+  return `rgb(${a[1].map((v, i) => Math.round(v + (b[1][i] - v) * k)).join(',')})`;
+}
+function word(t) {
+  if (t >= 100) return 'Trouvé';
+  if (t >= 85) return 'Tout proche';
+  if (t >= 65) return 'Brûlant';
+  if (t >= 45) return 'Chaud';
+  if (t >= 25) return 'Tiède';
+  if (t >= 10) return 'Froid';
+  return 'Glacial';
+}
+
+// ——— En-tête ———
+let ME = null;
+function renderWho(user, ed) {
+  ME = user;
+  if (ed) renderEdition(ed);
+  $('#who').innerHTML = user
+    ? `<span><b>${esc(user.username)}</b></span><span class="streak" title="Jours d'affilée avec le joueur trouvé">Série ${user.streak} · ${user.found} trouvé${user.found > 1 ? 's' : ''}</span><button class="linkbtn" id="logout">Déconnexion</button>`
+    : `<a href="/compte" data-link>Se connecter</a>`;
+  const lo = $('#logout');
+  if (lo) lo.onclick = async () => { await api('logout', {}); go('/'); };
+}
+function renderEdition(st) {
+  $('#edition').innerHTML = `<b>N° ${st.number}</b><br>${esc(fmtDate(st.day))}`;
+}
+
+// ——— Routeur ———
+function go(path) { history.pushState({}, '', path); route(); }
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[data-link]');
+  if (a && !e.metaKey && !e.ctrlKey) { e.preventDefault(); go(a.getAttribute('href')); }
+});
+window.addEventListener('popstate', route);
+
+async function route() {
+  const p = location.pathname;
+  document.querySelectorAll('.mast-sub nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p));
+  window.scrollTo(0, 0);
+  clearInterval(window.__tick);
+  try {
+    if (p === '/') return await pageGame();
+    if (p === '/album') return await pageAlbum();
+    if (p === '/classement') return await pageRank();
+    if (p === '/compte') return pageAuth();
+    if (p === '/regles') return pageRules();
+    const m = p.match(/^\/joueur\/([\w-]+)$/);
+    if (m) return await pagePlayer(m[1]);
+    app.innerHTML = '<p>Page introuvable. <a href="/" data-link>Retour au jeu</a></p>';
+  } catch (e) {
+    app.innerHTML = `<p class="msg">${esc(e.message)}</p>`;
+  }
+}
+
+// ——— Catalogue pour l'autocomplétion ———
+let CAT = null;
+async function catalog() {
+  if (!CAT) CAT = await api('catalog');
+  return CAT;
+}
+function suggest(q) {
+  const n = norm(q);
+  if (n.length < 2) return [];
+  const score = (keys) => {
+    let best = 0;
+    for (const k of keys) {
+      if (k === n) best = Math.max(best, 4);
+      else if (k.startsWith(n)) best = Math.max(best, 3);
+      else if (k.split(' ').some((w) => w.startsWith(n))) best = Math.max(best, 2);
+      else if (n.length >= 3 && k.includes(n)) best = Math.max(best, 1);
+    }
+    return best;
+  };
+  const players = CAT.players.map((p) => ({ type: 'player', id: p.id, label: p.name, kind: 'Joueur', s: score(p.keys) })).filter((x) => x.s);
+  const clues = CAT.clues.map((c) => ({ type: 'clue', id: c.id, label: c.label, kind: c.kind, s: score(c.terms) })).filter((x) => x.s);
+  return [...players, ...clues].sort((a, b) => b.s - a.s || (a.type === 'player' ? -1 : 1) || a.label.localeCompare(b.label, 'fr')).slice(0, 9);
+}
+
+// ——— Page : jeu ———
+let ST = null;
+async function pageGame() {
+  const [st] = await Promise.all([api('today'), catalog()]);
+  ST = st;
+  renderWho(st.user);
+  renderEdition(st);
+  app.innerHTML = `
+    <div class="game">
+      <div class="left">
+        <div id="banner"></div>
+        <div class="intro">
+          <div class="kicker">Le joueur mystère n° ${st.number}</div>
+          <h1>Qui se cache derrière le maillot&nbsp;?</h1>
+          <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque essai te donne une température. Plus tu chauffes, plus tu es près.</p>
+        </div>
+        <div class="search" id="search">
+          <form autocomplete="off">
+            <input id="q" placeholder="Zidane, Ligue 1, Brésil, attaquant, années 90…" aria-label="Ta proposition" spellcheck="false">
+            <button>Tenter</button>
+          </form>
+          <ul class="sugg" id="sugg" hidden></ul>
+        </div>
+        <div class="msg" id="msg"></div>
+        <div class="gauge-inline" id="gauge2"></div>
+        <table class="board" id="board"></table>
+        ${st.user ? '' : `<div class="nudge">Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.</div>`}
+      </div>
+      <aside>
+        <section class="gauge" id="gauge"></section>
+        <section id="facts"></section>
+        <section class="hints" id="hints"></section>
+        <section class="daystats" id="daystats"></section>
+      </aside>
+    </div>`;
+  bindSearch();
+  drawGame();
+}
+
+function drawGame(lastN) {
+  const st = ST;
+  const over = st.status !== 'playing';
+  $('#search').hidden = over;
+  // bannière de fin
+  if (over) {
+    const a = st.answer;
+    const n = st.guesses.length;
+    $('#banner').innerHTML = st.status === 'won'
+      ? `<div class="won"><div><div class="kicker">Trouvé</div><h2>${esc(a.name)}</h2><p>En ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
+         <div class="actions"><a class="btn solid" href="/joueur/${a.id}" data-link>Lire sa fiche</a><button class="btn" id="share">Partager</button></div></div>`
+      : `<div class="won lost"><div><div class="kicker">Abandon</div><h2>${esc(a.name)}</h2><p>C'était lui. Ce joueur ne rejoindra pas ton album.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
+         <div class="actions"><a class="btn solid" href="/joueur/${a.id}" data-link>Lire sa fiche</a></div></div>`;
+    tick();
+    const sh = $('#share');
+    if (sh) sh.onclick = share;
+  } else $('#banner').innerHTML = '';
+
+  // tableau des essais : le dernier en haut, puis du plus chaud au plus froid
+  const rows = [...st.guesses].sort((a, b) => b.temp - a.temp || b.n - a.n);
+  const last = st.guesses.find((g) => g.n === (lastN || st.guesses.length));
+  const row = (g, cls = '') => `<tr class="${cls}">
+      <td class="n">${g.n}</td>
+      <td class="lbl">${esc(g.label)}${g.type === 'clue' ? `<small>${esc(g.cat)}</small>` : ''}
+        <div class="tags">${g.type === 'clue'
+          ? `<span class="tag ${g.yes ? 'yes' : 'no'}">${g.yes ? 'Oui' : 'Non'}</span>`
+          : g.tags.map((t) => `<span class="tag ${t.ok ? 'ok' : t.half ? 'half' : ''}">${t.dir === 'up' ? '↑ ' : t.dir === 'down' ? '↓ ' : ''}${esc(t.t)}</span>`).join('')}</div></td>
+      <td class="t" style="color:${heat(g.temp)}">${g.temp}°</td>
+      <td class="bar"><div class="minibar"><i style="width:${g.temp}%;background:${heat(g.temp)}"></i></div></td>
+    </tr>`;
+  $('#board').innerHTML = st.guesses.length
+    ? `<thead><tr><th>N°</th><th>Proposition</th><th style="text-align:right">Temp.</th><th class="bar"></th></tr></thead><tbody>
+       ${last && !over ? row(last, 'last') + '<tr class="sep"><td colspan="4"></td></tr>' : ''}${rows.map((g) => row(g)).join('')}</tbody>`
+    : '';
+
+  // jauge
+  const best = st.guesses.reduce((m, g) => (g.temp > (m?.temp ?? -1) ? g : m), null);
+  const t = best ? best.temp : 0;
+  const gauge = `<h3>Ta jauge</h3>
+    <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
+    <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
+    <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    <div class="bestof">${best ? `Meilleur essai : ${esc(best.label)}` : 'Fais un premier essai pour la remplir.'}</div>`;
+  $('#gauge').innerHTML = gauge;
+  $('#gauge2').innerHTML = `<section class="gauge">${gauge}</section>`;
+
+  // ce que tu sais
+  const clues = st.guesses.filter((g) => g.type === 'clue');
+  $('#facts').innerHTML = `<h3>Ce que tu sais</h3>` + (clues.length
+    ? `<ul class="facts">${[...clues].sort((a, b) => b.yes - a.yes).map((g) => `<li class="${g.yes ? '' : 'no'}"><span>${esc(g.label)}</span><span class="${g.yes ? 'y' : 'nn'}">${g.yes ? 'OUI' : 'non'}</span></li>`).join('')}</ul>`
+    : `<p class="muted" style="font-size:14px;margin:0">Rien encore. Tape « Ligue 1 », « Brésil » ou « gardien » pour poser une question.</p>`);
+
+  // indices
+  const n = st.guesses.length;
+  $('#hints').innerHTML = `<h3>Indices</h3>
+    ${st.hints.length ? `<ol>${st.hints.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>` : ''}
+    ${over ? '' : st.hintReady
+      ? `<button class="btn" id="hint">Révéler un indice</button>`
+      : st.nextHintAt ? `<p class="muted" style="font-size:14px;margin:0 0 10px">Prochain indice après ${st.nextHintAt} essais (encore ${st.nextHintAt - n}).</p>` : ''}
+    ${over ? '' : `<p style="margin:12px 0 0"><button class="linkbtn muted" id="giveup">Abandonner et voir la réponse</button></p>`}`;
+  const h = $('#hint');
+  if (h) h.onclick = async () => { ST = await api('hint', {}); drawGame(); };
+  const gu = $('#giveup');
+  if (gu) gu.onclick = async () => {
+    if (!confirm("Abandonner ? Le joueur du jour ne rejoindra pas ton album et ta série repartira de zéro.")) return;
+    ST = await api('giveup', {}); renderWho(ST.user); drawGame();
+  };
+
+  // stats du jour
+  const s = st.stats;
+  $('#daystats').innerHTML = `<h3>Aujourd'hui</h3>
+    <p><b>${s.found}</b> joueur${s.found > 1 ? 's ont' : ' a'} trouvé${s.avg ? `, en <b>${s.avg}</b> essais en moyenne` : ''}.</p>
+    ${st.yesterday ? `<p>Hier, c'était <a href="/joueur/${st.yesterday.id}" data-link><b style="font-family:inherit">${esc(st.yesterday.name)}</b></a> (${st.yesterday.stats.found} l'ont trouvé).</p>` : ''}`;
+}
+
+function tick() {
+  const el = $('#cd');
+  if (!el) return;
+  const upd = () => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date()).map((p) => [p.type, +p.value || 0]));
+    let left = 86400 - (parts.hour * 3600 + parts.minute * 60 + parts.second);
+    if (left <= 0) { clearInterval(window.__tick); return route(); }
+    const pad = (x) => String(x).padStart(2, '0');
+    el.textContent = `${pad(Math.floor(left / 3600))}:${pad(Math.floor((left % 3600) / 60))}:${pad(left % 60)}`;
+  };
+  upd();
+  window.__tick = setInterval(upd, 1000);
+}
+
+async function share() {
+  const st = ST;
+  const sq = (t) => (t >= 85 ? '🟥' : t >= 60 ? '🟧' : t >= 35 ? '🟨' : '🟦');
+  const line = st.guesses.slice(-12).map((g) => sq(g.temp)).join('');
+  const txt = `Crampon n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
+  try { await navigator.clipboard.writeText(txt); $('#share').textContent = 'Copié'; } catch { prompt('Copie ce texte :', txt); }
+}
+
+function bindSearch() {
+  const input = $('#q'), list = $('#sugg'), msg = $('#msg');
+  let items = [], sel = 0;
+  const draw = () => {
+    list.hidden = !items.length;
+    list.innerHTML = items.map((it, i) => `<li class="${i === sel ? 'on' : ''}" data-i="${i}"><span>${esc(it.label)}</span><span class="k">${esc(it.kind)}</span></li>`).join('');
+  };
+  input.addEventListener('input', () => { items = suggest(input.value); sel = 0; draw(); msg.textContent = ''; });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
+    if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    if (e.key === 'Escape') { items = []; draw(); }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li');
+    if (li) { e.preventDefault(); submit(items[+li.dataset.i]); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 100));
+  $('#search form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit(items.length ? items[sel] : { q: input.value });
+  });
+  async function submit(it) {
+    if (!it || (!it.id && !it.q?.trim())) return;
+    try {
+      const st = await api('guess', it.id ? { type: it.type, id: it.id } : { q: it.q });
+      ST = st;
+      input.value = ''; items = []; draw();
+      msg.textContent = st.dup ? `Déjà proposé (essai n° ${st.dup}).` : '';
+      if (st.status === 'won') renderWho(st.user);
+      drawGame(st.dup || st.last);
+      if (st.status === 'playing') input.focus();
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  }
+  input.focus();
+}
+
+// ——— Page : fiche joueur ———
+const WIKI = 'https://fr.wikipedia.org';
+async function wikiLookup(title, name) {
+  const summary = async (t) => {
+    const r = await fetch(`${WIKI}/api/rest_v1/page/summary/${encodeURIComponent(t.replace(/ /g, '_'))}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j.type === 'disambiguation' || !/foot/i.test((j.description || '') + ' ' + (j.extract || ''))) return null;
+    return j;
+  };
+  let s = await summary(title).catch(() => null);
+  if (!s) {
+    const r = await fetch(`${WIKI}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name + ' footballeur')}&srlimit=1&format=json&origin=*`).then((x) => x.json()).catch(() => null);
+    const t = r?.query?.search?.[0]?.title;
+    if (t) s = await summary(t).catch(() => null);
+  }
+  if (!s) return null;
+  const ex = await fetch(`${WIKI}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=${encodeURIComponent(s.title)}&format=json&origin=*`)
+    .then((x) => x.json()).catch(() => null);
+  const page = ex && Object.values(ex.query?.pages || {})[0];
+  return { title: s.title, url: s.content_urls?.desktop?.page, image: s.thumbnail?.source || s.originalimage?.source, lead: page?.extract || s.extract };
+}
+
+function deCountry(n) {
+  if (['Pays-Bas', 'États-Unis'].includes(n)) return 'des ' + n;
+  if (['Brésil', 'Portugal', 'Danemark', 'Pays de Galles', 'Maroc', 'Sénégal', 'Cameroun', 'Ghana', 'Nigeria', 'Gabon', 'Liberia', 'Mexique', 'Japon', 'Canada', 'Qatar'].includes(n)) return 'du ' + n;
+  return /^[AEIOUÉÈÎ]/.test(n) ? "d'" + n : 'de ' + n;
+}
+
+function age(born, end) {
+  const b = new Date(born);
+  const now = new Date();
+  let a = now.getFullYear() - b.getFullYear();
+  if (now < new Date(now.getFullYear(), b.getMonth(), b.getDate())) a--;
+  return a;
+}
+
+async function pagePlayer(id) {
+  const [p, me] = await Promise.all([api('player/' + id), api('me')]);
+  renderWho(me.user, me);
+  const nat = p.nat.join(' / ');
+  const adjPos = { Gardien: 'gardien de but', 'Défenseur': 'défenseur', Milieu: 'milieu de terrain', Attaquant: 'attaquant' }[p.pos];
+  const span = (c) => c.to === null ? `depuis ${c.from}` : c.from === c.to ? `${c.from}` : `${c.from}–${c.to}`;
+  const lastClub = [...p.clubs].filter((c) => !c.loan).pop();
+  const fallbackLead = `${p.full || p.name}, né le ${fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' })} à ${p.place}, est un footballeur ${p.nt ? 'international ' : ''}${nat.toLowerCase().includes('/') ? '' : ''}${p.active ? 'qui évolue' : 'ayant évolué'} au poste de ${adjPos}. ${p.active ? `Il joue actuellement à ${lastClub.club}.` : `Il a mis fin à sa carrière en ${p.end || lastClub.to}.`}`;
+  const clubs = p.clubs.filter((c) => !c.loan);
+  const loans = p.clubs.filter((c) => c.loan);
+
+  app.innerHTML = `
+  <article class="wiki">
+    <h1>${esc(p.name)}</h1>
+    <div class="from">Joueur mystère n° ${p.number} du ${esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }))} · fiche Crampon, résumé tiré de Wikipédia</div>
+    ${p.mine ? `<div class="mine">${p.mine.status === 'won' ? `Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${p.mine.guesses > 1 ? 's' : ''}. Il est dans ton album.` : p.mine.status === 'gaveup' ? 'Tu as abandonné ce jour-là.' : `Tu ne l'as pas trouvé (${p.mine.guesses} essais).`} ${p.stats.found} joueur${p.stats.found > 1 ? 's' : ''} l'${p.stats.found > 1 ? 'ont' : 'a'} trouvé.</div>` : `<div class="mine">Tu n'as pas joué ce jour-là. ${p.stats.found} joueur${p.stats.found > 1 ? 's' : ''} l'${p.stats.found > 1 ? 'ont' : 'a'} trouvé.</div>`}
+    <table class="infobox">
+      <caption>${esc(p.name)}</caption>
+      <tr><td colspan="2" class="img" id="wimg"><span class="note">Chargement de la photo…</span></td></tr>
+      <tr><td colspan="2" class="sect">Biographie</td></tr>
+      ${p.full ? `<tr><th>Nom complet</th><td>${esc(p.full)}</td></tr>` : ''}
+      <tr><th>Nationalité</th><td>${esc(nat)}</td></tr>
+      <tr><th>Naissance</th><td>${esc(fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' }))}<br>${esc(p.place)}${p.active ? ` <span class="note">(${age(p.born)} ans)</span>` : ''}</td></tr>
+      <tr><th>Poste</th><td>${esc(p.pos)}</td></tr>
+      <tr><th>Statut</th><td>${p.active ? 'En activité' : `Retraité${p.end ? ' (' + p.end + ')' : ''}`}</td></tr>
+      <tr><td colspan="2" class="sect">Parcours senior</td></tr>
+      ${p.clubs.map((c) => `<tr><th style="font-weight:400">${span(c)}</th><td>${esc(c.club)}${c.loan ? ' <span class="note">(prêt)</span>' : ''}</td></tr>`).join('')}
+      ${p.nt ? `<tr><td colspan="2" class="sect">Sélection nationale</td></tr>
+      <tr><th style="font-weight:400">${p.nt.to ? `${p.nt.from}–${p.nt.to}` : `depuis ${p.nt.from}`}</th><td>${esc(p.nt.team)}${p.nt.caps != null ? ` <span class="note">(${p.nt.caps} sél., ${p.nt.goals} buts)</span>` : ''}</td></tr>` : ''}
+    </table>
+    <p id="lead">${esc(fallbackLead)}</p>
+    <div class="toc"><b>Sommaire</b><ol><li><a href="#carriere">Carrière en club</a></li>${p.nt ? '<li><a href="#selection">Équipe nationale</a></li>' : ''}<li><a href="#palmares">Palmarès</a></li><li><a href="#liens">Liens externes</a></li></ol></div>
+
+    <h2 id="carriere">Carrière en club</h2>
+    <p>${esc(p.name)} a porté le maillot de ${clubs.length} club${clubs.length > 1 ? 's' : ''}${loans.length ? `, plus ${loans.length} prêt${loans.length > 1 ? 's' : ''}` : ''}. ${p.mainLeague ? `Il a passé l'essentiel de sa carrière en ${esc(p.mainLeague)}.` : ''}</p>
+    <table class="wt">
+      <tr><th>Période</th><th>Club</th><th>Championnat</th><th>Pays</th></tr>
+      ${p.clubs.map((c) => `<tr><td class="num">${span(c)}</td><td>${esc(c.club)}${c.loan ? ' <i class="note">(prêt)</i>' : ''}</td><td>${esc(c.leagueName || (c.lower ? 'Division inférieure' : '—'))}</td><td>${esc(c.countryName)}</td></tr>`).join('')}
+    </table>
+
+    ${p.nt ? `<h2 id="selection">Équipe nationale</h2>
+    <p>${p.nt.to ? `International avec l'équipe ${deCountry(p.nt.team)} de ${p.nt.from} à ${p.nt.to}` : `International avec l'équipe ${deCountry(p.nt.team)} depuis ${p.nt.from}`}${p.nt.caps != null ? `, il compte ${p.nt.caps} sélections et ${p.nt.goals} but${p.nt.goals > 1 ? 's' : ''}` : ''}.</p>` : ''}
+
+    <h2 id="palmares">Palmarès</h2>
+    ${p.honours.length ? `<ul>${p.honours.map((h) => `<li><b>${esc(h.name)}</b> : ${h.years.join(', ')}</li>`).join('')}</ul>`
+      : `<p>Pas de Coupe du monde, de titre continental, de Ligue des champions ni de Ballon d'or. Son palmarès complet est sur Wikipédia.</p>`}
+    <p class="note">Seuls les titres majeurs sont listés ici.</p>
+
+    <h2 id="liens">Liens externes</h2>
+    <ul><li id="wlink"><a href="${WIKI}/wiki/${encodeURIComponent(p.wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">${esc(p.name)} sur Wikipédia</a></li></ul>
+    <div class="clear"></div>
+  </article>
+  <p style="margin-top:18px"><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/" data-link>Jouer</a></p>`;
+
+  const w = await wikiLookup(p.wiki, p.name).catch(() => null);
+  const img = $('#wimg');
+  if (!img) return;
+  if (w) {
+    img.innerHTML = w.image ? `<img src="${esc(w.image)}" alt="${esc(p.name)}">` : '<span class="note">Pas de photo</span>';
+    if (w.lead) $('#lead').outerHTML = w.lead.split('\n').filter(Boolean).map((t) => `<p>${esc(t)}</p>`).join('');
+    if (w.url) $('#wlink').innerHTML = `<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)} sur Wikipédia</a>`;
+  } else img.innerHTML = '<span class="note">Photo indisponible</span>';
+}
+
+// ——— Page : album ———
+async function pageAlbum() {
+  const a = await api('album');
+  renderWho(a.user, a.edition);
+  const won = a.days.filter((d) => d.status === 'won').length;
+  const past = a.days.filter((d) => !d.today).length;
+  app.innerHTML = `
+    <div class="pagehead">
+      <div><div class="kicker">Ta collection</div><h1>Mon album</h1>
+      <p>Un joueur par jour. Ceux que tu rates restent vides pour toujours.</p></div>
+      <div class="counters">
+        <div><b>${won}</b><span>trouvés</span></div>
+        <div><b>${past - a.days.filter((d) => !d.today && d.status === 'won').length}</b><span>manqués</span></div>
+        <div><b>${a.user ? a.user.streak : '—'}</b><span>série</span></div>
+        <div><b>${a.user ? a.user.best : '—'}</b><span>record</span></div>
+      </div>
+    </div>
+    ${a.user ? '' : `<p class="nudge" style="margin:0 0 20px">Sans compte, ton album ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour le garder.</p>`}
+    <div class="album">${a.days.map(slot).join('')}</div>`;
+}
+function slot(d) {
+  const date = fmtDate(d.day, { day: 'numeric', month: 'short' });
+  if (d.today && d.status !== 'won' && d.status !== 'gaveup') {
+    return `<a class="slot today" href="/" data-link><div class="top"><span>N° ${d.number}</span><span>${date}</span></div>
+      <div class="face"><div><div class="q">?</div><div class="sub">${d.guesses ? `${d.guesses} essai${d.guesses > 1 ? 's' : ''}, continue` : 'À trouver aujourd’hui'}</div></div></div>
+      <div class="bot">Aujourd'hui</div></a>`;
+  }
+  const cls = d.status === 'won' ? 's-won' : d.status === 'gaveup' ? 's-gaveup s-missed' : 's-missed';
+  const bot = d.status === 'won' ? `Trouvé · ${d.guesses} essai${d.guesses > 1 ? 's' : ''}` : d.status === 'gaveup' ? 'Abandonné' : 'Manqué';
+  return `<a class="slot ${cls} ${d.today ? 'today' : ''}" href="/joueur/${d.player.id}" data-link><div class="top"><span>N° ${d.number}</span><span>${date}</span></div>
+    <div class="face"><div><div class="nm">${esc(d.player.name)}</div><div class="sub">${esc(d.player.pos)} · ${esc(d.player.nat)}</div></div></div>
+    <div class="bot">${bot}</div></a>`;
+}
+
+// ——— Page : classement ———
+async function pageRank() {
+  const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
+  renderWho(me.user, me);
+  const tbl = (cap, rows, val) => `<table class="rank"><caption>${cap}</caption>${rows.length
+    ? rows.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.username)}</td><td>${val(x)}</td></tr>`).join('')
+    : '<tr><td></td><td class="muted">Personne pour l’instant</td><td></td></tr>'}</table>`;
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Les habitués</div><h1>Classement</h1><p>Seuls les joueurs avec un compte apparaissent ici.</p></div></div>
+    <div class="cols">
+      ${tbl('Plus longues séries en cours', r.streaks.filter((x) => x.streak > 0), (x) => `${x.streak} j`)}
+      ${tbl('Joueurs trouvés', r.found, (x) => x.found)}
+      ${tbl("Les plus rapides aujourd'hui", r.today, (x) => `${x.n} essai${x.n > 1 ? 's' : ''}`)}
+    </div>`;
+}
+
+// ——— Page : compte ———
+function pageAuth() {
+  api('me').then((m) => renderWho(m.user, m));
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>Compte</h1><p>Un pseudo et un mot de passe suffisent. Ta partie du jour te suit.</p></div></div>
+    <div class="auth">
+      <form id="fl"><h2>Connexion</h2>
+        <div class="field"><label for="lu">Pseudo</label><input id="lu" name="username" autocomplete="username" required></div>
+        <div class="field"><label for="lp">Mot de passe</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
+        <button class="btn solid">Se connecter</button><p class="msg"></p></form>
+      <form id="fs"><h2>Nouveau compte</h2>
+        <div class="field"><label for="su">Pseudo</label><input id="su" name="username" autocomplete="username" required minlength="3" maxlength="20"></div>
+        <div class="field"><label for="sp">Mot de passe (6 caractères min.)</label><input id="sp" name="password" type="password" autocomplete="new-password" required minlength="6"></div>
+        <button class="btn solid">Créer mon compte</button><p class="msg"></p></form>
+    </div>`;
+  for (const [id, path] of [['#fl', 'login'], ['#fs', 'signup']]) {
+    const f = $(id);
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api(path, Object.fromEntries(new FormData(f))); go('/'); } catch (err) { $('.msg', f).textContent = err.message; }
+    };
+  }
+}
+
+// ——— Page : règles ———
+function pageRules() {
+  api('me').then((m) => renderWho(m.user, m));
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
+    <div class="prose">
+      <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort. Légende ou joueur actuel, il a forcément joué en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et aucun joueur ne revient avant que tous les autres soient passés.</p>
+      <h2>Deux façons de chercher</h2>
+      <p><b>Propose un joueur.</b> Tu obtiens une température entre 0 et 100°, et le détail de ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
+      <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, un titre (champion du monde, Ligue des champions, Ballon d'or) ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ». Un oui fait monter ta jauge.</p>
+      <table>
+        <tr><th>Un oui sur…</th><th>vaut</th></tr>
+        <tr><td>un club</td><td>45°</td></tr><tr><td>une nationalité</td><td>38°</td></tr>
+        <tr><td>un Ballon d'or</td><td>30°</td></tr><tr><td>une décennie de naissance</td><td>28°</td></tr>
+        <tr><td>un championnat</td><td>22°</td></tr><tr><td>un poste</td><td>18°</td></tr>
+      </table>
+      <h2>Indices</h2>
+      <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
+      <h2>Ton album et ta série</h2>
+      <p>Chaque joueur trouvé rejoint ton album. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
+      <p>Une fois trouvé, le joueur a sa fiche&nbsp;: parcours en club, sélection, palmarès et résumé de Wikipédia.</p>
+    </div>`;
+}
+
+route();

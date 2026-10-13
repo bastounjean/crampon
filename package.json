@@ -1,0 +1,18 @@
+{
+  "name": "crampon",
+  "version": "1.0.0",
+  "description": "Le joueur de foot mystère du jour",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "private": true
+}
