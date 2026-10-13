@@ -2,8 +2,17 @@ const path = require('path');
 const fs = require('fs');
 const { DatabaseSync } = require('node:sqlite');
 
-const file = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'crampon.db');
-fs.mkdirSync(path.dirname(file), { recursive: true });
+const local = path.join(__dirname, '..', 'data', 'crampon.db');
+let file = process.env.DB_PATH || local;
+try {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.accessSync(path.dirname(file), fs.constants.W_OK);
+} catch {
+  // dossier absent ou non inscriptible (ex. pas de disque sur Render gratuit) : on se rabat sur ./data
+  console.warn(`DB_PATH inutilisable (${file}), base locale utilisée à la place.`);
+  file = local;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+}
 const db = new DatabaseSync(file);
 
 db.exec(`
