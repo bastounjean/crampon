@@ -234,6 +234,33 @@ function askClue(target, clue) {
   return { yes, temp: yes ? clue.temp : Math.round(clue.temp / 10) };
 }
 
+// ——— Température : plus tu en sais, moins il reste de joueurs possibles ———
+// Chaque oui/non, et chaque point commun trouvé avec un joueur proposé, élimine des joueurs de la liste. La température suit le nombre de candidats restants, en échelle log :
+// 600 → 0°, ~80 → 30°, ~10 → 65°, 1 seul → 99°. Elle monte donc à chaque essai utile, jusqu'à 100.
+// Pour un joueur proposé, on ne garde que ce qu'il dévoile sur la carte (nationalité, poste, clubs…),
+// pas tout ce qu'un joueur très attentif pourrait déduire : sinon un seul essai suffit à tout trancher.
+const fits = (p, r) => (!r.nat || p.nat.some((n) => n.code === r.nat))
+  && (!r.cont || p.continents.includes(r.cont))
+  && (!r.pos || p.pos === r.pos)
+  && (!r.year || p.bornYear === r.year)
+  && (!r.club || p.clubs.some((c) => c.id === r.club))
+  && (!r.leagues || r.leagues.every((l) => p.leagues.includes(l)));
+function candidates(target, guesses) {
+  const checks = guesses.map((g) => {
+    if (g.type === 'clue') { const c = CLUE_BY_ID[g.key]; return c ? (p) => c.test(p) === g.yes : () => true; }
+    const gp = BY_ID[g.key];
+    if (!gp) return () => true;
+    const rev = compare(target, gp).tags.filter((t) => t.reveal).map((t) => t.reveal);
+    return (p) => p.id !== gp.id && rev.every((r) => fits(p, r));
+  });
+  return PLAYERS.filter((p) => p.id === target.id || checks.every((c) => c(p)));
+}
+function heat(target, guesses) {
+  if (guesses.some((g) => g.key === target.id)) return 100;
+  const left = Math.max(1, candidates(target, guesses).length);
+  return Math.min(99, Math.round(99 * (1 - Math.log(left) / Math.log(PLAYERS.length))));
+}
+
 // ——— Joueur du jour ———
 function today() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -385,5 +412,5 @@ function catalog() {
 
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
-  setPool, resolve, score, rarity, compare, askClue, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
+  setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
 };

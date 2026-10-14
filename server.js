@@ -144,6 +144,7 @@ app.post('/api/guess', (req, res) => {
     const c = G.askClue(target, r.clue);
     entry = { n: g.guesses.length + 1, key, type: 'clue', label: r.clue.label, cat: r.clue.kind, temp: c.temp, yes: c.yes };
   }
+  entry.temp = G.heat(target, [...g.guesses, entry]);
   g.guesses.push(entry);
   const won = r.type === 'player' && r.player.id === target.id;
   const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;

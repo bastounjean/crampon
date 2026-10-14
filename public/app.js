@@ -283,7 +283,7 @@ function drawGame(lastN) {
   $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
     <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-    <div class="bestof">${best ? `Meilleur essai : ${esc(best.label)}` : 'Fais un premier essai pour la remplir.'}</div>`;
+    <div class="bestof">${best ? 'Elle monte à chaque piste qui resserre l’étau.' : 'Fais un premier essai pour la remplir.'}</div>`;
 
   // bannière de fin + page Wikipédia
   if (over) {
@@ -602,16 +602,12 @@ function pageRules() {
       <h2>Les points</h2>
       <p>Trouver le joueur rapporte des points&nbsp;: 100 si tu le trouves du premier coup, puis un peu moins à chaque essai (jamais moins de 10). Chaque indice demandé retire 10&nbsp;%. Enfin, la rareté multiplie le tout&nbsp;: une star comme Zidane compte ×1, un joueur méconnu jusqu'à ×2. Abandonner ne rapporte rien. Les points s'additionnent jour après jour dans le classement général.</p>
       <h2>La carte</h2>
-      <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta meilleure température.</p>
+      <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta température.</p>
       <h2>Deux façons de chercher</h2>
-      <p><b>Propose un joueur.</b> Tu obtiens une température entre 0 et 100°, et ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste ou poste voisin, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
+      <p><b>Propose un joueur.</b> Tu vois ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste ou poste voisin, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
       <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, « Ballon d'or » ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ».</p>
-      <table>
-        <tr><th>Un oui sur…</th><th>vaut</th></tr>
-        <tr><td>un club</td><td>45°</td></tr><tr><td>une nationalité</td><td>38°</td></tr>
-        <tr><td>le Ballon d'or</td><td>30°</td></tr><tr><td>une décennie de naissance</td><td>28°</td></tr>
-        <tr><td>un championnat</td><td>22°</td></tr><tr><td>un poste</td><td>18°</td></tr>
-      </table>
+      <h2>La température</h2>
+      <p>Elle mesure tout ce que tu sais sur le mystère. Au départ, 600 joueurs sont possibles&nbsp;: tu es à 0°. Chaque oui, chaque non, chaque point commun avec un joueur proposé en élimine. Quand il n'en reste qu'une dizaine, tu es vers 65°&nbsp;; à 99°, il n'en reste qu'un, à toi de trouver son nom. 100°, c'est gagné.</p>
       <h2>Indices</h2>
       <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
       <h2>Ton album et ta série</h2>
