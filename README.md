@@ -50,3 +50,18 @@ Au reveal, la page Wikipédia du joueur est chargée directement depuis fr.wikip
 - `src/wikidata.js` : récupération des joueurs sur Wikidata
 - `scripts/build-pool.js` : construction de la liste des 600 joueurs
 - `public/` : le site (HTML, CSS, JS sans framework)
+
+## Publicité et mentions légales
+
+Tout se règle dans l'onglet Environment de Render, rien ne s'active tant que c'est vide :
+
+| Variable | Exemple | Effet |
+|---|---|---|
+| `ADSENSE_CLIENT` | `ca-pub-1234567890123456` | charge AdSense (et son bandeau cookies), sert `/ads.txt`, affiche « Gérer mes cookies » |
+| `ADSENSE_SLOT` | `1234567890` | bloc pub dans la colonne du jeu, sous l'album et sous le classement |
+| `SITE_OWNER` | `Baptiste Dupont` | éditeur dans les mentions légales |
+| `SITE_ADDRESS` | `12 rue …, 75000 Paris` | adresse de l'éditeur |
+| `SITE_CONTACT` | `contact@footix.fr` | contact affiché sur les pages légales |
+| `ADS_PREVIEW` | `1` | cadres gris à la place des pubs, pour voir la mise en page |
+
+Le consentement aux cookies passe par le message RGPD de Google (AdSense → Confidentialité et messages), certifié IAB TCF.

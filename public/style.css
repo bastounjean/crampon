@@ -429,3 +429,17 @@ table.wt td.num { white-space: nowrap; }
 }
 .topbar .theme { font-size: 18px; line-height: 1; }
 .topbar .theme span { display: none; }
+
+/* ——— Publicité et pages légales ——— */
+.ad { border-top: 1px solid var(--hair); padding-top: 6px; margin: 28px 0; min-height: 120px; }
+.ad > span { display: block; font-family: var(--cond); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.ad-side { min-height: 270px; }
+.ad-fake { height: 250px; background: repeating-linear-gradient(135deg, var(--hair) 0 1px, transparent 1px 9px); }
+.ad-wide .ad-fake { height: 100px; }
+.foot .legal a { color: inherit; }
+.prose mark { background: #f3d36b; color: #222; padding: 0 3px; }
+.prose code { font-family: var(--mono, monospace); font-size: 14px; }
+.prose table td { vertical-align: top; }
+.danger { margin-top: 34px; border-top: 1px solid var(--hair); padding-top: 12px; max-width: 420px; }
+.danger summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.danger form { margin-top: 10px; }

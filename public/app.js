@@ -52,6 +52,30 @@ function renderEdition(st) {
   $('#edition').innerHTML = `<b>N° ${st.number}</b> · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}`;
 }
 
+// ——— Publicité ———
+// Rien ne s'affiche tant que le compte AdSense n'est pas branché (variables sur Render).
+// Le bandeau de consentement est celui de Google (« Confidentialité et messages » dans AdSense),
+// il bloque les cookies publicitaires tant que le visiteur n'a pas choisi.
+const CFG = window.FOOTIX || {};
+function adSlot(where) {
+  if (CFG.preview) return `<div class="ad ad-${where}"><span>Publicité</span><div class="ad-fake"></div></div>`;
+  if (!CFG.ads || !CFG.slot) return '';
+  return `<div class="ad ad-${where}"><span>Publicité</span><ins class="adsbygoogle" style="display:block" data-ad-client="${esc(CFG.ads)}" data-ad-slot="${esc(CFG.slot)}" data-ad-format="auto" data-full-width-responsive="true"></ins></div>`;
+}
+function fillAds() {
+  if (!CFG.ads) return;
+  document.querySelectorAll('ins.adsbygoogle:not([data-adsbygoogle-status])').forEach(() => {
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch {}
+  });
+}
+if (CFG.ads) {
+  window.googlefc = window.googlefc || {};
+  window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
+  const c = $('#cookies');
+  c.hidden = false;
+  $('a', c).onclick = (e) => { e.preventDefault(); window.googlefc.callbackQueue.push(() => window.googlefc.showRevocationMessage()); };
+}
+
 // ——— Routeur ———
 function go(path) { history.pushState({}, '', path); route(); }
 document.addEventListener('click', (e) => {
@@ -71,11 +95,15 @@ async function route() {
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
     if (p === '/regles') return pageRules();
+    if (p === '/confidentialite') return pagePrivacy();
+    if (p === '/mentions-legales') return pageLegal();
     const m = p.match(/^\/joueur\/([\w-]+)$/);
     if (m) return await pagePlayer(m[1]);
     app.innerHTML = '<p>Page introuvable. <a href="/" data-link>Retour au jeu</a></p>';
   } catch (e) {
     app.innerHTML = `<p class="msg">${esc(e.message)}</p>`;
+  } finally {
+    fillAds();
   }
 }
 
@@ -182,6 +210,7 @@ async function pageGame() {
         <section id="facts"></section>
         <section class="hints" id="hints"></section>
         <section class="daystats" id="daystats"></section>
+        ${adSlot('side')}
       </aside>
     </div>`;
   bindSearch();
@@ -468,7 +497,8 @@ async function pageAlbum() {
       </div>
     </div>
     ${a.user ? '' : `<p class="nudge" style="margin:0 0 20px">Sans compte, ton album ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour le garder.</p>`}
-    <div class="album">${a.days.map(slot).join('')}</div>`;
+    <div class="album">${a.days.map(slot).join('')}</div>
+    ${adSlot('wide')}`;
 }
 function slot(d) {
   const date = fmtDate(d.day, { day: 'numeric', month: 'short' });
@@ -512,7 +542,8 @@ async function pageRank() {
   app.innerHTML = `
     <div class="pagehead"><div><div class="kicker">${r.players} joueur${r.players > 1 ? 's' : ''} classé${r.players > 1 ? 's' : ''}</div><h1>Classement</h1><p>${me.user ? `Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${me.user.streak > 1 ? 's' : ''}</b>.` : `Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`}</p></div></div>
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
-    <div id="tab"></div>`;
+    <div id="tab"></div>
+    ${adSlot('wide')}`;
   const show = () => {
     $('#tab').innerHTML = tabs[RANK_TAB]();
     app.querySelectorAll('.board-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === RANK_TAB));
@@ -528,8 +559,17 @@ async function pageAuth() {
   if (m.user) {
     app.innerHTML = `
       <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>${esc(m.user.username)}</h1><p><b>${m.user.points}</b> points · <b>${m.user.found}</b> joueur${m.user.found > 1 ? 's' : ''} trouvé${m.user.found > 1 ? 's' : ''} · série de <b>${m.user.streak}</b> jour${m.user.streak > 1 ? 's' : ''} (record ${m.user.best})</p></div></div>
-      <p><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/classement" data-link>Classement</a> <button class="btn" id="logout">Se déconnecter</button></p>`;
+      <p><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/classement" data-link>Classement</a> <button class="btn" id="logout">Se déconnecter</button></p>
+      <details class="danger"><summary>Supprimer mon compte</summary>
+        <form id="fd"><p>Ton compte, tes points, ta série et ton album seront effacés pour de bon.</p>
+          <div class="field"><label for="dp">Mot de passe</label><input id="dp" name="password" type="password" autocomplete="current-password" required></div>
+          <button class="btn">Supprimer définitivement</button><p class="msg"></p></form>
+      </details>`;
     $('#logout').onclick = async () => { await api('logout', {}); go('/'); };
+    $('#fd').onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api('delete-account', Object.fromEntries(new FormData(e.target))); go('/'); } catch (err) { $('#fd .msg').textContent = err.message; }
+    };
     return;
   }
   app.innerHTML = `
@@ -579,6 +619,69 @@ function pageRules() {
       <p>Chaque joueur trouvé rejoint ton album, et sa page Wikipédia s'affiche aussitôt. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
       <p class="muted" style="font-size:14px">Les joueurs et leurs carrières viennent de Wikidata, mis à jour chaque jour. Les pages viennent de Wikipédia (CC BY-SA).</p>
     </div>`;
+}
+
+// ——— Pages : mentions légales et confidentialité ———
+const todo = (v, what) => v ? esc(v) : `<mark>${what} à compléter</mark>`;
+const contact = () => CFG.contact
+  ? (CFG.contact.includes('@') ? `<a href="mailto:${esc(CFG.contact)}">${esc(CFG.contact)}</a>` : esc(CFG.contact))
+  : todo('', 'Adresse e-mail de contact');
+const HOST = 'Render Services, Inc., 525 Brannan Street, Suite 300, San Francisco, CA 94107, États-Unis (render.com)';
+
+function pageLegal() {
+  api('me').then((m) => renderWho(m.user, m));
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Qui est derrière Footix</div><h1>Mentions légales</h1></div></div>
+    <div class="prose">
+      <h2>Éditeur</h2>
+      <p>${todo(CFG.owner, 'Nom de l’éditeur')}<br>${todo(CFG.address, 'Adresse postale')}<br>Contact&nbsp;: ${contact()}</p>
+      <p>Directeur de la publication&nbsp;: ${todo(CFG.owner, 'Nom')}.</p>
+      <h2>Hébergeur</h2>
+      <p>${HOST}.</p>
+      <h2>Contenus</h2>
+      <p>Les fiches des joueurs (clubs, dates, postes, nationalités) viennent de <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a>, sous licence CC0. Les résumés et anecdotes viennent de <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>, sous licence <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.fr" target="_blank" rel="noopener">CC BY-SA 4.0</a>, et peuvent être réutilisés aux mêmes conditions. Les photos viennent de Wikimedia Commons&nbsp;; l’auteur et la licence de chacune sont indiqués sur sa page Commons.</p>
+      <p>Les noms et logos des clubs sont des marques appartenant à leurs propriétaires. Ils servent uniquement à identifier les clubs où les joueurs ont évolué. Footix n’est lié à aucun club, aucune ligue, ni à la FIFA, l’UEFA ou la FFF.</p>
+      <p>Une erreur, un logo ou une photo à retirer&nbsp;? Écris à ${contact()}, on corrige rapidement.</p>
+    </div>`;
+}
+
+function pagePrivacy() {
+  api('me').then((m) => renderWho(m.user, m));
+  const ads = !!CFG.ads;
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Tes données</div><h1>Confidentialité et cookies</h1><p>Ce que Footix garde sur toi, pourquoi, et comment l’effacer.</p></div></div>
+    <div class="prose">
+      <h2>Responsable</h2>
+      <p>${todo(CFG.owner, 'Nom de l’éditeur')}, joignable à ${contact()}.</p>
+      <h2>Ce que le site enregistre</h2>
+      <table>
+        <tr><th>Donnée</th><th>Pourquoi</th><th>Durée</th></tr>
+        <tr><td>Pseudo et mot de passe (chiffré, illisible même pour nous)</td><td>Ton compte</td><td>Jusqu’à ce que tu le supprimes</td></tr>
+        <tr><td>Tes parties&nbsp;: propositions, indices, résultat, points</td><td>Jeu, album, série, classement</td><td>Tant que le compte existe</td></tr>
+        <tr><td>Adresse IP</td><td>Limiter les tentatives de connexion</td><td>10 minutes, en mémoire</td></tr>
+      </table>
+      <p>Pas d’adresse e-mail, pas de nom, rien n’est revendu. Ton pseudo et tes points apparaissent dans le classement public.</p>
+      <h2>Cookies du site</h2>
+      <table>
+        <tr><th>Nom</th><th>Rôle</th><th>Durée</th></tr>
+        <tr><td><code>aid</code></td><td>Retrouver ta partie du jour si tu joues sans compte</td><td>13 mois</td></tr>
+        <tr><td><code>sid</code></td><td>Te garder connecté</td><td>13 mois, ou jusqu’à la déconnexion</td></tr>
+        <tr><td><code>theme</code> (stockage local)</td><td>Retenir le mode clair ou sombre</td><td>Jusqu’à ce que tu vides ton navigateur</td></tr>
+      </table>
+      <p>Ces trois-là sont nécessaires au fonctionnement du jeu&nbsp;: ils ne servent ni à la pub ni au suivi, et la loi ne demande pas de consentement pour eux.</p>
+      <h2>Publicité</h2>
+      ${ads ? `<p>Footix est financé par la publicité de Google AdSense. Google et ses partenaires peuvent déposer des cookies pour afficher des annonces, les personnaliser et mesurer leur efficacité. Ils ne sont déposés qu’avec ton accord, demandé à ta première visite. Si tu refuses, tu vois quand même des annonces, mais non personnalisées.</p>
+      <p>Tu peux changer d’avis à tout moment&nbsp;: <a href="#" id="cookies2">gérer mes cookies</a>. Pour en savoir plus&nbsp;: <a href="https://policies.google.com/technologies/partner-sites?hl=fr" target="_blank" rel="noopener">comment Google utilise les données des sites partenaires</a>.</p>`
+      : `<p>Il n’y a pas de publicité sur Footix pour l’instant. Si elle arrive, cette page sera mise à jour et ton accord sera demandé avant tout cookie publicitaire.</p>`}
+      <h2>Polices et images</h2>
+      <p>Les polices viennent de Google Fonts, les drapeaux de flagcdn.com, les photos et logos de Wikimedia. Ces services voient ton adresse IP quand ton navigateur charge leurs fichiers, sans cookie.</p>
+      <h2>Hébergement</h2>
+      <p>Le site et sa base de données sont hébergés par ${HOST}. Les données peuvent donc être traitées aux États-Unis, dans le cadre des garanties prévues par le RGPD pour ces transferts.</p>
+      <h2>Tes droits</h2>
+      <p>Tu peux consulter, corriger ou effacer tes données, ou t’opposer à leur utilisation. Le plus simple&nbsp;: supprimer ton compte depuis la page <a href="/compte" data-link>Compte</a>, tout est effacé d’un coup. Pour le reste, écris à ${contact()}. Si tu estimes que tes droits ne sont pas respectés, tu peux saisir la <a href="https://www.cnil.fr/fr/plaintes" target="_blank" rel="noopener">CNIL</a>.</p>
+    </div>`;
+  const c2 = $('#cookies2');
+  if (c2) c2.onclick = (e) => { e.preventDefault(); $('#cookies a').click(); };
 }
 
 route();

@@ -38,7 +38,7 @@ app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 
 const PROD = process.env.NODE_ENV === 'production';
-const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 1000 * 60 * 60 * 24 * 400 };
+const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 1000 * 60 * 60 * 24 * 395 }; // 13 mois, la limite conseillée par la CNIL
 
 // ——— Identité : compte connecté, sinon visiteur anonyme ———
 app.use((req, res, next) => {
@@ -276,6 +276,16 @@ app.post('/api/login', slowDown, (req, res) => {
   res.json({ ok: true });
 });
 
+// droit à l'effacement (RGPD) : le compte, ses sessions et ses parties disparaissent
+app.post('/api/delete-account', slowDown, (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Tu n’es pas connecté.' });
+  const u = db.prepare('SELECT pass FROM users WHERE id = ?').get(req.user.id);
+  if (!check(String((req.body || {}).password || ''), u.pass)) return res.status(400).json({ error: 'Mot de passe incorrect.' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+  res.clearCookie('sid');
+  res.json({ ok: true });
+});
+
 app.post('/api/logout', (req, res) => {
   if (req.cookies.sid) db.prepare('DELETE FROM sessions WHERE token = ?').run(req.cookies.sid);
   res.clearCookie('sid');
@@ -288,10 +298,34 @@ app.get('/api/me', (req, res) => res.json({ user: publicUser(req), day: G.today(
 // la page porte l'empreinte des fichiers : après une mise à jour, le navigateur recharge le nouveau code
 const PUB = path.join(__dirname, 'public');
 const stamp = (f) => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(PUB, f))).digest('hex').slice(0, 10);
+
+// Pub et mentions légales : rien ne s'active tant que les variables ne sont pas remplies sur Render.
+//   ADSENSE_CLIENT  ca-pub-1234567890123456 (charge AdSense, son bandeau cookies et /ads.txt)
+//   ADSENSE_SLOT    identifiant d'un bloc "display" AdSense (sinon seules les annonces automatiques)
+//   SITE_OWNER, SITE_ADDRESS, SITE_CONTACT  pour les mentions légales et la confidentialité
+//   ADS_PREVIEW=1   affiche des cadres gris à la place des pubs, pour voir la mise en page
+const env = (k) => String(process.env[k] || '').trim();
+const ADS = /^ca-pub-\d{10,20}$/.test(env('ADSENSE_CLIENT')) ? env('ADSENSE_CLIENT') : '';
+const CONFIG = {
+  ads: ADS,
+  slot: /^\d{5,15}$/.test(env('ADSENSE_SLOT')) ? env('ADSENSE_SLOT') : '',
+  preview: env('ADS_PREVIEW') === '1',
+  owner: env('SITE_OWNER'),
+  address: env('SITE_ADDRESS'),
+  contact: env('SITE_CONTACT'),
+};
+const adHead = ADS ? `<meta name="google-adsense-account" content="${ADS}">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADS}" crossorigin="anonymous"></script>
+` : '';
 const INDEX = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
   .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
-  .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`);
-app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/joueur/:id'], (req, res) => {
+  .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`)
+  .replace('</head>', () => `${adHead}<script>window.FOOTIX = ${JSON.stringify(CONFIG).replace(/</g, '\\u003c')};</script>\n</head>`);
+app.get('/ads.txt', (req, res) => {
+  if (!ADS) return res.status(404).type('text').send('');
+  res.type('text').send(`google.com, ${ADS.replace('ca-', '')}, DIRECT, f08c47fec0942fa0\n`);
+});
+app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/joueur/:id'], (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.type('html').send(INDEX);
 });
