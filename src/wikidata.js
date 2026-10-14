@@ -46,6 +46,30 @@ SELECT ?p (MAX(?sl) AS ?links) WHERE {
   return rows.map((r) => ({ id: qid(r.p), links: +r.links }));
 }
 
+// image principale des pages Wikipédia (titre → URL d'une miniature)
+async function pageImages(lang, titles) {
+  const out = {};
+  for (let i = 0; i < titles.length; i += 50) {
+    const chunk = titles.slice(i, i + 50);
+    const url = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=pageimages&piprop=thumbnail&pithumbsize=120&pilicense=any&titles=${encodeURIComponent(chunk.join('|'))}`;
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(60000) });
+      if (!r.ok) continue;
+      const q = (await r.json()).query || {};
+      const back = {};
+      for (const m of [...(q.normalized || []), ...(q.redirects || [])]) back[m.to] = back[m.from] || m.from;
+      for (const pg of q.pages || []) {
+        const src = pg.thumbnail?.source;
+        if (!src || !/\.(svg|png|gif)/i.test(src)) continue; // une photo de stade n'est pas un logo
+        out[pg.title] = src;
+        if (back[pg.title]) out[back[pg.title]] = src;
+      }
+    } catch (e) { /* on garde le logo Wikidata */ }
+    await sleep(300);
+  }
+  return out;
+}
+
 const values = (ids) => ids.map((i) => 'wd:' + i).join(' ');
 
 async function fetchDetails(ids) {
@@ -90,11 +114,21 @@ SELECT ?p ?st ?team ?teamLabel ?start ?end ?caps ?goals ?howLabel ?lg ?cc ?ccLab
   const logos = [];
   for (let i = 0; i < teamIds.length; i += 300) {
     logos.push(...await sparql(`
-SELECT ?team (GROUP_CONCAT(DISTINCT ?logo; separator="|") AS ?logos) (SAMPLE(?hex) AS ?hex) WHERE {
+SELECT ?team (GROUP_CONCAT(DISTINCT ?logo; separator="|") AS ?logos) (SAMPLE(?hex) AS ?hex) (SAMPLE(?enTitle) AS ?enTitle) (SAMPLE(?frTitle) AS ?frTitle) WHERE {
   VALUES ?team { ${values(teamIds.slice(i, i + 300))} }
   OPTIONAL { ?team wdt:P154 ?logo }
   OPTIONAL { ?team wdt:P6364 ?col . ?col wdt:P465 ?hex }
+  OPTIONAL { ?en schema:about ?team ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?enTitle }
+  OPTIONAL { ?fr schema:about ?team ; schema:isPartOf <https://fr.wikipedia.org/> ; schema:name ?frTitle }
 } GROUP BY ?team`));
+  }
+  // le logo affiché dans l'encadré de la page Wikipédia du club : c'est le logo actuel,
+  // y compris quand il n'est pas libre (Wikipédia anglais l'héberge alors lui-même)
+  for (const lang of ['en', 'fr']) {
+    const key = lang + 'Title';
+    const todo = logos.filter((r) => !r.wp && r[key]);
+    const img = await pageImages(lang, todo.map((r) => r[key]));
+    for (const r of todo) if (img[r[key]]) r.wp = img[r[key]];
   }
   return { base, attrs, teams, logos };
 }
@@ -121,7 +155,7 @@ function build({ base, attrs, teams, logos = [] }, links = {}) {
     const f = l.find((x) => !bad(x)) || l[0];
     return f ? f.replace(/^http:/, 'https:') : null;
   };
-  for (const r of logos) LOGO[qid(r.team)] = { logo: pickLogo(r.logos), color: /^[0-9a-f]{6}$/i.test(r.hex || '') ? '#' + r.hex : null };
+  for (const r of logos) LOGO[qid(r.team)] = { logo: r.wp || pickLogo(r.logos), color: /^[0-9a-f]{6}$/i.test(r.hex || '') ? '#' + r.hex : null };
   for (const r of base) {
     const id = qid(r.p);
     const p = P[id] || (P[id] = { id, aliases: new Set() });
