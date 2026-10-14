@@ -200,8 +200,6 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
 @media (max-width: 860px) {
   .game { grid-template-columns: 1fr; }
   .game > aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--ink); padding-top: 18px; margin-top: 24px; }
-  .gauge-inline { display: block !important; }
-  aside .gauge { display: none; }
   .cols { grid-template-columns: 1fr; }
   .infobox { float: none; width: 100%; margin: 0 0 16px; }
 }
@@ -219,3 +217,81 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
 .gauge-inline { display: none; margin-top: 16px; }
 table.wt td.num { white-space: nowrap; }
 .wiki { overflow-x: auto; }
+
+/* ——— Carte du joueur mystère, façon FUT ——— */
+.hero { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 28px; align-items: start; margin-bottom: 22px; }
+.hero-txt .intro p { margin-bottom: 16px; }
+.hero .gauge h3 { margin-bottom: 6px; }
+.fut { width: 236px; height: 340px; background: #7a6223; padding: 3px;
+  clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%); }
+.fut-in { height: 100%; position: relative; padding: 18px 16px 0; color: #2b2210;
+  background: linear-gradient(160deg, #ecd88f 0%, #d8bb62 45%, #c9a64a 100%);
+  clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%); }
+.fut.done { background: #15140f; }
+.fut.done .fut-in { background: linear-gradient(160deg, #2a2620 0%, #15140f 70%); color: #ecd88f; }
+.fut-side { position: absolute; left: 20px; top: 22px; display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 2; width: 44px; }
+.fut-rate { font: 800 36px/1 var(--cond); font-stretch: 70%; }
+.fut-pos { font: 700 14px/1 var(--cond); letter-spacing: .04em; }
+.fut-flag { width: 34px; height: 22px; display: flex; align-items: center; justify-content: center; border: 1px solid currentColor; }
+.fut-flag img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fut-pic { height: 150px; margin-left: 46px; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.fut-pic img { max-height: 150px; max-width: 150px; object-fit: cover; object-position: top; filter: saturate(.9); }
+.silh { width: 140px; height: 140px; fill: rgba(43, 34, 16, .78); }
+.fut-name { text-align: center; font: 800 19px/1.1 var(--cond); font-stretch: 72%; text-transform: uppercase; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; padding: 5px 0; margin: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fut-stats { display: grid; grid-template-columns: 1.15fr 1fr; gap: 3px 8px; margin: 8px 4px 0; font-size: 11px; }
+.fut-stats div { display: flex; gap: 5px; min-width: 0; align-items: baseline; }
+.fut-stats dt { font-weight: 800; font-stretch: 75%; flex: none; width: 34px; }
+.fut-stats dd { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.fut-bo { text-align: center; font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: uppercase; letter-spacing: .04em; }
+.fut .ph { opacity: .45; }
+.fut .ph.box { font-weight: 800; }
+.board caption { text-align: left; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; padding: 22px 0 4px; }
+
+/* ——— Page Wikipédia intégrée ——— */
+.wikiart { background: #fff; color: #202122; border: 1px solid #a2a9b1; padding: 16px 26px 26px; font: 15px/1.6 -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; margin: 6px 0 10px; overflow: hidden; }
+.wa-crampon { border: 1px solid #a2a9b1; background: #fef6e7; padding: 8px 12px; font-size: 14px; margin-bottom: 14px; }
+.wa-top { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: #54595d; flex-wrap: wrap; }
+.wa-title { font: 400 30px/1.3 'Linux Libertine', Georgia, Times, serif; border-bottom: 1px solid #a2a9b1; margin: 4px 0 12px; padding-bottom: 2px; }
+.wikiart a { color: #36c; text-decoration: none; }
+.wikiart a:hover { text-decoration: underline; }
+.wikiart h2 { font: 400 23px/1.3 'Linux Libertine', Georgia, Times, serif; border-bottom: 1px solid #a2a9b1; margin: 22px 0 8px; clear: both; }
+.wikiart h3 { font: 700 17px/1.4 inherit; margin: 16px 0 6px; }
+.wikiart h4 { font-size: 15px; margin: 12px 0 4px; }
+.wikiart p { margin: 0 0 10px; }
+.wikiart .note { color: #54595d; font-size: 13px; }
+.wikiart sup.reference { font-size: 11px; }
+.wikiart table { font-size: 13px; }
+.wikiart .wikitable { border-collapse: collapse; background: #f8f9fa; margin: 8px 0 14px; }
+.wikiart .wikitable th, .wikiart .wikitable td { border: 1px solid #a2a9b1; padding: 3px 7px; }
+.wikiart .wikitable th { background: #eaecf0; }
+.wikiart .infobox_v3, .wikiart .infobox_v2, .wikiart .infobox { float: right; clear: right; width: 300px; max-width: 100%; margin: 0 0 14px 20px; border: 1px solid #a2a9b1; background: #f8f9fa; font-size: 13px; padding: 4px; }
+.wikiart .infobox_v3 .entete, .wikiart .infobox_v2 .entete { font-weight: 700; text-align: center; font-size: 15px; padding: 8px 4px; background: #d9e8d2; }
+.wikiart .infobox_v3 table { width: 100%; border-collapse: collapse; }
+.wikiart table.infobox_v2 { border-collapse: collapse; }
+.wikiart .infobox_v2 th, .wikiart .infobox_v2 td { padding: 3px 5px; vertical-align: top; text-align: left; border-top: 1px solid #eaecf0; }
+.wikiart .infobox_v2 caption, .wikiart .infobox_v2 .entete { background: #d9e8d2; font-weight: 700; padding: 6px; text-align: center; }
+.wikiart .infobox_v3 th, .wikiart .infobox_v3 td { padding: 2px 4px; vertical-align: top; text-align: left; }
+.wikiart .infobox_v3 caption, .wikiart .infobox_v3 .bloc { background: #e8eef5; font-weight: 700; text-align: center; padding: 3px; }
+.wikiart .infobox_v3 .images, .wikiart .infobox_v3 .images img { text-align: center; max-width: 100%; height: auto; }
+.wikiart figure { margin: 4px 0 12px 18px; float: right; clear: right; border: 1px solid #c8ccd1; background: #f8f9fa; padding: 3px; max-width: 260px; font-size: 12px; }
+.wikiart figure img { max-width: 100%; height: auto; display: block; }
+.wikiart figcaption { padding: 3px; color: #202122; }
+.wikiart img { max-width: 100%; height: auto; }
+.wikiart ul, .wikiart ol { padding-left: 22px; margin: 0 0 10px; }
+.wikiart .mw-references-wrap, .wikiart .references { font-size: 12px; }
+.wikiart .thumb, .wikiart .tright { float: right; margin: 0 0 10px 16px; }
+@media (max-width: 860px) {
+  .wikiart #wbody > section:first-of-type { display: flex; flex-direction: column; }
+  .wikiart #wbody > section:first-of-type > .infobox_v2, .wikiart #wbody > section:first-of-type > .infobox_v3, .wikiart #wbody > section:first-of-type > .infobox { order: 2; }
+  .wikiart .infobox_v3, .wikiart .infobox_v2, .wikiart .infobox, .wikiart figure { float: none; width: 100%; max-width: 100%; margin: 0 0 14px; }
+}
+@media (max-width: 600px) {
+  .hero { grid-template-columns: 1fr; justify-items: center; gap: 16px; }
+  .hero-txt { width: 100%; }
+  .wikiart { padding: 12px 14px; }
+}
+
+.wa-clip { max-height: 1700px; overflow: hidden; position: relative; }
+.wa-clip::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 120px; background: linear-gradient(rgba(255,255,255,0), #fff); }
+.wa-more { display: block; margin: 12px auto 0; }
+.board-wrap summary { cursor: pointer; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; padding: 16px 0 6px; }

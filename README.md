@@ -33,12 +33,20 @@ Puis ouvrir http://localhost:3000.
 
 Railway ou Fly.io marchent aussi pareil (un volume pour le fichier SQLite). Un petit VPS avec `node server.js` derrière Caddy ou Nginx fait aussi l'affaire.
 
-## Ajouter des joueurs
+## Les joueurs
 
-Tout est dans `src/data/players.js` (un joueur = une ligne `P(...)`) et les clubs dans `src/data/meta.js`. Le serveur refuse de démarrer si un club ou un pays est inconnu, ce qui évite les fautes de frappe. Ajouter des joueurs change l'ordre du tirage : à faire de préférence avant le lancement public.
+La liste des 600 joueurs qui peuvent tomber est dans `src/data/pool.json`. Elle est construite depuis Wikidata : les joueurs passés par un club des 5 grands championnats, internationaux A, avec au moins 3 saisons dans ces championnats, classés par notoriété (nombre d'articles Wikipédia dans le monde).
+
+Au démarrage puis chaque jour, le serveur retélécharge les fiches de ces joueurs sur Wikidata (clubs, sélection, poste…). La liste elle-même reste fixe pour que le tirage du jour ne change jamais en cours de journée.
+
+Pour reconstruire la liste (par exemple avec une autre taille) : onglet *Actions* du dépôt sur GitHub → *Liste des joueurs* → *Run workflow*. Attention : changer la liste change l'ordre des tirages à venir.
+
+Au reveal, la page Wikipédia du joueur est chargée directement depuis fr.wikipedia.org dans le navigateur.
 
 ## Structure
 
 - `server.js` : API (partie du jour, essais, indices, comptes, album, classement)
-- `src/game.js` : tirage du jour, calcul de la température, indices
+- `src/game.js` : tirage du jour, calcul de la température, carte, indices
+- `src/wikidata.js` : récupération des joueurs sur Wikidata
+- `scripts/build-pool.js` : construction de la liste des 600 joueurs
 - `public/` : le site (HTML, CSS, JS sans framework)

@@ -96,7 +96,7 @@ function suggest(q) {
     }
     return best;
   };
-  const players = CAT.players.map((p) => ({ type: 'player', id: p.id, label: p.name, kind: 'Joueur', s: score(p.keys) })).filter((x) => x.s);
+  const players = CAT.players.map((p) => ({ type: 'player', id: p.id, label: p.name, kind: p.sub, s: score(p.keys) })).filter((x) => x.s);
   const clues = CAT.clues.map((c) => ({ type: 'clue', id: c.id, label: c.label, kind: c.kind, s: score(c.terms) })).filter((x) => x.s);
   return [...players, ...clues].sort((a, b) => b.s - a.s || (a.type === 'player' ? -1 : 1) || a.label.localeCompare(b.label, 'fr')).slice(0, 9);
 }
@@ -112,10 +112,16 @@ async function pageGame() {
     <div class="game">
       <div class="left">
         <div id="banner"></div>
-        <div class="intro">
-          <div class="kicker">Le joueur mystère n° ${st.number}</div>
-          <h1>Qui se cache derrière le maillot&nbsp;?</h1>
-          <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque essai te donne une température. Plus tu chauffes, plus tu es près.</p>
+        <div class="hero">
+          <div id="fcard"></div>
+          <div class="hero-txt">
+            <div class="intro">
+              <div class="kicker">Le joueur mystère n° ${st.number}</div>
+              <h1>Qui se cache derrière le maillot&nbsp;?</h1>
+              <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque découverte remplit sa carte.</p>
+            </div>
+            <section class="gauge" id="gauge"></section>
+          </div>
         </div>
         <div class="search" id="search">
           <form autocomplete="off">
@@ -125,12 +131,11 @@ async function pageGame() {
           <ul class="sugg" id="sugg" hidden></ul>
         </div>
         <div class="msg" id="msg"></div>
-        <div class="gauge-inline" id="gauge2"></div>
-        <table class="board" id="board"></table>
+        <div id="reveal"></div>
+        <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
         ${st.user ? '' : `<div class="nudge">Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.</div>`}
       </div>
       <aside>
-        <section class="gauge" id="gauge"></section>
         <section id="facts"></section>
         <section class="hints" id="hints"></section>
         <section class="daystats" id="daystats"></section>
@@ -140,24 +145,70 @@ async function pageGame() {
   drawGame();
 }
 
+// Carte façon FIFA : vide au départ, elle se remplit avec ce que tu découvres.
+const SILHOUETTE = `<svg viewBox="0 0 200 200" class="silh" aria-hidden="true"><path d="M100 22c-21 0-35 16-35 39 0 15 6 28 15 36l-1 11c-26 6-47 18-56 32-4 7-6 17-6 30v30h166v-30c0-13-2-23-6-30-9-14-30-26-56-32l-1-11c9-8 15-21 15-36 0-23-14-39-35-39z"/></svg>`;
+const shortClub = (n) => n && n.replace(/^(FC|AS|AC|SS|SSC|US|OGC|RC|SC|CF|CD|RCD|SV|VfB|VfL|TSG|1\. FC|Olympique|Stade|Real Club|Club Atlético)\s+/i, '').replace(/\s+(FC|CF|AFC|SAD|AC|BC)$/i, '');
+function fifaCard(c, rating, found) {
+  const v = (x, ph = '?') => (x == null || x === '' ? `<span class="ph">${ph}</span>` : esc(x));
+  const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '<span class="ph box">?</span>';
+  return `<div class="fut ${found ? 'done' : ''}">
+    <div class="fut-in">
+      <div class="fut-side">
+        <div class="fut-rate">${rating}</div>
+        <div class="fut-pos">${v(c.pos)}</div>
+        <div class="fut-flag">${flag}</div>
+      </div>
+      <div class="fut-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
+      <div class="fut-name">${c.name ? esc(c.name) : '<span class="ph">• • • • • •</span>'}</div>
+      <dl class="fut-stats">
+        <div><dt>NAT</dt><dd>${v(c.nat?.name)}</dd></div>
+        <div><dt>NÉ</dt><dd>${v(c.born)}</dd></div>
+        <div><dt>CLUB</dt><dd title="${esc(c.club || '')}">${v(shortClub(c.club))}</dd></div>
+        <div><dt>CHAMP</dt><dd>${v(c.leagues.join(' '))}</dd></div>
+        <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
+        <div><dt>STATUT</dt><dd>${v(c.status)}</dd></div>
+      </dl>
+      <div class="fut-bo">Ballon d'or : ${c.bo === null ? '<span class="ph">?</span>' : c.bo ? 'oui' : 'non'}</div>
+    </div>
+  </div>`;
+}
+
 function drawGame(lastN) {
   const st = ST;
   const over = st.status !== 'playing';
   $('#search').hidden = over;
-  // bannière de fin
+  document.querySelector('.intro').hidden = over;
+
+  // carte et jauge
+  const best = st.guesses.reduce((m, g) => (g.temp > (m?.temp ?? -1) ? g : m), null);
+  const t = best ? best.temp : 0;
+  $('#fcard').innerHTML = fifaCard(st.card, best ? t : '?', st.status === 'won');
+  $('#gauge').innerHTML = `<h3>Ta jauge</h3>
+    <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
+    <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
+    <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    <div class="bestof">${best ? `Meilleur essai : ${esc(best.label)}` : 'Fais un premier essai pour la remplir.'}</div>`;
+
+  // bannière de fin + page Wikipédia
   if (over) {
     const a = st.answer;
     const n = st.guesses.length;
     $('#banner').innerHTML = st.status === 'won'
       ? `<div class="won"><div><div class="kicker">Trouvé</div><h2>${esc(a.name)}</h2><p>En ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
-         <div class="actions"><a class="btn solid" href="/joueur/${a.id}" data-link>Lire sa fiche</a><button class="btn" id="share">Partager</button></div></div>`
+         <div class="actions"><button class="btn solid" id="share">Partager</button><a class="btn" href="/album" data-link>Mon album</a></div></div>`
       : `<div class="won lost"><div><div class="kicker">Abandon</div><h2>${esc(a.name)}</h2><p>C'était lui. Ce joueur ne rejoindra pas ton album.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
-         <div class="actions"><a class="btn solid" href="/joueur/${a.id}" data-link>Lire sa fiche</a></div></div>`;
+         <div class="actions"><a class="btn" href="/album" data-link>Mon album</a></div></div>`;
     tick();
     const sh = $('#share');
     if (sh) sh.onclick = share;
+    const rv = $('#reveal');
+    if (!rv.dataset.done) { rv.dataset.done = 1; showWiki(rv, a); }
   } else $('#banner').innerHTML = '';
 
+  if (over && !$('#bw').dataset.closed) {
+    $('#bw').dataset.closed = 1; $('#bw').open = false;
+    $('#bws').style.display = ''; $('#bws').textContent = `Tes essais (${st.guesses.length})`;
+  }
   // tableau des essais : le dernier en haut, puis du plus chaud au plus froid
   const rows = [...st.guesses].sort((a, b) => b.temp - a.temp || b.n - a.n);
   const last = st.guesses.find((g) => g.n === (lastN || st.guesses.length));
@@ -174,17 +225,6 @@ function drawGame(lastN) {
     ? `<thead><tr><th>N°</th><th>Proposition</th><th style="text-align:right">Temp.</th><th class="bar"></th></tr></thead><tbody>
        ${last && !over ? row(last, 'last') + '<tr class="sep"><td colspan="4"></td></tr>' : ''}${rows.map((g) => row(g)).join('')}</tbody>`
     : '';
-
-  // jauge
-  const best = st.guesses.reduce((m, g) => (g.temp > (m?.temp ?? -1) ? g : m), null);
-  const t = best ? best.temp : 0;
-  const gauge = `<h3>Ta jauge</h3>
-    <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
-    <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
-    <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-    <div class="bestof">${best ? `Meilleur essai : ${esc(best.label)}` : 'Fais un premier essai pour la remplir.'}</div>`;
-  $('#gauge').innerHTML = gauge;
-  $('#gauge2').innerHTML = `<section class="gauge">${gauge}</section>`;
 
   // ce que tu sais
   const clues = st.guesses.filter((g) => g.type === 'clue');
@@ -278,105 +318,75 @@ function bindSearch() {
   input.focus();
 }
 
-// ——— Page : fiche joueur ———
+// ——— Page Wikipédia du joueur ———
 const WIKI = 'https://fr.wikipedia.org';
-async function wikiLookup(title, name) {
-  const summary = async (t) => {
-    const r = await fetch(`${WIKI}/api/rest_v1/page/summary/${encodeURIComponent(t.replace(/ /g, '_'))}`);
-    if (!r.ok) return null;
-    const j = await r.json();
-    if (j.type === 'disambiguation' || !/foot/i.test((j.description || '') + ' ' + (j.extract || ''))) return null;
-    return j;
-  };
-  let s = await summary(title).catch(() => null);
-  if (!s) {
-    const r = await fetch(`${WIKI}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name + ' footballeur')}&srlimit=1&format=json&origin=*`).then((x) => x.json()).catch(() => null);
-    const t = r?.query?.search?.[0]?.title;
-    if (t) s = await summary(t).catch(() => null);
+const wikiUrl = (title) => `${WIKI}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+
+async function fetchWikiHtml(title) {
+  const r = await fetch(`${WIKI}/api/rest_v1/page/html/${encodeURIComponent(title.replace(/ /g, '_'))}?redirect=true`);
+  if (!r.ok) throw new Error('Wikipédia ' + r.status);
+  const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+  doc.querySelectorAll('script, link, meta, base, .navbox, .navbox-container, .bandeau-portail, .homonymie, .bandeau-container, .metadata, .noprint, .mw-editsection, [role="navigation"]').forEach((e) => e.remove());
+  doc.querySelectorAll('a[href]').forEach((a) => {
+    const h = a.getAttribute('href');
+    if (h.startsWith('./')) a.href = `${WIKI}/wiki/${h.slice(2)}`;
+    else if (h.startsWith('//')) a.href = 'https:' + h;
+    else if (h.startsWith('/')) a.href = WIKI + h;
+    if (!h.startsWith('#')) { a.target = '_blank'; a.rel = 'noopener'; }
+  });
+  doc.querySelectorAll('a').forEach((a) => { if (/^modifier( le code)?$/i.test(a.textContent.trim())) (a.closest('.navbar, p, div') || a).remove(); });
+  doc.querySelectorAll('img').forEach((img) => {
+    for (const at of ['src', 'srcset']) {
+      const v = img.getAttribute(at);
+      if (v) img.setAttribute(at, v.replace(/(^|\s|,)\/\//g, '$1https://'));
+    }
+    img.loading = 'lazy';
+  });
+  // on coupe les sections de fin (notes, liens externes, voir aussi)
+  doc.querySelectorAll('section').forEach((s) => {
+    const h = s.querySelector(':scope > h2');
+    if (h && /^(notes|références|liens externes|voir aussi|bibliographie|annexes)/i.test(h.textContent.trim())) s.remove();
+  });
+  return doc.body.innerHTML;
+}
+
+async function showWiki(el, p, head = '') {
+  el.innerHTML = `<article class="wikiart">${head}<div class="wa-top"><span>Wikipédia, l'encyclopédie libre</span><a href="${wikiUrl(p.title || p.name)}" target="_blank" rel="noopener">Ouvrir sur Wikipédia ↗</a></div><h1 class="wa-title">${esc(p.title || p.name)}</h1><div class="mw-parser-output" id="wbody"><p class="note">Chargement de la page Wikipédia…</p></div></article>`;
+  try {
+    const body = $('#wbody', el);
+    body.innerHTML = await fetchWikiHtml(p.title || p.name);
+    if (body.scrollHeight > 2000) {
+      body.classList.add('wa-clip');
+      body.insertAdjacentHTML('afterend', `<button class="btn wa-more">Lire tout l'article</button>`);
+      $('.wa-more', el).onclick = (e) => { body.classList.remove('wa-clip'); e.target.remove(); };
+    }
+  } catch {
+    $('#wbody', el).innerHTML = fallbackCard(p);
   }
-  if (!s) return null;
-  const ex = await fetch(`${WIKI}/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=${encodeURIComponent(s.title)}&format=json&origin=*`)
-    .then((x) => x.json()).catch(() => null);
-  const page = ex && Object.values(ex.query?.pages || {})[0];
-  return { title: s.title, url: s.content_urls?.desktop?.page, image: s.thumbnail?.source || s.originalimage?.source, lead: page?.extract || s.extract };
 }
 
-function deCountry(n) {
-  if (['Pays-Bas', 'États-Unis'].includes(n)) return 'des ' + n;
-  if (['Brésil', 'Portugal', 'Danemark', 'Pays de Galles', 'Maroc', 'Sénégal', 'Cameroun', 'Ghana', 'Nigeria', 'Gabon', 'Liberia', 'Mexique', 'Japon', 'Canada', 'Qatar'].includes(n)) return 'du ' + n;
-  return /^[AEIOUÉÈÎ]/.test(n) ? "d'" + n : 'de ' + n;
-}
-
-function age(born, end) {
-  const b = new Date(born);
-  const now = new Date();
-  let a = now.getFullYear() - b.getFullYear();
-  if (now < new Date(now.getFullYear(), b.getMonth(), b.getDate())) a--;
-  return a;
+// si Wikipédia ne répond pas : une fiche maison à partir de nos données
+function fallbackCard(p) {
+  const span = (c) => c.to == null ? (c.from ? `depuis ${c.from}` : '') : c.from === c.to ? `${c.from}` : `${c.from ?? '?'}–${c.to}`;
+  return `<p class="note">Wikipédia n'a pas répondu, voici la fiche résumée.</p>
+    <p><b>${esc(p.name)}</b>, né le ${esc(fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' }))}${p.place ? ` à ${esc(p.place)}` : ''}, ${esc(p.pos.toLowerCase())} (${esc(p.nat.join(' / '))}).</p>
+    <h2>Carrière en club</h2>
+    <table class="wikitable"><tr><th>Période</th><th>Club</th><th>Championnat</th></tr>
+    ${p.clubs.map((c) => `<tr><td>${span(c)}</td><td>${esc(c.club)}${c.loan ? ' (prêt)' : ''}</td><td>${esc(c.leagueName || '—')}</td></tr>`).join('')}</table>
+    ${p.nt ? `<h2>Sélection</h2><p>${esc(p.nt.team)}${p.nt.from ? `, ${p.nt.from}–${p.nt.to ?? ''}` : ''}${p.nt.caps ? ` : ${p.nt.caps} sélections, ${p.nt.goals ?? 0} buts` : ''}.</p>` : ''}`;
 }
 
 async function pagePlayer(id) {
   const [p, me] = await Promise.all([api('player/' + id), api('me')]);
   renderWho(me.user, me);
-  const nat = p.nat.join(' / ');
-  const adjPos = { Gardien: 'gardien de but', 'Défenseur': 'défenseur', Milieu: 'milieu de terrain', Attaquant: 'attaquant' }[p.pos];
-  const span = (c) => c.to === null ? `depuis ${c.from}` : c.from === c.to ? `${c.from}` : `${c.from}–${c.to}`;
-  const lastClub = [...p.clubs].filter((c) => !c.loan).pop();
-  const fallbackLead = `${p.full || p.name}, né le ${fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' })} à ${p.place}, est un footballeur ${p.nt ? 'international ' : ''}${nat.toLowerCase().includes('/') ? '' : ''}${p.active ? 'qui évolue' : 'ayant évolué'} au poste de ${adjPos}. ${p.active ? `Il joue actuellement à ${lastClub.club}.` : `Il a mis fin à sa carrière en ${p.end || lastClub.to}.`}`;
-  const clubs = p.clubs.filter((c) => !c.loan);
-  const loans = p.clubs.filter((c) => c.loan);
-
-  app.innerHTML = `
-  <article class="wiki">
-    <h1>${esc(p.name)}</h1>
-    <div class="from">Joueur mystère n° ${p.number} du ${esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }))} · fiche Crampon, résumé tiré de Wikipédia</div>
-    ${p.mine ? `<div class="mine">${p.mine.status === 'won' ? `Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${p.mine.guesses > 1 ? 's' : ''}. Il est dans ton album.` : p.mine.status === 'gaveup' ? 'Tu as abandonné ce jour-là.' : `Tu ne l'as pas trouvé (${p.mine.guesses} essais).`} ${p.stats.found} joueur${p.stats.found > 1 ? 's' : ''} l'${p.stats.found > 1 ? 'ont' : 'a'} trouvé.</div>` : `<div class="mine">Tu n'as pas joué ce jour-là. ${p.stats.found} joueur${p.stats.found > 1 ? 's' : ''} l'${p.stats.found > 1 ? 'ont' : 'a'} trouvé.</div>`}
-    <table class="infobox">
-      <caption>${esc(p.name)}</caption>
-      <tr><td colspan="2" class="img" id="wimg"><span class="note">Chargement de la photo…</span></td></tr>
-      <tr><td colspan="2" class="sect">Biographie</td></tr>
-      ${p.full ? `<tr><th>Nom complet</th><td>${esc(p.full)}</td></tr>` : ''}
-      <tr><th>Nationalité</th><td>${esc(nat)}</td></tr>
-      <tr><th>Naissance</th><td>${esc(fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' }))}<br>${esc(p.place)}${p.active ? ` <span class="note">(${age(p.born)} ans)</span>` : ''}</td></tr>
-      <tr><th>Poste</th><td>${esc(p.pos)}</td></tr>
-      <tr><th>Statut</th><td>${p.active ? 'En activité' : `Retraité${p.end ? ' (' + p.end + ')' : ''}`}</td></tr>
-      <tr><td colspan="2" class="sect">Parcours senior</td></tr>
-      ${p.clubs.map((c) => `<tr><th style="font-weight:400">${span(c)}</th><td>${esc(c.club)}${c.loan ? ' <span class="note">(prêt)</span>' : ''}</td></tr>`).join('')}
-      ${p.nt ? `<tr><td colspan="2" class="sect">Sélection nationale</td></tr>
-      <tr><th style="font-weight:400">${p.nt.to ? `${p.nt.from}–${p.nt.to}` : `depuis ${p.nt.from}`}</th><td>${esc(p.nt.team)}${p.nt.caps != null ? ` <span class="note">(${p.nt.caps} sél., ${p.nt.goals} buts)</span>` : ''}</td></tr>` : ''}
-    </table>
-    <p id="lead">${esc(fallbackLead)}</p>
-    <div class="toc"><b>Sommaire</b><ol><li><a href="#carriere">Carrière en club</a></li>${p.nt ? '<li><a href="#selection">Équipe nationale</a></li>' : ''}<li><a href="#palmares">Palmarès</a></li><li><a href="#liens">Liens externes</a></li></ol></div>
-
-    <h2 id="carriere">Carrière en club</h2>
-    <p>${esc(p.name)} a porté le maillot de ${clubs.length} club${clubs.length > 1 ? 's' : ''}${loans.length ? `, plus ${loans.length} prêt${loans.length > 1 ? 's' : ''}` : ''}. ${p.mainLeague ? `Il a passé l'essentiel de sa carrière en ${esc(p.mainLeague)}.` : ''}</p>
-    <table class="wt">
-      <tr><th>Période</th><th>Club</th><th>Championnat</th><th>Pays</th></tr>
-      ${p.clubs.map((c) => `<tr><td class="num">${span(c)}</td><td>${esc(c.club)}${c.loan ? ' <i class="note">(prêt)</i>' : ''}</td><td>${esc(c.leagueName || (c.lower ? 'Division inférieure' : '—'))}</td><td>${esc(c.countryName)}</td></tr>`).join('')}
-    </table>
-
-    ${p.nt ? `<h2 id="selection">Équipe nationale</h2>
-    <p>${p.nt.to ? `International avec l'équipe ${deCountry(p.nt.team)} de ${p.nt.from} à ${p.nt.to}` : `International avec l'équipe ${deCountry(p.nt.team)} depuis ${p.nt.from}`}${p.nt.caps != null ? `, il compte ${p.nt.caps} sélections et ${p.nt.goals} but${p.nt.goals > 1 ? 's' : ''}` : ''}.</p>` : ''}
-
-    <h2 id="palmares">Palmarès</h2>
-    ${p.honours.length ? `<ul>${p.honours.map((h) => `<li><b>${esc(h.name)}</b> : ${h.years.join(', ')}</li>`).join('')}</ul>`
-      : `<p>Pas de Coupe du monde, de titre continental, de Ligue des champions ni de Ballon d'or. Son palmarès complet est sur Wikipédia.</p>`}
-    <p class="note">Seuls les titres majeurs sont listés ici.</p>
-
-    <h2 id="liens">Liens externes</h2>
-    <ul><li id="wlink"><a href="${WIKI}/wiki/${encodeURIComponent(p.wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">${esc(p.name)} sur Wikipédia</a></li></ul>
-    <div class="clear"></div>
-  </article>
-  <p style="margin-top:18px"><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/" data-link>Jouer</a></p>`;
-
-  const w = await wikiLookup(p.wiki, p.name).catch(() => null);
-  const img = $('#wimg');
-  if (!img) return;
-  if (w) {
-    img.innerHTML = w.image ? `<img src="${esc(w.image)}" alt="${esc(p.name)}">` : '<span class="note">Pas de photo</span>';
-    if (w.lead) $('#lead').outerHTML = w.lead.split('\n').filter(Boolean).map((t) => `<p>${esc(t)}</p>`).join('');
-    if (w.url) $('#wlink').innerHTML = `<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)} sur Wikipédia</a>`;
-  } else img.innerHTML = '<span class="note">Photo indisponible</span>';
+  const s = p.stats;
+  const mine = p.mine
+    ? p.mine.status === 'won' ? `Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${p.mine.guesses > 1 ? 's' : ''}, il est dans ton album.`
+      : p.mine.status === 'gaveup' ? 'Tu as abandonné ce jour-là.' : `Tu ne l'as pas trouvé (${p.mine.guesses} essais).`
+    : "Tu n'as pas joué ce jour-là.";
+  const head = `<div class="wa-crampon">Joueur mystère n° ${p.number} du ${esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }))}. ${mine} ${s.found} joueur${s.found > 1 ? 's' : ''} l'${s.found > 1 ? 'ont' : 'a'} trouvé.</div>`;
+  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/" data-link>Jouer</a></p>`;
+  await showWiki($('#wp'), p, head);
 }
 
 // ——— Page : album ———
@@ -459,21 +469,23 @@ function pageRules() {
   app.innerHTML = `
     <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
     <div class="prose">
-      <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort. Légende ou joueur actuel, il a forcément joué en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et aucun joueur ne revient avant que tous les autres soient passés.</p>
+      <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort parmi 600 internationaux, légendes ou joueurs actuels, qui ont tous passé au moins trois saisons en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et un joueur ne revient pas avant que presque tous les autres soient passés.</p>
+      <h2>La carte</h2>
+      <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta meilleure température.</p>
       <h2>Deux façons de chercher</h2>
-      <p><b>Propose un joueur.</b> Tu obtiens une température entre 0 et 100°, et le détail de ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
-      <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, un titre (champion du monde, Ligue des champions, Ballon d'or) ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ». Un oui fait monter ta jauge.</p>
+      <p><b>Propose un joueur.</b> Tu obtiens une température entre 0 et 100°, et ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste ou poste voisin, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
+      <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, « Ballon d'or » ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ».</p>
       <table>
         <tr><th>Un oui sur…</th><th>vaut</th></tr>
         <tr><td>un club</td><td>45°</td></tr><tr><td>une nationalité</td><td>38°</td></tr>
-        <tr><td>un Ballon d'or</td><td>30°</td></tr><tr><td>une décennie de naissance</td><td>28°</td></tr>
+        <tr><td>le Ballon d'or</td><td>30°</td></tr><tr><td>une décennie de naissance</td><td>28°</td></tr>
         <tr><td>un championnat</td><td>22°</td></tr><tr><td>un poste</td><td>18°</td></tr>
       </table>
       <h2>Indices</h2>
       <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
       <h2>Ton album et ta série</h2>
-      <p>Chaque joueur trouvé rejoint ton album. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
-      <p>Une fois trouvé, le joueur a sa fiche&nbsp;: parcours en club, sélection, palmarès et résumé de Wikipédia.</p>
+      <p>Chaque joueur trouvé rejoint ton album, et sa page Wikipédia s'affiche aussitôt. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
+      <p class="muted" style="font-size:14px">Les joueurs et leurs carrières viennent de Wikidata, mis à jour chaque jour. Les pages viennent de Wikipédia (CC BY-SA).</p>
     </div>`;
 }
 

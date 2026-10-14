@@ -50,6 +50,20 @@ function setPool(ids, players) {
   picks.length = 0;
 }
 
+// « Real Madrid CF » → « Real Madrid », « AS Monaco FC » → « Monaco »
+const shortName = (n) => n.replace(/^(FC|AS|AC|SS|SSC|US|OGC|RC|SC|CF|CD|RCD|SV|VfB|VfL|TSG|1\. FC|Olympique|Stade|Club)\s+/i, '').replace(/\s+(FC|CF|AFC|SAD|AC|BC|Calcio|1846|1899|1900|1907|1909|04|05|96)$/i, '').trim();
+
+const NICK = {
+  'paris saint germain fc': ['psg', 'paris sg', 'paris'], 'olympique de marseille': ['om'], 'olympique lyonnais': ['ol', 'lyon'],
+  'fc barcelone': ['barca', 'barcelona'], 'manchester united fc': ['man united', 'man utd', 'manchester united'], 'manchester city fc': ['man city', 'manchester city'],
+  'tottenham hotspur fc': ['tottenham', 'spurs'], 'inter milan': ['inter'], 'ac milan': ['milan'], 'atletico de madrid': ['atletico', 'atletico madrid'],
+  'borussia dortmund': ['dortmund', 'bvb'], 'fc bayern munich': ['bayern'], 'bayern munich': ['bayern'], 'losc lille': ['lille'], 'girondins de bordeaux': ['bordeaux'],
+  'fc internazionale milano': ['inter', 'inter milan'], 'club atletico de madrid': ['atletico', 'atletico madrid', 'atletico de madrid'],
+  'bv 09 borussia dortmund': ['dortmund', 'bvb'], 'societa sportiva calcio napoli': ['naples', 'napoli'], 'societa sportiva lazio': ['lazio'],
+  'as rome': ['roma'], 'olympique de marseille': ['om', 'marseille'], 'juventus fc': ['juve'],
+  'as saint etienne': ['saint etienne', 'asse'], 'stade rennais fc': ['rennes'], 'ogc nice': ['nice'], 'rc lens': ['lens'], 'fc nantes': ['nantes'],
+};
+
 // ——— Indices « mots-clés » ———
 function buildClues() {
   CLUES = [];
@@ -71,7 +85,7 @@ function buildClues() {
   CLUB_NAMES = {};
   for (const p of PLAYERS) for (const c of p.clubs) CLUB_NAMES[c.id] = c.club;
   for (const [id, name] of Object.entries(CLUB_NAMES).sort((a, b) => a[1].localeCompare(b[1], 'fr')))
-    add('club:' + id, name, 'Club', [], (p) => p.clubs.some((c) => c.id === id), 45);
+    add('club:' + id, name, 'Club', [shortName(name), name.replace(/^Olympique (de )?/i, ''), ...(NICK[norm(name)] || [])], (p) => p.clubs.some((c) => c.id === id), 45);
 
   for (const [code, pos] of Object.entries(POSITIONS))
     add('pos:' + code, pos.clue, 'Poste', [pos.name, code === 'GB' ? 'goal' : code === 'ATT' ? 'buteur' : code === 'DEF' ? 'defense' : 'milieu'], (p) => p.pos === code, 18);

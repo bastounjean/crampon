@@ -89,7 +89,7 @@ SELECT ?p ?st ?team ?teamLabel ?start ?end ?caps ?goals ?howLabel ?lg ?cc ?ccLab
 }
 
 const year = (d) => (d ? +d.slice(0, 4) : null);
-const YOUTH = /(espoirs|moins de|\bU-?\d{2}\b|-\d{2} ans|olympique d|\bB$|\bII$|\bC$|réserve|reserves?$|castilla|jeunes|juniors?$|youth|amateur)/i;
+const YOUTH = /(espoirs|moins de|\bU-?\d{2}\b|-\d{2} ans|^équipe olympique|olympic team|\bB$|\bII$|\bC$|réserve|reserves?$|castilla|jeunes|juniors?$|youth|amateur)/i;
 
 function posCode(label) {
   const l = (label || '').toLowerCase();
