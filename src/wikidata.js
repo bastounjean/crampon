@@ -139,9 +139,11 @@ function build({ base, attrs, teams }, links = {}) {
     if (r.lg) s.league = LEAGUE_Q[qid(r.lg)];
     if (r.cc && !s.country) s.country = { code: qid(r.cc), name: r.ccLabel };
   }
+  const isNT = (s) => s.nt || (/^(équipe d|selección|seleção|national)/i.test(s.label || '') && /football/i.test(s.label || ''));
   for (const s of Object.values(stints)) {
     const p = P[s.pid];
-    if (s.nt) {
+    if (isNT(s)) {
+      if (YOUTH.test(s.label) || /A'|\bB\b|féminine|women/i.test(s.label)) continue;
       if (!p.nt || (s.caps || 0) > (p.nt.caps || 0)) p.nt = { team: s.label, from: s.from, to: s.to, caps: s.caps, goals: s.goals };
       continue;
     }

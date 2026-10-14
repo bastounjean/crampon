@@ -7,9 +7,14 @@ const { fetchPoolIds, fetchPlayers } = require('../src/wikidata');
 (async () => {
   const size = +process.argv[2] || 600;
   console.log('Recherche des joueurs les plus connus…');
-  const ids = await fetchPoolIds(size);
+  const ids = await fetchPoolIds(Math.round(size * 1.4));
   console.log(`${ids.length} candidats, récupération des fiches…`);
   const players = await fetchPlayers(ids.map((x) => x.id), { log: console.log });
+  // au moins 3 saisons dans un club des 5 grands championnats
+  const big5Years = (p) => p.clubs.filter((c) => c.league).reduce((n, c) => n + Math.max(1, (c.to ?? new Date().getFullYear()) - (c.from ?? (c.to ?? 2000) - 1)), 0);
+  const eligible = players.filter((p) => big5Years(p) >= 3);
+  console.log(`${eligible.length} avec au moins 3 saisons dans les 5 grands championnats.`);
+  players.length = 0; players.push(...eligible);
   players.sort((a, b) => b.links - a.links);
   const kept = players.slice(0, size);
   const file = path.join(__dirname, '..', 'src', 'data', 'pool.json');
@@ -24,4 +29,5 @@ const { fetchPoolIds, fetchPlayers } = require('../src/wikidata');
   console.log('Fin de liste :', kept.slice(-25).map((p) => p.name).join(', '));
   const z = kept.find((p) => p.id === 'Q1835');
   console.log('Zidane :', JSON.stringify(z));
+  console.log('Sans sélection :', kept.filter((p) => !p.nt).length, kept.filter((p) => !p.nt).slice(0, 15).map((p) => p.name).join(', '));
 })().catch((e) => { console.error(e); process.exit(1); });

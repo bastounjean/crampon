@@ -5,6 +5,26 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const db = require('./src/db');
 const G = require('./src/game');
+const WD = require('./src/wikidata');
+
+// ——— Joueurs : liste figée dans le dépôt, fiches rafraîchies chaque jour depuis Wikidata ———
+const POOL = require('./src/data/pool.json');
+G.setPool(POOL.ids, POOL.players);
+async function refreshPlayers() {
+  try {
+    const fresh = await WD.fetchPlayers(POOL.ids);
+    if (fresh.length < POOL.ids.length * 0.8) throw new Error(`seulement ${fresh.length} fiches reçues`);
+    const got = new Set(fresh.map((p) => p.id));
+    G.setPool(POOL.ids, [...fresh, ...POOL.players.filter((p) => !got.has(p.id))]);
+    console.log(`Fiches mises à jour depuis Wikidata (${fresh.length}).`);
+  } catch (e) {
+    console.warn('Wikidata injoignable, on garde les fiches enregistrées :', e.message);
+  }
+}
+if (process.env.NO_REFRESH !== '1') {
+  setTimeout(refreshPlayers, 5000);
+  setInterval(refreshPlayers, 24 * 3600 * 1000);
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -86,6 +106,7 @@ function state(req) {
     hintReady: !over && g.hints < G.MAX_HINTS && n >= (g.hints + 1) * G.HINT_EVERY,
     nextHintAt: g.hints < G.MAX_HINTS ? (g.hints + 1) * G.HINT_EVERY : null,
     answer: over ? G.card(target) : null,
+    card: G.revealCard(target, g.guesses, g.hints, over),
     rank, stats: dayStats(day),
     yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: dayStats(G.dayFromIndex(idx - 1)) } : null,
     user: publicUser(req),

@@ -1,11 +1,11 @@
 // Championnats, pays et clubs.
 
 const LEAGUES = {
-  L1: { name: 'Ligue 1', long: 'Championnat de France', country: 'FRA' },
-  PL: { name: 'Premier League', long: "Championnat d'Angleterre", country: 'ENG' },
-  BL: { name: 'Bundesliga', long: "Championnat d'Allemagne", country: 'GER' },
-  LL: { name: 'Liga', long: "Championnat d'Espagne", country: 'ESP' },
-  SA: { name: 'Serie A', long: "Championnat d'Italie", country: 'ITA' },
+  L1: { short: 'L1', name: 'Ligue 1', long: 'Championnat de France', country: 'FRA' },
+  PL: { short: 'PL', name: 'Premier League', long: "Championnat d'Angleterre", country: 'ENG' },
+  BL: { short: 'BL', name: 'Bundesliga', long: "Championnat d'Allemagne", country: 'GER' },
+  LL: { short: 'LIGA', name: 'Liga', long: "Championnat d'Espagne", country: 'ESP' },
+  SA: { short: 'SA', name: 'Serie A', long: "Championnat d'Italie", country: 'ITA' },
 };
 
 // code: [nom, adjectif (gentilé), continent]
@@ -97,10 +97,10 @@ const LOWER = ['Alès', 'Angers', 'Boulogne', 'Brest', 'Dijon', 'Grenoble', 'Ist
 for (const c of LOWER) { CLUBS[c].league = null; CLUBS[c].lower = true; }
 
 const POSITIONS = {
-  GB: { name: 'Gardien', clue: 'Gardien de but' },
-  DEF: { name: 'Défenseur', clue: 'Défenseur' },
-  MIL: { name: 'Milieu', clue: 'Milieu de terrain' },
-  ATT: { name: 'Attaquant', clue: 'Attaquant' },
+  GB: { short: 'GB', name: 'Gardien', clue: 'Gardien de but' },
+  DEF: { short: 'DEF', name: 'Défenseur', clue: 'Défenseur' },
+  MIL: { short: 'MIL', name: 'Milieu', clue: 'Milieu de terrain' },
+  ATT: { short: 'ATT', name: 'Attaquant', clue: 'Attaquant' },
 };
 
 const HONOURS = {
