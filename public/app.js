@@ -160,7 +160,7 @@ function clubPath(path, over) {
   return `<div class="path">
     <div class="path-h"><span>Parcours</span><span>${found}/${path.length} club${path.length > 1 ? 's' : ''}</span></div>
     <ol>${path.map((c, i) => c
-      ? `<li class="on" title="${esc(c.name)}">${crest(c)}</li>`
+      ? `<li class="on${c.logo && /white|blanc|bianco|weiss|negativ|inverted/i.test(decodeURIComponent(c.logo)) ? ' dk' : ''}" title="${esc(c.name)}">${crest(c)}</li>`
       : `<li title="Club n°${i + 1}, pas encore trouvé"><span class="q">${i + 1}</span></li>`).join('')}</ol>
     ${found || over ? '' : '<p class="path-tip">Chaque club trouvé (« même club ») prend sa place ici, dans l\'ordre de sa carrière.</p>'}
   </div>`;
