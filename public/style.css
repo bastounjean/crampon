@@ -52,10 +52,10 @@ button, input { font: inherit; color: inherit; }
 
 /* ——— Barre du haut ——— */
 html { overflow-x: clip; }
-.bar { --bar: #15140f; --bar-ink: #f3efe6; --bar-mute: #a39d8f;
+.topbar { --bar: #15140f; --bar-ink: #f3efe6; --bar-mute: #a39d8f;
   background: var(--bar); color: var(--bar-ink); margin-inline: calc(50% - 50vw); padding-inline: max(20px, calc(50vw - 540px));
   position: sticky; top: 0; z-index: 20; }
-:root:not([data-theme="light"]) .bar { --bar: #050504; }
+:root:not([data-theme="light"]) .topbar { --bar: #050504; }
 .bar-in { display: flex; align-items: stretch; gap: 34px; height: 60px; }
 .logo { align-self: center; font-weight: 900; font-stretch: 62%; font-size: 36px; line-height: 1; letter-spacing: -.5px; text-transform: uppercase; text-decoration: none; color: var(--bar-ink); }
 .tabs { display: flex; gap: 4px; }
@@ -74,8 +74,8 @@ html { overflow-x: clip; }
 .who .login { text-decoration: none; border: 1px solid var(--bar-ink); padding: 6px 12px; font-weight: 700; font-stretch: 85%; text-transform: uppercase; font-size: 13px; letter-spacing: .04em; }
 .who .login:hover { background: var(--bar-ink); color: var(--bar); }
 .who .me { font-weight: 700; text-decoration: none; }
-.bar .theme { color: var(--bar-mute); }
-.bar .theme:hover { color: var(--bar-ink); }
+.topbar .theme { color: var(--bar-mute); }
+.topbar .theme:hover { color: var(--bar-ink); }
 .linkbtn { background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; font-size: 14px; }
 
 main { padding: 26px 0 60px; min-height: 60vh; }
@@ -294,13 +294,31 @@ table.wt td.num { white-space: nowrap; }
 .wiki { overflow-x: auto; }
 
 /* ——— Carte du joueur mystère, façon FUT ——— */
-.hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 26px; }
-.hero .intro { text-align: center; margin-bottom: 20px; }
-.hero .intro p { margin: 8px auto 0; }
-.hero .gauge { width: 100%; max-width: 420px; margin-top: 26px; }
-.hero .gauge .big { justify-content: center; }
-.hero .gauge .bestof { text-align: center; }
-.hero .gauge h3 { margin-bottom: 6px; }
+.hero { margin-bottom: 26px; }
+.hero .intro { margin-bottom: 14px; }
+.hero .intro h1 { font-size: 34px; }
+.hero .intro p { margin: 6px 0 0; font-size: 16px; }
+.hero .search { margin-bottom: 4px; position: sticky; top: 60px; z-index: 10; background: var(--paper); padding: 6px 0 4px; }
+.hero .msg { margin: 8px 0 0; min-height: 0; }
+.lastg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; font-size: 15px; }
+.lastg:empty { display: none; }
+.lastg .lg-n { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.lastg .lg-t { font-family: var(--mono); font-weight: 600; }
+.play { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 32px; align-items: start; margin-top: 22px; }
+.play-side { min-width: 0; }
+.play-side .gauge h3 { margin-bottom: 6px; }
+.play-side .path { margin-top: 24px; max-width: none; }
+.play-side .path ol { justify-content: flex-start; }
+.play-side .path-tip { text-align: left; }
+.end { text-align: left; }
+.end-act { justify-content: flex-start; }
+@media (max-width: 760px) {
+  .hero .intro h1 { font-size: 27px; }
+  .hero .search { position: sticky; top: 52px; z-index: 10; background: var(--paper); padding: 8px 0 4px; margin: 0 -2px; }
+  .play { grid-template-columns: 1fr; gap: 22px; }
+  .play #fcard { justify-self: center; zoom: .82; }
+  .hero .intro p { display: none; }
+}
 .fut { width: 236px; height: 340px; background: #7a6223; padding: 3px;
   clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%); }
 .fut-in { height: 100%; position: relative; padding: 18px 16px 0; color: #2b2210;
@@ -409,5 +427,5 @@ table.wt td.num { white-space: nowrap; }
   .tabs svg { display: block; width: 21px; height: 21px; }
   body { padding-bottom: 64px; }
 }
-.bar .theme { font-size: 18px; line-height: 1; }
-.bar .theme span { display: none; }
+.topbar .theme { font-size: 18px; line-height: 1; }
+.topbar .theme span { display: none; }

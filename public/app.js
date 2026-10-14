@@ -156,19 +156,24 @@ async function pageGame() {
           <div class="intro">
             <div class="kicker">Le joueur mystère n° ${st.number}</div>
             <h1>Qui se cache derrière le maillot&nbsp;?</h1>
-            <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque découverte remplit sa carte.</p>
+            <p>Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.</p>
           </div>
-          <div id="fcard"></div>
-          <div id="path"></div>
-          <section class="gauge" id="gauge"></section>
+          <div class="search" id="search">
+            <form autocomplete="off">
+              <input id="q" placeholder="Écris ici" aria-label="Ta proposition" spellcheck="false" autocapitalize="off" autocorrect="off">
+              <button>Tenter</button>
+            </form>
+            <div class="msg" id="msg"></div>
+          </div>
+          <div class="lastg" id="lastg"></div>
+          <div class="play">
+            <div id="fcard"></div>
+            <div class="play-side">
+              <section class="gauge" id="gauge"></section>
+              <div id="path"></div>
+            </div>
+          </div>
         </div>
-        <div class="search" id="search">
-          <form autocomplete="off">
-            <input id="q" placeholder="Écris ici" aria-label="Ta proposition" spellcheck="false" autocapitalize="off" autocorrect="off">
-            <button>Tenter</button>
-          </form>
-        </div>
-        <div class="msg" id="msg"></div>
         <div id="reveal"></div>
         <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
         ${st.user ? '' : `<div class="nudge">Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.</div>`}
@@ -289,9 +294,14 @@ function drawGame(lastN) {
       <td class="t" style="color:${heat(g.temp)}">${g.temp}°</td>
       <td class="bar"><div class="minibar"><i style="width:${g.temp}%;background:${heat(g.temp)}"></i></div></td>
     </tr>`;
+  $('#lastg').innerHTML = last && !over
+    ? `<span class="lg-n">Essai ${last.n}</span><b>${esc(last.label)}</b><span class="lg-t" style="color:${heat(last.temp)}">${last.temp}°</span>${last.type === 'clue'
+        ? `<span class="tag ${last.yes ? 'yes' : 'no'}">${last.yes ? 'Oui' : 'Non'}</span>`
+        : last.tags.map((t) => `<span class="tag ${t.ok ? 'ok' : t.half ? 'half' : ''}">${t.dir === 'up' ? '↑ ' : t.dir === 'down' ? '↓ ' : ''}${esc(t.t)}</span>`).join('')}`
+    : '';
   $('#board').innerHTML = st.guesses.length
     ? `<thead><tr><th>N°</th><th>Proposition</th><th style="text-align:right">Temp.</th><th class="bar"></th></tr></thead><tbody>
-       ${last && !over ? row(last, 'last') + '<tr class="sep"><td colspan="4"></td></tr>' : ''}${rows.map((g) => row(g)).join('')}</tbody>`
+       ${rows.map((g) => row(g, last && !over && g.n === last.n ? 'last' : '')).join('')}</tbody>`
     : '';
 
   // ce que tu sais
