@@ -198,7 +198,7 @@ app.get('/api/album', (req, res) => {
     days.push({
       day: d, number: i + 1, today: i === idx,
       status: m ? m.status : null, guesses: m ? m.n : 0, hints: m ? m.hints : 0,
-      player: visible ? { id: p.id, name: p.name, pos: G.card(p).pos, nat: G.card(p).nat[0] } : null,
+      player: visible ? { id: p.id, name: p.name, pos: G.card(p).pos, nat: G.card(p).nat[0], img: p.img ? p.img.replace(/^http:/, 'https:') + '?width=240' : null } : null,
     });
   }
   res.json({ days, user: publicUser(req), total: G.PLAYERS.length, edition: { day, number: idx + 1 } });

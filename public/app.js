@@ -470,6 +470,7 @@ function slot(d) {
   const cls = d.status === 'won' ? 's-won' : d.status === 'gaveup' ? 's-gaveup s-missed' : 's-missed';
   const bot = d.status === 'won' ? `Trouvé · ${d.guesses} essai${d.guesses > 1 ? 's' : ''}` : d.status === 'gaveup' ? 'Abandonné' : 'Manqué';
   return `<a class="slot ${cls} ${d.today ? 'today' : ''}" href="/joueur/${d.player.id}" data-link><div class="top"><span>N° ${d.number}</span><span>${date}</span></div>
+    <div class="pic">${d.player.img ? `<img src="${esc(d.player.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
     <div class="face"><div><div class="nm">${esc(d.player.name)}</div><div class="sub">${esc(d.player.pos)} · ${esc(d.player.nat)}</div></div></div>
     <div class="bot">${bot}</div></a>`;
 }
