@@ -279,4 +279,4 @@ app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/jo
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Crampon tourne sur http://localhost:${port}`));
+app.listen(port, () => console.log(`Footix tourne sur http://localhost:${port}`));

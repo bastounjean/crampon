@@ -113,15 +113,14 @@ async function pageGame() {
       <div class="left">
         <div id="banner"></div>
         <div class="hero">
-          <div id="fcard"></div>
-          <div class="hero-txt">
-            <div class="intro">
-              <div class="kicker">Le joueur mystère n° ${st.number}</div>
-              <h1>Qui se cache derrière le maillot&nbsp;?</h1>
-              <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque découverte remplit sa carte.</p>
-            </div>
-            <section class="gauge" id="gauge"></section>
+          <div class="intro">
+            <div class="kicker">Le joueur mystère n° ${st.number}</div>
+            <h1>Qui se cache derrière le maillot&nbsp;?</h1>
+            <p>Propose un joueur ou un indice&nbsp;: un championnat, un club, un pays, un poste, une génération. Chaque découverte remplit sa carte.</p>
           </div>
+          <div id="fcard"></div>
+          <div id="path"></div>
+          <section class="gauge" id="gauge"></section>
         </div>
         <div class="search" id="search">
           <form autocomplete="off">
@@ -154,15 +153,16 @@ function crest(c) {
   const mono = `<span class="mono" style="${c.color ? `background:${esc(c.color)};color:#fff` : ''}">${esc(crestText(c.name))}</span>`;
   return c.logo ? `<img src="${esc(/Special:FilePath/.test(c.logo) ? c.logo + "?width=64" : c.logo)}" alt="${esc(c.name)}" loading="lazy" onerror="this.outerHTML=this.nextElementSibling.innerHTML"><template>${mono}</template>` : mono;
 }
+const ARROW = '<span class="arr" aria-hidden="true"><svg viewBox="0 0 28 12"><path d="M0 6h24M19 1l6 5-6 5"/></svg></span>';
 function clubPath(path, over) {
   if (!path || !path.length) return '';
   const found = path.filter(Boolean).length;
   return `<div class="path">
-    <div class="path-h"><span>Parcours</span><span>${found}/${path.length} club${path.length > 1 ? 's' : ''}</span></div>
-    <ol>${path.map((c, i) => c
-      ? `<li class="on${c.logo && /white|blanc|bianco|weiss|negativ|inverted/i.test(decodeURIComponent(c.logo)) ? ' dk' : ''}" title="${esc(c.name)}">${crest(c)}</li>`
-      : `<li title="Club n°${i + 1}, pas encore trouvé"><span class="q">${i + 1}</span></li>`).join('')}</ol>
-    ${found || over ? '' : '<p class="path-tip">Chaque club trouvé (« même club ») prend sa place ici, dans l\'ordre de sa carrière.</p>'}
+    <div class="path-h"><span>Son parcours</span><span>${found}/${path.length} club${path.length > 1 ? 's' : ''}</span></div>
+    <ol>${path.map((c, i) => `<li>${i ? ARROW : ''}` + (c
+      ? `<div class="club on${c.logo && /white|blanc|bianco|weiss|negativ|inverted/i.test(decodeURIComponent(c.logo)) ? ' dk' : ''}" title="${esc(c.name)}"><span class="crest">${crest(c)}</span><span class="cn">${esc(shortClub(c.name))}</span></div></li>`
+      : `<div class="club" title="Club n°${i + 1}, pas encore trouvé"><span class="crest"><span class="q">?</span></span><span class="cn">${i + 1}<sup>${i ? 'e' : 'er'}</sup> club</span></div></li>`)).join('')}</ol>
+    ${found || over ? '' : '<p class="path-tip">Chaque club trouvé prend sa place, dans l\'ordre de sa carrière.</p>'}
   </div>`;
 }
 function fifaCard(c, rating, found) {
@@ -187,7 +187,7 @@ function fifaCard(c, rating, found) {
       </dl>
       <div class="fut-bo">Ballon d'or : ${c.bo === null ? '<span class="ph">?</span>' : c.bo ? 'oui' : 'non'}</div>
     </div>
-  </div>${clubPath(c.path, found)}`;
+  </div>`;
 }
 
 function drawGame(lastN) {
@@ -200,6 +200,7 @@ function drawGame(lastN) {
   const best = st.guesses.reduce((m, g) => (g.temp > (m?.temp ?? -1) ? g : m), null);
   const t = best ? best.temp : 0;
   $('#fcard').innerHTML = fifaCard(st.card, best ? t : '?', st.status === 'won');
+  $('#path').innerHTML = clubPath(st.card.path, over);
   $('#gauge').innerHTML = `<h3>Ta jauge</h3>
     <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
@@ -291,7 +292,7 @@ async function share() {
   const st = ST;
   const sq = (t) => (t >= 85 ? '🟥' : t >= 60 ? '🟧' : t >= 35 ? '🟨' : '🟦');
   const line = st.guesses.slice(-12).map((g) => sq(g.temp)).join('');
-  const txt = `Crampon n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
+  const txt = `Footix n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
   try { await navigator.clipboard.writeText(txt); $('#share').textContent = 'Copié'; } catch { prompt('Copie ce texte :', txt); }
 }
 

@@ -219,8 +219,12 @@ table.wt td.num { white-space: nowrap; }
 .wiki { overflow-x: auto; }
 
 /* ——— Carte du joueur mystère, façon FUT ——— */
-.hero { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 28px; align-items: start; margin-bottom: 22px; }
-.hero-txt .intro p { margin-bottom: 16px; }
+.hero { display: flex; flex-direction: column; align-items: center; margin-bottom: 26px; }
+.hero .intro { text-align: center; margin-bottom: 20px; }
+.hero .intro p { margin: 8px auto 0; }
+.hero .gauge { width: 100%; max-width: 420px; margin-top: 26px; }
+.hero .gauge .big { justify-content: center; }
+.hero .gauge .bestof { text-align: center; }
 .hero .gauge h3 { margin-bottom: 6px; }
 .fut { width: 236px; height: 340px; background: #7a6223; padding: 3px;
   clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%); }
@@ -245,17 +249,22 @@ table.wt td.num { white-space: nowrap; }
 .fut-bo { text-align: center; font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: uppercase; letter-spacing: .04em; }
 .fut .ph { opacity: .45; }
 .fut .ph.box { font-weight: 800; }
-.path { width: 236px; margin-top: 14px; }
-.path-h { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--ink); padding-bottom: 4px; margin-bottom: 8px; }
-.path ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.path li { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hair); position: relative; }
-.path li + li::before { content: ''; position: absolute; left: -6px; top: 50%; width: 6px; border-top: 1px solid var(--hair); }
-.path li.on { border: 1px solid var(--ink); background: #fff; }
-.path li.dk { background: var(--ink); }
-.path li img { width: 80%; height: 80%; object-fit: contain; }
-.path .q { font: 600 11px/1 var(--mono); opacity: .4; }
-.path .mono { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font: 800 12px/1 var(--cond); font-stretch: 75%; letter-spacing: .02em; }
-.path-tip { font-size: 12px; color: var(--muted, #6b6455); margin: 8px 0 0; line-height: 1.35; }
+.path { width: 100%; max-width: 640px; margin-top: 26px; }
+.path-h { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--ink); padding-bottom: 4px; margin-bottom: 14px; }
+.path ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; row-gap: 14px; }
+.path li { display: flex; align-items: flex-start; }
+.path .club { width: 72px; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.path .crest { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hair); }
+.path .on .crest { border: 0; }
+.path .dk .crest { background: var(--ink); }
+.path .crest img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.path .q { font: 700 18px/1 var(--cond); color: var(--hair); }
+.path .mono { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font: 800 14px/1 var(--cond); font-stretch: 75%; border: 1px solid var(--ink); }
+.path .cn { font-size: 11px; line-height: 1.15; text-align: center; color: var(--muted); max-width: 72px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.path .on .cn { color: var(--ink); font-weight: 600; }
+.path .arr { width: 24px; height: 52px; display: flex; align-items: center; }
+.path .arr svg { width: 24px; fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.path-tip { font-size: 13px; color: var(--muted); margin: 12px 0 0; text-align: center; }
 .board caption { text-align: left; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; padding: 22px 0 4px; }
 
 /* ——— Page Wikipédia intégrée ——— */
@@ -297,8 +306,10 @@ table.wt td.num { white-space: nowrap; }
   .wikiart .infobox_v3, .wikiart .infobox_v2, .wikiart .infobox, .wikiart figure { float: none; width: 100%; max-width: 100%; margin: 0 0 14px; }
 }
 @media (max-width: 600px) {
-  .hero { grid-template-columns: 1fr; justify-items: center; gap: 16px; }
-  .hero-txt { width: 100%; }
+  .path .club { width: 60px; }
+  .path .crest { width: 44px; height: 44px; }
+  .path .arr { width: 16px; height: 44px; }
+  .path .arr svg { width: 16px; }
   .wikiart { padding: 12px 14px; }
 }
 

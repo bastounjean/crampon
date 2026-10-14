@@ -1,4 +1,4 @@
-# Crampon
+# Footix
 
 Un footballeur mystère par jour, tiré au sort parmi les légendes et joueurs actuels passés par la Ligue 1, la Premier League, la Bundesliga, la Liga ou la Serie A.
 
