@@ -40,11 +40,17 @@ app.use(cookieParser());
 const PROD = process.env.NODE_ENV === 'production';
 const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 1000 * 60 * 60 * 24 * 395 }; // 13 mois, la limite conseillée par la CNIL
 
+// Express 4 n'attrape pas les erreurs des fonctions async : on les renvoie proprement
+const A = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((e) => {
+  console.error(e);
+  if (!res.headersSent) res.status(500).json({ error: 'Petit souci de serveur, réessaie dans un instant.' });
+});
+
 // ——— Identité : compte connecté, sinon visiteur anonyme ———
-app.use((req, res, next) => {
+app.use('/api', A(async (req, res, next) => {
   const sid = req.cookies.sid;
   if (sid) {
-    req.user = db.prepare('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?').get(sid) || null;
+    req.user = (await db.get('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', sid)) || null;
   }
   let aid = req.cookies.aid;
   if (!aid || !/^[a-f0-9]{32}$/.test(aid)) {
@@ -53,57 +59,64 @@ app.use((req, res, next) => {
   }
   req.aid = aid;
   next();
-});
+}));
 
 const owner = (req) => (req.user ? ['user_id', req.user.id] : ['anon', req.aid]);
+const J = db.jlen;
 
-function getGame(req, day, create) {
+async function getGame(req, day, create) {
   const [col, val] = owner(req);
-  let g = db.prepare(`SELECT * FROM games WHERE day = ? AND ${col} = ?`).get(day, val);
+  let g = await db.get(`SELECT * FROM games WHERE day = ? AND ${col} = ?`, day, val);
   if (!g && create) {
-    db.prepare(`INSERT INTO games (day, ${col}) VALUES (?, ?)`).run(day, val);
-    g = db.prepare(`SELECT * FROM games WHERE day = ? AND ${col} = ?`).get(day, val);
+    await db.run(`INSERT INTO games (day, ${col}) VALUES (?, ?) ON CONFLICT DO NOTHING`, day, val);
+    g = await db.get(`SELECT * FROM games WHERE day = ? AND ${col} = ?`, day, val);
   }
   if (g) g.guesses = JSON.parse(g.guesses);
   return g;
 }
 
-function streakOf(userId) {
-  const days = new Set(db.prepare("SELECT day FROM games WHERE user_id = ? AND status = 'won'").all(userId).map((r) => r.day));
-  let i = G.dayIndex(G.today());
+// séries calculées en une requête pour toute une liste de joueurs
+async function wonDays(userIds) {
+  const out = new Map(userIds.map((id) => [id, new Set()]));
+  if (!userIds.length) return out;
+  const rows = await db.all(`SELECT user_id, day FROM games WHERE status = 'won' AND user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds);
+  for (const r of rows) out.get(r.user_id).add(r.day);
+  return out;
+}
+function streakFrom(days) {
+  const last = G.dayIndex(G.today());
+  let i = last;
   if (!days.has(G.dayFromIndex(i))) i--; // la série tient toujours si aujourd'hui n'est pas encore joué
   let n = 0;
   while (i >= 0 && days.has(G.dayFromIndex(i))) { n++; i--; }
-  const best = (() => {
-    let b = 0, cur = 0;
-    for (let k = 0; k <= G.dayIndex(G.today()); k++) { cur = days.has(G.dayFromIndex(k)) ? cur + 1 : 0; b = Math.max(b, cur); }
-    return b;
-  })();
+  let best = 0, cur = 0;
+  for (let k = 0; k <= last; k++) { cur = days.has(G.dayFromIndex(k)) ? cur + 1 : 0; best = Math.max(best, cur); }
   return { streak: n, best, found: days.size };
 }
+const streakOf = async (userId) => streakFrom((await wonDays([userId])).get(userId));
 
-function publicUser(req) {
+async function publicUser(req) {
   if (!req.user) return null;
-  const points = db.prepare("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'").get(req.user.id).p;
-  return { username: req.user.username, points, ...streakOf(req.user.id) };
+  const { p } = await db.get("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'", req.user.id);
+  return { username: req.user.username, points: p, ...(await streakOf(req.user.id)) };
 }
 
-function dayStats(day) {
-  const r = db.prepare("SELECT COUNT(*) n, AVG(json_array_length(guesses)) avg FROM games WHERE day = ? AND status = 'won'").get(day);
-  const players = db.prepare("SELECT COUNT(*) n FROM games WHERE day = ? AND json_array_length(guesses) > 0").get(day).n;
-  return { found: r.n, avg: r.avg ? Math.round(r.avg) : null, players };
+async function dayStats(day) {
+  const r = await db.get(`SELECT COUNT(*) n, AVG(${J('guesses')}) avg FROM games WHERE day = ? AND status = 'won'`, day);
+  const { n } = await db.get(`SELECT COUNT(*) n FROM games WHERE day = ? AND ${J('guesses')} > 0`, day);
+  return { found: r.n, avg: r.avg ? Math.round(r.avg) : null, players: n };
 }
 
-function state(req) {
+async function state(req) {
   const day = G.today();
   const idx = G.dayIndex(day);
   const target = G.playerOfDay(day);
-  const g = getGame(req, day, false) || { status: 'playing', guesses: [], hints: 0 };
+  const g = (await getGame(req, day, false)) || { status: 'playing', guesses: [], hints: 0 };
   const n = g.guesses.length;
   const over = g.status !== 'playing';
   let rank = null;
   if (g.status === 'won') {
-    rank = db.prepare("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?").get(day, g.finished_at).n;
+    rank = (await db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at)).n;
   }
   const yesterday = idx > 0 ? G.playerOfDay(G.dayFromIndex(idx - 1)) : null;
   return {
@@ -114,28 +127,28 @@ function state(req) {
     nextHintAt: g.hints < G.MAX_HINTS ? (g.hints + 1) * G.HINT_EVERY : null,
     answer: over ? G.card(target) : null,
     card: G.revealCard(target, g.guesses, g.hints, over),
-    rank, stats: dayStats(day),
+    rank, stats: await dayStats(day),
     score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
-    yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: dayStats(G.dayFromIndex(idx - 1)) } : null,
-    user: publicUser(req),
+    yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: await dayStats(G.dayFromIndex(idx - 1)) } : null,
+    user: await publicUser(req),
   };
 }
 
 // ——— API jeu ———
-app.get('/api/today', (req, res) => res.json(state(req)));
+app.get('/api/today', A(async (req, res) => res.json(await state(req))));
 
-app.post('/api/guess', (req, res) => {
+app.post('/api/guess', A(async (req, res) => {
   const day = G.today();
   const target = G.playerOfDay(day);
   const q = String((req.body || {}).q || '').slice(0, 80);
   const r = G.resolve({ q });
   if (!r) return res.status(400).json({ error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` });
   if (r.error) return res.status(400).json({ error: r.error });
-  const g = getGame(req, day, true);
+  const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'La partie du jour est terminée.' });
   const key = r.type === 'player' ? r.player.id : r.clue.id;
   const dup = g.guesses.find((x) => x.key === key);
-  if (dup) return res.json({ ...state(req), dup: dup.n });
+  if (dup) return res.json({ ...(await state(req)), dup: dup.n });
   let entry;
   if (r.type === 'player') {
     const c = G.compare(target, r.player);
@@ -148,30 +161,29 @@ app.post('/api/guess', (req, res) => {
   g.guesses.push(entry);
   const won = r.type === 'player' && r.player.id === target.id;
   const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;
-  db.prepare(`UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ${won ? "strftime('%Y-%m-%d %H:%M:%f','now')" : 'finished_at'} WHERE id = ?`)
-    .run(JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, g.id);
-  res.json({ ...state(req), last: entry.n });
-});
+  await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
+    JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, won ? db.now() : g.finished_at, g.id);
+  res.json({ ...(await state(req)), last: entry.n });
+}));
 
-app.post('/api/hint', (req, res) => {
-  const day = G.today();
-  const g = getGame(req, day, true);
+app.post('/api/hint', A(async (req, res) => {
+  const g = await getGame(req, G.today(), true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'Partie terminée.' });
   if (g.hints >= G.MAX_HINTS || g.guesses.length < (g.hints + 1) * G.HINT_EVERY)
     return res.status(400).json({ error: "Pas encore d'indice disponible." });
-  db.prepare('UPDATE games SET hints = hints + 1 WHERE id = ?').run(g.id);
-  res.json(state(req));
-});
+  await db.run('UPDATE games SET hints = hints + 1 WHERE id = ?', g.id);
+  res.json(await state(req));
+}));
 
-app.post('/api/giveup', (req, res) => {
-  const g = getGame(req, G.today(), true);
-  if (g.status === 'playing') db.prepare("UPDATE games SET status = 'gaveup', finished_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?").run(g.id);
-  res.json(state(req));
-});
+app.post('/api/giveup', A(async (req, res) => {
+  const g = await getGame(req, G.today(), true);
+  if (g.status === 'playing') await db.run("UPDATE games SET status = 'gaveup', finished_at = ? WHERE id = ?", db.now(), g.id);
+  res.json(await state(req));
+}));
 
 // ——— Fiches joueurs ———
 // Une fiche est visible si le joueur est sorti un jour passé, ou si c'est celui du jour et que ta partie est finie.
-app.get('/api/player/:id', (req, res) => {
+app.get('/api/player/:id', A(async (req, res) => {
   const p = G.BY_ID[req.params.id];
   const day = G.today();
   const idx = G.dayIndex(day);
@@ -179,22 +191,22 @@ app.get('/api/player/:id', (req, res) => {
   if (p) {
     for (let i = 0; i < idx; i++) if (G.playerOfDay(G.dayFromIndex(i)).id === p.id) { ok = true; when = G.dayFromIndex(i); }
     if (G.playerOfDay(day).id === p.id) {
-      const g = getGame(req, day, false);
+      const g = await getGame(req, day, false);
       if (g && g.status !== 'playing') { ok = true; when = day; }
     }
   }
   if (!ok) return res.status(404).json({ error: 'Fiche pas encore débloquée.' });
   let mine = null;
-  const g = getGame(req, when, false);
+  const g = await getGame(req, when, false);
   if (g) mine = { status: g.status, guesses: g.guesses.length };
-  res.json({ ...G.card(p), day: when, number: G.dayIndex(when) + 1, mine, stats: dayStats(when) });
-});
+  res.json({ ...G.card(p), day: when, number: G.dayIndex(when) + 1, mine, stats: await dayStats(when) });
+}));
 
-app.get('/api/album', (req, res) => {
+app.get('/api/album', A(async (req, res) => {
   const day = G.today();
   const idx = G.dayIndex(day);
   const [col, val] = owner(req);
-  const mine = Object.fromEntries(db.prepare(`SELECT day, status, json_array_length(guesses) n, hints FROM games WHERE ${col} = ?`).all(val).map((r) => [r.day, r]));
+  const mine = Object.fromEntries((await db.all(`SELECT day, status, ${J('guesses')} n, hints FROM games WHERE ${col} = ?`, val)).map((r) => [r.day, r]));
   const days = [];
   for (let i = idx; i >= 0; i--) {
     const d = G.dayFromIndex(i);
@@ -207,17 +219,18 @@ app.get('/api/album', (req, res) => {
       player: visible ? { id: p.id, name: p.name, pos: G.card(p).pos, nat: G.card(p).nat[0], img: p.img ? p.img.replace(/^http:/, 'https:') + '?width=240' : null } : null,
     });
   }
-  res.json({ days, user: publicUser(req), total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
-});
+  res.json({ days, user: await publicUser(req), total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
+}));
 
-app.get('/api/leaderboard', (req, res) => {
+app.get('/api/leaderboard', A(async (req, res) => {
   const day = G.today();
-  const users = db.prepare(`SELECT u.id, u.username, COALESCE(SUM(g.points), 0) total, COUNT(g.id) found,
+  const users = await db.all(`SELECT u.id, u.username, COALESCE(SUM(g.points), 0) total, COUNT(g.id) found,
       COALESCE(SUM(CASE WHEN g.day = ? THEN g.points END), 0) today
-    FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id`).all(day);
-  const rows = users.map((u) => ({ id: u.id, username: u.username, total: u.total, found: u.found, today: u.today, ...streakOf(u.id) }));
+    FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id, u.username`, day);
+  const won = await wonDays(users.map((u) => u.id));
+  const rows = users.map((u) => ({ id: u.id, username: u.username, total: u.total, found: u.found, today: u.today, ...streakFrom(won.get(u.id)) }));
   const me = req.user ? req.user.id : null;
-  const ranked = (list, key) => list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === me }));
+  const ranked = (list) => list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === me }));
   const top = (list, n) => {
     const out = list.slice(0, n);
     const mine = list.find((x) => x.me);
@@ -227,94 +240,94 @@ app.get('/api/leaderboard', (req, res) => {
   const points = ranked([...rows].sort((a, b) => b.total - a.total || b.found - a.found || a.username.localeCompare(b.username)));
   const streaks = ranked(rows.filter((x) => x.streak > 0).sort((a, b) => b.streak - a.streak || b.total - a.total));
   const records = ranked([...rows].sort((a, b) => b.best - a.best || b.total - a.total));
-  const today = ranked(db.prepare(`SELECT u.id, u.username, g.points pts, json_array_length(g.guesses) n
-      FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY g.points DESC, g.finished_at`).all(day));
+  const today = ranked(await db.all(`SELECT u.id, u.username, g.points pts, ${J('g.guesses')} n
+      FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY g.points DESC, g.finished_at`, day));
   res.json({ points: top(points, 50), streaks: top(streaks, 20), records: top(records, 10), today: top(today, 20), players: rows.length });
-});
+}));
 
 // ——— Ligues entre potes ———
 // Une ligue = un code à 6 lettres à partager. Le classement reprend les points cumulés de chacun.
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans O/0 ni I/1, pour les dicter sans erreur
 const newCode = () => Array.from(crypto.randomBytes(6), (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
-const leagueBy = (code) => db.prepare('SELECT * FROM leagues WHERE code = ?').get(String(code || '').toUpperCase());
+const leagueBy = (code) => db.get('SELECT * FROM leagues WHERE code = ?', String(code || '').toUpperCase());
 const needUser = (req, res) => { if (req.user) return true; res.status(401).json({ error: 'Crée un compte pour jouer en ligue.' }); return false; };
 
-function leagueTable(leagueId, meId) {
+async function leagueTable(leagueId, meId) {
   const day = G.today();
-  const rows = db.prepare(`SELECT u.id, u.username, m.joined_at,
+  const rows = await db.all(`SELECT u.id, u.username,
       COALESCE(SUM(CASE WHEN g.status = 'won' THEN g.points END), 0) total,
       COALESCE(SUM(CASE WHEN g.status = 'won' THEN 1 END), 0) found,
       MAX(CASE WHEN g.day = ? THEN g.status END) st,
       MAX(CASE WHEN g.day = ? THEN g.points END) today,
-      MAX(CASE WHEN g.day = ? THEN json_array_length(g.guesses) END) n
+      MAX(CASE WHEN g.day = ? THEN ${J('g.guesses')} END) n
     FROM league_members m JOIN users u ON u.id = m.user_id LEFT JOIN games g ON g.user_id = u.id
-    WHERE m.league_id = ? GROUP BY u.id`).all(day, day, day, leagueId);
+    WHERE m.league_id = ? GROUP BY u.id, u.username`, day, day, day, leagueId);
+  const won = await wonDays(rows.map((r) => r.id));
   return rows
-    .map((r) => ({ username: r.username, total: r.total, found: r.found, today: r.st === 'won' ? r.today : null, todayStatus: r.st || null, n: r.n || 0, streak: streakOf(r.id).streak, me: r.id === meId }))
+    .map((r) => ({ username: r.username, total: r.total, found: r.found, today: r.st === 'won' ? r.today : null, todayStatus: r.st || null, n: r.n || 0, streak: streakFrom(won.get(r.id)).streak, me: r.id === meId }))
     .sort((a, b) => b.total - a.total || b.found - a.found || a.username.localeCompare(b.username))
     .map((x, i) => ({ ...x, rank: i + 1 }));
 }
 
-app.get('/api/leagues', (req, res) => {
+app.get('/api/leagues', A(async (req, res) => {
   if (!req.user) return res.json({ leagues: [], user: null });
-  const ls = db.prepare(`SELECT l.id, l.code, l.name, l.owner_id, (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) members
-    FROM leagues l JOIN league_members m ON m.league_id = l.id WHERE m.user_id = ? ORDER BY m.joined_at`).all(req.user.id);
-  res.json({
-    user: publicUser(req),
-    leagues: ls.map((l) => {
-      const t = leagueTable(l.id, req.user.id);
-      return { code: l.code, name: l.name, members: l.members, mine: l.owner_id === req.user.id, rank: (t.find((x) => x.me) || {}).rank, leader: t[0] && t[0].username };
-    }),
-  });
-});
+  const ls = await db.all(`SELECT l.id, l.code, l.name, l.owner_id, (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) members
+    FROM leagues l JOIN league_members m ON m.league_id = l.id WHERE m.user_id = ? ORDER BY m.joined_at`, req.user.id);
+  const leagues = [];
+  for (const l of ls) {
+    const t = await leagueTable(l.id, req.user.id);
+    leagues.push({ code: l.code, name: l.name, members: l.members, mine: l.owner_id === req.user.id, rank: (t.find((x) => x.me) || {}).rank, leader: t[0] && t[0].username });
+  }
+  res.json({ user: await publicUser(req), leagues });
+}));
 
-app.post('/api/leagues', slowDown, (req, res) => {
+app.post('/api/leagues', slowDown, A(async (req, res) => {
   if (!needUser(req, res)) return;
   const name = String((req.body || {}).name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
   if (name.length < 2) return res.status(400).json({ error: 'Donne un nom à ta ligue (2 caractères minimum).' });
-  if (db.prepare('SELECT COUNT(*) n FROM leagues WHERE owner_id = ?').get(req.user.id).n >= 10) return res.status(400).json({ error: 'Tu as déjà créé 10 ligues.' });
+  if ((await db.get('SELECT COUNT(*) n FROM leagues WHERE owner_id = ?', req.user.id)).n >= 10) return res.status(400).json({ error: 'Tu as déjà créé 10 ligues.' });
   let code;
-  do code = newCode(); while (leagueBy(code));
-  const r = db.prepare('INSERT INTO leagues (code, name, owner_id) VALUES (?, ?, ?)').run(code, name, req.user.id);
-  db.prepare('INSERT INTO league_members (league_id, user_id) VALUES (?, ?)').run(r.lastInsertRowid, req.user.id);
+  do code = newCode(); while (await leagueBy(code));
+  const r = await db.run('INSERT INTO leagues (code, name, owner_id, created_at) VALUES (?, ?, ?, ?) RETURNING id', code, name, req.user.id, db.now());
+  await db.run('INSERT INTO league_members (league_id, user_id, joined_at) VALUES (?, ?, ?)', r.rows[0].id, req.user.id, db.now());
   res.json({ code });
-});
+}));
 
-app.get('/api/leagues/:code', (req, res) => {
-  const l = leagueBy(req.params.code);
+app.get('/api/leagues/:code', A(async (req, res) => {
+  const l = await leagueBy(req.params.code);
   if (!l) return res.status(404).json({ error: 'Aucune ligue avec ce code. Vérifie les lettres.' });
   const me = req.user ? req.user.id : null;
-  const member = !!(me && db.prepare('SELECT 1 FROM league_members WHERE league_id = ? AND user_id = ?').get(l.id, me));
-  const owner = l.owner_id && db.prepare('SELECT username FROM users WHERE id = ?').get(l.owner_id);
-  const table = leagueTable(l.id, me);
+  const member = !!(me && await db.get('SELECT 1 x FROM league_members WHERE league_id = ? AND user_id = ?', l.id, me));
+  const owner = l.owner_id && await db.get('SELECT username FROM users WHERE id = ?', l.owner_id);
+  const table = await leagueTable(l.id, me);
   res.json({
     code: l.code, name: l.name, owner: owner ? owner.username : null, mine: l.owner_id === me, member,
     created: l.created_at, number: G.dayIndex(G.today()) + 1,
     table: member ? table : table.slice(0, 3).map(({ username, total, rank }) => ({ username, total, rank })), size: table.length,
-    user: publicUser(req),
+    user: await publicUser(req),
   });
-});
+}));
 
-app.post('/api/leagues/:code/join', slowDown, (req, res) => {
+app.post('/api/leagues/:code/join', slowDown, A(async (req, res) => {
   if (!needUser(req, res)) return;
-  const l = leagueBy(req.params.code);
+  const l = await leagueBy(req.params.code);
   if (!l) return res.status(404).json({ error: 'Aucune ligue avec ce code. Vérifie les lettres.' });
-  if (db.prepare('SELECT COUNT(*) n FROM league_members WHERE league_id = ?').get(l.id).n >= 200) return res.status(400).json({ error: 'Cette ligue est complète (200 joueurs).' });
-  if (db.prepare('SELECT COUNT(*) n FROM league_members WHERE user_id = ?').get(req.user.id).n >= 30) return res.status(400).json({ error: 'Tu es déjà dans 30 ligues.' });
-  db.prepare('INSERT OR IGNORE INTO league_members (league_id, user_id) VALUES (?, ?)').run(l.id, req.user.id);
+  if ((await db.get('SELECT COUNT(*) n FROM league_members WHERE league_id = ?', l.id)).n >= 200) return res.status(400).json({ error: 'Cette ligue est complète (200 joueurs).' });
+  if ((await db.get('SELECT COUNT(*) n FROM league_members WHERE user_id = ?', req.user.id)).n >= 30) return res.status(400).json({ error: 'Tu es déjà dans 30 ligues.' });
+  await db.run('INSERT INTO league_members (league_id, user_id, joined_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', l.id, req.user.id, db.now());
   res.json({ code: l.code });
-});
+}));
 
-app.post('/api/leagues/:code/leave', (req, res) => {
+app.post('/api/leagues/:code/leave', A(async (req, res) => {
   if (!needUser(req, res)) return;
-  const l = leagueBy(req.params.code);
+  const l = await leagueBy(req.params.code);
   if (!l) return res.status(404).json({ error: 'Ligue introuvable.' });
-  db.prepare('DELETE FROM league_members WHERE league_id = ? AND user_id = ?').run(l.id, req.user.id);
-  const next = db.prepare('SELECT user_id FROM league_members WHERE league_id = ? ORDER BY joined_at LIMIT 1').get(l.id);
-  if (!next) db.prepare('DELETE FROM leagues WHERE id = ?').run(l.id);
-  else if (l.owner_id === req.user.id) db.prepare('UPDATE leagues SET owner_id = ? WHERE id = ?').run(next.user_id, l.id);
+  await db.run('DELETE FROM league_members WHERE league_id = ? AND user_id = ?', l.id, req.user.id);
+  const next = await db.get('SELECT user_id FROM league_members WHERE league_id = ? ORDER BY joined_at LIMIT 1', l.id);
+  if (!next) await db.run('DELETE FROM leagues WHERE id = ?', l.id);
+  else if (l.owner_id === req.user.id) await db.run('UPDATE leagues SET owner_id = ? WHERE id = ?', next.user_id, l.id);
   res.json({ ok: true });
-});
+}));
 
 // ——— Comptes ———
 const hash = (pw, salt = crypto.randomBytes(16).toString('hex')) => salt + ':' + crypto.scryptSync(pw, salt, 32).toString('hex');
@@ -323,12 +336,12 @@ const check = (pw, stored) => {
   return crypto.timingSafeEqual(Buffer.from(h, 'hex'), crypto.scryptSync(pw, salt, 32));
 };
 
-function openSession(req, res, userId) {
+async function openSession(req, res, userId) {
   const token = crypto.randomBytes(24).toString('hex');
-  db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(token, userId);
+  await db.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', token, userId, db.now());
   res.cookie('sid', token, cookieOpts);
   // les parties jouées sans compte sur cet appareil rejoignent le compte
-  db.prepare('UPDATE games SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM games WHERE user_id = ?)').run(userId, req.aid, userId);
+  await db.run('UPDATE games SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM games WHERE user_id = ?)', userId, req.aid, userId);
 }
 
 const attempts = new Map();
@@ -342,42 +355,43 @@ function slowDown(req, res, next) {
   next();
 }
 
-app.post('/api/signup', slowDown, (req, res) => {
+app.post('/api/signup', slowDown, A(async (req, res) => {
   const { username = '', password = '' } = req.body || {};
   const u = String(username).trim();
   if (!/^[\p{L}0-9_.-]{3,20}$/u.test(u)) return res.status(400).json({ error: 'Pseudo : 3 à 20 caractères, lettres, chiffres, point, tiret ou underscore.' });
   if (String(password).length < 6) return res.status(400).json({ error: 'Mot de passe : 6 caractères minimum.' });
-  if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(u)) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
-  const r = db.prepare('INSERT INTO users (username, pass) VALUES (?, ?)').run(u, hash(String(password)));
-  openSession(req, res, r.lastInsertRowid);
+  if (await db.get('SELECT 1 x FROM users WHERE lower(username) = lower(?)', u)) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
+  const r = await db.run('INSERT INTO users (username, pass, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id', u, hash(String(password)), db.now());
+  if (!r.rows.length) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
+  await openSession(req, res, r.rows[0].id);
   res.json({ ok: true });
-});
+}));
 
-app.post('/api/login', slowDown, (req, res) => {
+app.post('/api/login', slowDown, A(async (req, res) => {
   const { username = '', password = '' } = req.body || {};
-  const u = db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim());
+  const u = await db.get('SELECT * FROM users WHERE lower(username) = lower(?)', String(username).trim());
   if (!u || !check(String(password), u.pass)) return res.status(400).json({ error: 'Pseudo ou mot de passe incorrect.' });
-  openSession(req, res, u.id);
+  await openSession(req, res, u.id);
   res.json({ ok: true });
-});
+}));
 
 // droit à l'effacement (RGPD) : le compte, ses sessions et ses parties disparaissent
-app.post('/api/delete-account', slowDown, (req, res) => {
+app.post('/api/delete-account', slowDown, A(async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Tu n’es pas connecté.' });
-  const u = db.prepare('SELECT pass FROM users WHERE id = ?').get(req.user.id);
+  const u = await db.get('SELECT pass FROM users WHERE id = ?', req.user.id);
   if (!check(String((req.body || {}).password || ''), u.pass)) return res.status(400).json({ error: 'Mot de passe incorrect.' });
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+  await db.run('DELETE FROM users WHERE id = ?', req.user.id);
   res.clearCookie('sid');
   res.json({ ok: true });
-});
+}));
 
-app.post('/api/logout', (req, res) => {
-  if (req.cookies.sid) db.prepare('DELETE FROM sessions WHERE token = ?').run(req.cookies.sid);
+app.post('/api/logout', A(async (req, res) => {
+  if (req.cookies.sid) await db.run('DELETE FROM sessions WHERE token = ?', req.cookies.sid);
   res.clearCookie('sid');
   res.json({ ok: true });
-});
+}));
 
-app.get('/api/me', (req, res) => res.json({ user: publicUser(req), day: G.today(), number: G.dayIndex(G.today()) + 1 }));
+app.get('/api/me', A(async (req, res) => res.json({ user: await publicUser(req), day: G.today(), number: G.dayIndex(G.today()) + 1 })));
 
 // ——— Front ———
 // la page porte l'empreinte des fichiers : après une mise à jour, le navigateur recharge le nouveau code
@@ -417,4 +431,5 @@ app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/co
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`));
+db.ready.then(() => app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`)))
+  .catch((e) => { console.error('Base de données injoignable :', e.message); process.exit(1); });

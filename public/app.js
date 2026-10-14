@@ -701,7 +701,7 @@ function pagePrivacy() {
       <h2>Polices et images</h2>
       <p>Les polices viennent de Google Fonts, les drapeaux de flagcdn.com, les photos et logos de Wikimedia. Ces services voient ton adresse IP quand ton navigateur charge leurs fichiers, sans cookie.</p>
       <h2>Hébergement</h2>
-      <p>Le site et sa base de données sont hébergés par ${HOST}. Les données peuvent donc être traitées aux États-Unis, dans le cadre des garanties prévues par le RGPD pour ces transferts.</p>
+      <p>Le site est hébergé par ${HOST}. Les comptes et les parties sont stockés chez Neon, Inc. (neon.tech), dans un centre de données de la même région. Les données peuvent donc être traitées aux États-Unis, dans le cadre des garanties prévues par le RGPD pour ces transferts.</p>
       <h2>Tes droits</h2>
       <p>Tu peux consulter, corriger ou effacer tes données, ou t’opposer à leur utilisation. Le plus simple&nbsp;: supprimer ton compte depuis la page <a href="/compte" data-link>Compte</a>, tout est effacé d’un coup. Pour le reste, écris à ${contact()}. Si tu estimes que tes droits ne sont pas respectés, tu peux saisir la <a href="https://www.cnil.fr/fr/plaintes" target="_blank" rel="noopener">CNIL</a>.</p>
     </div>`;

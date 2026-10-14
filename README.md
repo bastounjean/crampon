@@ -65,3 +65,9 @@ Tout se règle dans l'onglet Environment de Render, rien ne s'active tant que c'
 | `ADS_PREVIEW` | `1` | cadres gris à la place des pubs, pour voir la mise en page |
 
 Le consentement aux cookies passe par le message RGPD de Google (AdSense → Confidentialité et messages), certifié IAB TCF.
+
+## Base de données
+
+Sans rien configurer, le site utilise un fichier SQLite local, effacé à chaque déploiement sur Render.
+Pour garder comptes, points et ligues : créer une base gratuite sur neon.tech (même région que le service Render),
+puis mettre sa chaîne de connexion dans la variable `DATABASE_URL` sur Render. Les tables se créent toutes seules au démarrage.
