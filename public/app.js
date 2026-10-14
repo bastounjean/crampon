@@ -379,28 +379,22 @@ function tick() {
 }
 
 // ——— Partage ———
-// Sur téléphone, « Envoyer » ouvre le menu du système (contacts, WhatsApp, SMS, Insta…).
-// Les autres boutons marchent partout, ordinateur compris.
-function shareBox(text, url, label = 'Envoyer à mes potes') {
-  const full = `${text}\n${url}`;
-  const enc = encodeURIComponent;
+// Un seul bouton : sur téléphone (et la plupart des ordis), il ouvre la feuille de partage du système
+// avec toutes les applis et les contacts. Là où elle n'existe pas, le texte est copié.
+function shareBox(text, url, label = 'Partager') {
   const id = 'sh' + Math.random().toString(36).slice(2, 7);
   setTimeout(() => {
-    const box = document.getElementById(id);
-    if (!box) return;
-    const nat = $('.sh-native', box);
-    if (nat) nat.onclick = async () => { try { await navigator.share({ text, url }); } catch {} };
-    $('.sh-copy', box).onclick = async (e) => {
-      try { await navigator.clipboard.writeText(full); e.target.textContent = 'Copié !'; } catch { prompt('Copie ce texte :', full); }
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.onclick = async () => {
+      if (navigator.share) {
+        try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === 'AbortError') return; }
+      }
+      const full = `${text}\n${url}`;
+      try { await navigator.clipboard.writeText(full); btn.textContent = 'Copié, colle-le où tu veux'; } catch { prompt('Copie ce texte :', full); }
     };
   });
-  return `<div class="sharebox" id="${id}">
-    ${navigator.share ? `<button class="btn solid sh-native" type="button">${label}</button>` : ''}
-    <a class="btn sh-wa" href="https://wa.me/?text=${enc(full)}" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="btn sh-sms" href="sms:?&body=${enc(full)}">SMS</a>
-    <a class="btn sh-x" href="https://x.com/intent/post?text=${enc(text)}&url=${enc(url)}" target="_blank" rel="noopener">X</a>
-    <button class="btn sh-copy" type="button">Copier</button>
-  </div>`;
+  return `<div class="sharebox"><button class="btn solid sh" id="${id}" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M6 11H4v10h16V11h-2"/></svg>${label}</button></div>`;
 }
 function resultText(st) {
   const sq = (t) => (t >= 100 ? '✅' : t >= 75 ? '🟥' : t >= 50 ? '🟧' : t >= 25 ? '🟨' : '🟦');

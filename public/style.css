@@ -465,3 +465,5 @@ table.wt td.num { white-space: nowrap; }
 .lg .nm { grid-area: nm; display: flex; gap: 10px; align-items: baseline; font-size: 18px; }
 .lg .meta { grid-area: meta; font-size: 13px; color: var(--muted); }
 .lg .pl { grid-area: pl; align-self: center; font-family: var(--mono); font-size: 26px; font-weight: 600; }
+.btn.sh { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; font-size: 14px; }
+.btn.sh svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
