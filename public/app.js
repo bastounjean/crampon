@@ -280,8 +280,7 @@ function drawGame(lastN) {
   if (justEnded && st.status === 'won') confetti();
   $('#path').innerHTML = clubPath(st.card.path, over);
   if (justEnded && st.status === 'gaveup') $('#path').firstElementChild?.classList.add('late');
-  $('#gauge').innerHTML = `<h3>Ta jauge</h3>
-    <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
+  $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
     <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
     <div class="bestof">${best ? `Meilleur essai : ${esc(best.label)}` : 'Fais un premier essai pour la remplir.'}</div>`;
@@ -381,7 +380,7 @@ async function share() {
   const st = ST;
   const sq = (t) => (t >= 85 ? '🟥' : t >= 60 ? '🟧' : t >= 35 ? '🟨' : '🟦');
   const line = st.guesses.slice(-12).map((g) => sq(g.temp)).join('');
-  const txt = `Footix n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
+  const txt = `FoOotix.com n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
   try { await navigator.clipboard.writeText(txt); $('#share').textContent = 'Copié'; } catch { prompt('Copie ce texte :', txt); }
 }
 
@@ -631,7 +630,7 @@ const HOST = 'Render Services, Inc., 525 Brannan Street, Suite 300, San Francisc
 function pageLegal() {
   api('me').then((m) => renderWho(m.user, m));
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">Qui est derrière Footix</div><h1>Mentions légales</h1></div></div>
+    <div class="pagehead"><div><div class="kicker">Qui est derrière FoOotix</div><h1>Mentions légales</h1></div></div>
     <div class="prose">
       <h2>Éditeur</h2>
       <p>${todo(CFG.owner, 'Nom de l’éditeur')}<br>${todo(CFG.address, 'Adresse postale')}<br>Contact&nbsp;: ${contact()}</p>
@@ -640,7 +639,7 @@ function pageLegal() {
       <p>${HOST}.</p>
       <h2>Contenus</h2>
       <p>Les fiches des joueurs (clubs, dates, postes, nationalités) viennent de <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a>, sous licence CC0. Les résumés et anecdotes viennent de <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>, sous licence <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.fr" target="_blank" rel="noopener">CC BY-SA 4.0</a>, et peuvent être réutilisés aux mêmes conditions. Les photos viennent de Wikimedia Commons&nbsp;; l’auteur et la licence de chacune sont indiqués sur sa page Commons.</p>
-      <p>Les noms et logos des clubs sont des marques appartenant à leurs propriétaires. Ils servent uniquement à identifier les clubs où les joueurs ont évolué. Footix n’est lié à aucun club, aucune ligue, ni à la FIFA, l’UEFA ou la FFF.</p>
+      <p>Les noms et logos des clubs sont des marques appartenant à leurs propriétaires. Ils servent uniquement à identifier les clubs où les joueurs ont évolué. FoOotix n’est lié à aucun club, aucune ligue, ni à la FIFA, l’UEFA ou la FFF.</p>
       <p>Une erreur, un logo ou une photo à retirer&nbsp;? Écris à ${contact()}, on corrige rapidement.</p>
     </div>`;
 }
@@ -649,7 +648,7 @@ function pagePrivacy() {
   api('me').then((m) => renderWho(m.user, m));
   const ads = !!CFG.ads;
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">Tes données</div><h1>Confidentialité et cookies</h1><p>Ce que Footix garde sur toi, pourquoi, et comment l’effacer.</p></div></div>
+    <div class="pagehead"><div><div class="kicker">Tes données</div><h1>Confidentialité et cookies</h1><p>Ce que FoOotix garde sur toi, pourquoi, et comment l’effacer.</p></div></div>
     <div class="prose">
       <h2>Responsable</h2>
       <p>${todo(CFG.owner, 'Nom de l’éditeur')}, joignable à ${contact()}.</p>
@@ -670,9 +669,9 @@ function pagePrivacy() {
       </table>
       <p>Ces trois-là sont nécessaires au fonctionnement du jeu&nbsp;: ils ne servent ni à la pub ni au suivi, et la loi ne demande pas de consentement pour eux.</p>
       <h2>Publicité</h2>
-      ${ads ? `<p>Footix est financé par la publicité de Google AdSense. Google et ses partenaires peuvent déposer des cookies pour afficher des annonces, les personnaliser et mesurer leur efficacité. Ils ne sont déposés qu’avec ton accord, demandé à ta première visite. Si tu refuses, tu vois quand même des annonces, mais non personnalisées.</p>
+      ${ads ? `<p>FoOotix est financé par la publicité de Google AdSense. Google et ses partenaires peuvent déposer des cookies pour afficher des annonces, les personnaliser et mesurer leur efficacité. Ils ne sont déposés qu’avec ton accord, demandé à ta première visite. Si tu refuses, tu vois quand même des annonces, mais non personnalisées.</p>
       <p>Tu peux changer d’avis à tout moment&nbsp;: <a href="#" id="cookies2">gérer mes cookies</a>. Pour en savoir plus&nbsp;: <a href="https://policies.google.com/technologies/partner-sites?hl=fr" target="_blank" rel="noopener">comment Google utilise les données des sites partenaires</a>.</p>`
-      : `<p>Il n’y a pas de publicité sur Footix pour l’instant. Si elle arrive, cette page sera mise à jour et ton accord sera demandé avant tout cookie publicitaire.</p>`}
+      : `<p>Il n’y a pas de publicité sur FoOotix pour l’instant. Si elle arrive, cette page sera mise à jour et ton accord sera demandé avant tout cookie publicitaire.</p>`}
       <h2>Polices et images</h2>
       <p>Les polices viennent de Google Fonts, les drapeaux de flagcdn.com, les photos et logos de Wikimedia. Ces services voient ton adresse IP quand ton navigateur charge leurs fichiers, sans cookie.</p>
       <h2>Hébergement</h2>

@@ -332,4 +332,4 @@ app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/co
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Footix tourne sur http://localhost:${port}`));
+app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`));

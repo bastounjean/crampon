@@ -52,17 +52,17 @@ button, input { font: inherit; color: inherit; }
 
 /* ——— Barre du haut ——— */
 html { overflow-x: clip; }
-.topbar { --bar: #15140f; --bar-ink: #f3efe6; --bar-mute: #a39d8f;
+.topbar { --bar: #1d5236; --bar-ink: #f5f1e6; --bar-mute: #b5c8b9; --bar-accent: #f0c548;
   background: var(--bar); color: var(--bar-ink); margin-inline: calc(50% - 50vw); padding-inline: max(20px, calc(50vw - 540px));
   position: sticky; top: 0; z-index: 20; }
-:root:not([data-theme="light"]) .topbar { --bar: #050504; }
+:root:not([data-theme="light"]) .topbar { --bar: #13392a; }
 .bar-in { display: flex; align-items: stretch; gap: 34px; height: 60px; }
-.logo { align-self: center; font-weight: 900; font-stretch: 62%; font-size: 36px; line-height: 1; letter-spacing: -.5px; text-transform: uppercase; text-decoration: none; color: var(--bar-ink); }
+.logo { align-self: center; font-weight: 900; font-stretch: 62%; font-size: 36px; line-height: 1; letter-spacing: -.5px; text-decoration: none; color: var(--bar-ink); }
 .tabs { display: flex; gap: 4px; }
 .tabs a { display: flex; align-items: center; gap: 8px; padding: 0 14px; text-decoration: none; font-weight: 700; font-stretch: 85%; text-transform: uppercase; font-size: 14px; letter-spacing: .05em; color: var(--bar-mute); position: relative; }
 .tabs a:hover { color: var(--bar-ink); }
 .tabs a.on { color: var(--bar-ink); }
-.tabs a.on::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 4px; background: var(--red); }
+.tabs a.on::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 4px; background: var(--bar-accent); }
 .tabs svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; display: none; }
 .bar-r { margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 14px; }
 .edition { font-family: var(--mono); font-size: 12px; color: var(--bar-mute); white-space: nowrap; }
@@ -163,7 +163,7 @@ aside section { margin-bottom: 28px; }
 @keyframes endIn { from { opacity: 0; transform: translateY(6px); } }
 #fcard.spinning { perspective: 900px; }
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
-.logo span { text-transform: none; color: var(--red); font-size: .42em; letter-spacing: 0; margin-left: 2px; }
+.logo span { text-transform: none; color: var(--bar-accent); font-size: .42em; letter-spacing: 0; margin-left: 2px; }
 .countdown { font-family: var(--mono); }
 
 /* ——— Fiche joueur, façon Wikipédia ——— */
@@ -421,9 +421,9 @@ table.wt td.num { white-space: nowrap; }
   .edition { display: none; }
   .bar-r { gap: 12px; }
   .who .me, .who .out { display: none; }
-  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--bar); border-top: 1px solid #2c2a25; gap: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--bar); border-top: 1px solid rgba(255,255,255,.12); gap: 0; padding-bottom: env(safe-area-inset-bottom); }
   .tabs a { flex: 1; flex-direction: column; justify-content: center; gap: 3px; padding: 8px 0 7px; font-size: 10.5px; letter-spacing: .06em; }
-  .tabs a.on::after { left: 30%; right: 30%; top: 0; bottom: auto; background: var(--red); }
+  .tabs a.on::after { left: 30%; right: 30%; top: 0; bottom: auto; background: var(--bar-accent); }
   .tabs svg { display: block; width: 21px; height: 21px; }
   body { padding-bottom: 64px; }
 }
