@@ -47,4 +47,22 @@ CREATE INDEX IF NOT EXISTS games_day ON games(day, status);
 // points gagnés le jour où le joueur est trouvé (ajouté après coup)
 try { db.exec('ALTER TABLE games ADD COLUMN points INTEGER'); } catch { /* déjà là */ }
 
+// ligues entre potes
+db.exec(`
+CREATE TABLE IF NOT EXISTS leagues (
+  id INTEGER PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS league_members (
+  league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (league_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS league_members_user ON league_members(user_id);
+`);
+
 module.exports = db;

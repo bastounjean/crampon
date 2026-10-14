@@ -311,7 +311,7 @@ table.wt td.num { white-space: nowrap; }
 .play-side .path ol { justify-content: flex-start; }
 .play-side .path-tip { text-align: left; }
 .end { text-align: left; }
-.end-act { justify-content: flex-start; }
+.end-act, .end .sharebox { justify-content: flex-start; }
 @media (max-width: 760px) {
   .hero .intro h1 { font-size: 27px; }
   .hero .search { position: sticky; top: 52px; z-index: 10; background: var(--paper); padding: 8px 0 4px; margin: 0 -2px; }
@@ -443,3 +443,25 @@ table.wt td.num { white-space: nowrap; }
 .danger { margin-top: 34px; border-top: 1px solid var(--hair); padding-top: 12px; max-width: 420px; }
 .danger summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 .danger form { margin-top: 10px; }
+
+/* ——— Partage et ligues ——— */
+.sharebox { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.end-share { margin-top: 18px; }
+.end-share .kicker { margin-bottom: 8px; }
+.code { font-family: var(--mono); font-weight: 600; letter-spacing: .12em; border: 1px solid var(--hair); padding: 1px 6px; font-size: 12px; color: var(--muted); }
+.code.big { font-size: 18px; color: var(--ink); border-color: var(--ink); }
+.codein { font-family: var(--mono); text-transform: uppercase; letter-spacing: .2em; }
+.invite { border-bottom: 1px solid var(--ink); padding: 12px 0 14px; margin-bottom: 26px; }
+.invite .kicker { margin-bottom: 10px; }
+.invite .sharebox { justify-content: flex-start; }
+.invite.fresh { border-bottom-width: 3px; }
+.league-forms { margin-top: 30px; }
+.rank.leagues a { text-decoration: none; }
+.rank .ok { color: var(--green, #2e7d4f); font-weight: 600; }
+@media (max-width: 760px) { .tabs a { font-size: 9.5px; } }
+.lglist { border-top: 2px solid var(--ink); }
+.lg { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "nm pl" "meta pl"; gap: 2px 16px; padding: 10px 4px; border-bottom: 1px solid var(--hair); text-decoration: none; color: inherit; }
+.lg:hover { background: rgba(127,127,127,.08); }
+.lg .nm { grid-area: nm; display: flex; gap: 10px; align-items: baseline; font-size: 18px; }
+.lg .meta { grid-area: meta; font-size: 13px; color: var(--muted); }
+.lg .pl { grid-area: pl; align-self: center; font-family: var(--mono); font-size: 26px; font-weight: 600; }

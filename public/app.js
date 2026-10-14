@@ -86,7 +86,7 @@ window.addEventListener('popstate', route);
 
 async function route() {
   const p = location.pathname;
-  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
   window.scrollTo(0, 0);
   clearInterval(window.__tick);
   try {
@@ -95,6 +95,9 @@ async function route() {
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
     if (p === '/regles') return pageRules();
+    if (p === '/ligues') return await pageLeagues();
+    const lg = p.match(/^\/ligue\/([A-Za-z0-9]{6})$/);
+    if (lg) return await pageLeague(lg[1].toUpperCase());
     if (p === '/confidentialite') return pagePrivacy();
     if (p === '/mentions-legales') return pageLegal();
     const m = p.match(/^\/joueur\/([\w-]+)$/);
@@ -297,11 +300,10 @@ function drawGame(lastN) {
         ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`
         : `Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`}</p>
       ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} essai${st.score.guesses > 1 ? 's' : ''}${st.score.hints ? `, ${st.score.hints} indice${st.score.hints > 1 ? 's' : ''}` : ''}<br>rareté ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${String(st.score.mult).replace('.', ',')})${st.user ? '' : ' · <a href="/compte" data-link>crée un compte</a> pour les garder'}</span></div>` : ''}
-      <div class="end-act">${won ? '<button class="btn solid" id="share">Partager</button>' : ''}<a class="btn" href="/album" data-link>Mon album</a><span class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></span></div>
+      <div class="end-share"><div class="kicker">Défie tes potes</div>${shareBox(resultText(st), location.origin)}</div>
+      <div class="end-act"><a class="btn" href="/ligues" data-link>Mes ligues</a><a class="btn" href="/album" data-link>Mon album</a><span class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></span></div>
     </div>`;
     tick();
-    const sh = $('#share');
-    if (sh) sh.onclick = share;
     const rv = $('#reveal');
     if (!rv.dataset.done) { rv.dataset.done = 1; showWiki(rv, a); }
   } else $('#banner').innerHTML = '';
@@ -376,12 +378,40 @@ function tick() {
   window.__tick = setInterval(upd, 1000);
 }
 
-async function share() {
-  const st = ST;
-  const sq = (t) => (t >= 85 ? '🟥' : t >= 60 ? '🟧' : t >= 35 ? '🟨' : '🟦');
-  const line = st.guesses.slice(-12).map((g) => sq(g.temp)).join('');
-  const txt = `FoOotix.com n°${st.number} : trouvé en ${st.guesses.length} essai${st.guesses.length > 1 ? 's' : ''}${st.hints.length ? ` (${st.hints.length} indice${st.hints.length > 1 ? 's' : ''})` : ''}\n${line}\n${location.origin}`;
-  try { await navigator.clipboard.writeText(txt); $('#share').textContent = 'Copié'; } catch { prompt('Copie ce texte :', txt); }
+// ——— Partage ———
+// Sur téléphone, « Envoyer » ouvre le menu du système (contacts, WhatsApp, SMS, Insta…).
+// Les autres boutons marchent partout, ordinateur compris.
+function shareBox(text, url, label = 'Envoyer à mes potes') {
+  const full = `${text}\n${url}`;
+  const enc = encodeURIComponent;
+  const id = 'sh' + Math.random().toString(36).slice(2, 7);
+  setTimeout(() => {
+    const box = document.getElementById(id);
+    if (!box) return;
+    const nat = $('.sh-native', box);
+    if (nat) nat.onclick = async () => { try { await navigator.share({ text, url }); } catch {} };
+    $('.sh-copy', box).onclick = async (e) => {
+      try { await navigator.clipboard.writeText(full); e.target.textContent = 'Copié !'; } catch { prompt('Copie ce texte :', full); }
+    };
+  });
+  return `<div class="sharebox" id="${id}">
+    ${navigator.share ? `<button class="btn solid sh-native" type="button">${label}</button>` : ''}
+    <a class="btn sh-wa" href="https://wa.me/?text=${enc(full)}" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="btn sh-sms" href="sms:?&body=${enc(full)}">SMS</a>
+    <a class="btn sh-x" href="https://x.com/intent/post?text=${enc(text)}&url=${enc(url)}" target="_blank" rel="noopener">X</a>
+    <button class="btn sh-copy" type="button">Copier</button>
+  </div>`;
+}
+function resultText(st) {
+  const sq = (t) => (t >= 100 ? '✅' : t >= 75 ? '🟥' : t >= 50 ? '🟧' : t >= 25 ? '🟨' : '🟦');
+  const marks = st.guesses.slice(-18).map((g) => sq(g.temp));
+  const rows = [];
+  for (let i = 0; i < marks.length; i += 6) rows.push(marks.slice(i, i + 6).join(''));
+  const n = st.guesses.length;
+  const head = st.status === 'won'
+    ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}${st.score ? ` · +${st.score.points} pts` : ''}`
+    : `Abandon après ${n} essai${n > 1 ? 's' : ''} 🏳️`;
+  return `FoOotix.com n°${st.number} ⚽\n${head}\n${rows.join('\n')}\nEt toi, tu le trouves en combien ?`;
 }
 
 function bindSearch() {
@@ -551,6 +581,12 @@ async function pageRank() {
   show();
 }
 
+// après connexion, on revient là où on était (ex. une invitation de ligue)
+function nextPath() {
+  const n = new URLSearchParams(location.search).get('next') || '/';
+  return /^\/(?!\/)[\w\/-]*$/.test(n) ? n : '/';
+}
+
 // ——— Page : compte ———
 async function pageAuth() {
   const m = await api('me');
@@ -587,7 +623,7 @@ async function pageAuth() {
     const f = $(id);
     f.onsubmit = async (e) => {
       e.preventDefault();
-      try { await api(path, Object.fromEntries(new FormData(f))); go('/'); } catch (err) { $('.msg', f).textContent = err.message; }
+      try { await api(path, Object.fromEntries(new FormData(f))); go(nextPath()); } catch (err) { $('.msg', f).textContent = err.message; }
     };
   }
 }
@@ -677,6 +713,75 @@ function pagePrivacy() {
     </div>`;
   const c2 = $('#cookies2');
   if (c2) c2.onclick = (e) => { e.preventDefault(); $('#cookies a').click(); };
+}
+
+// ——— Pages : ligues entre potes ———
+async function pageLeagues() {
+  const r = await api('leagues');
+  renderWho(r.user);
+  if (!r.user) {
+    app.innerHTML = `
+      <div class="pagehead"><div><div class="kicker">Entre potes</div><h1>Ligues</h1>
+      <p>Crée une ligue, envoie le code à tes amis, et comparez vos points chaque jour.</p></div></div>
+      <p><a class="btn solid" href="/compte?next=/ligues" data-link>Crée un compte pour commencer</a></p>`;
+    return;
+  }
+  app.innerHTML = `
+    <div class="pagehead"><div><div class="kicker">Entre potes</div><h1>Mes ligues</h1>
+    <p>Un classement rien qu'à vous, avec les points cumulés de chacun.</p></div></div>
+    ${r.leagues.length ? `<div class="lglist">
+      ${r.leagues.map((l) => `<a class="lg" href="/ligue/${l.code}" data-link><span class="nm"><b>${esc(l.name)}</b><span class="code">${l.code}</span></span><span class="meta">${l.members} joueur${l.members > 1 ? 's' : ''}${l.leader ? ` · en tête : ${esc(l.leader)}` : ''}</span><span class="pl">${l.rank}<sup>${l.rank === 1 ? 'er' : 'e'}</sup></span></a>`).join('')}
+      </div>` : `<p class="muted">Tu n'es dans aucune ligue pour l'instant.</p>`}
+    <div class="auth league-forms">
+      <form id="lc"><h2>Créer une ligue</h2>
+        <div class="field"><label for="ln">Nom</label><input id="ln" name="name" maxlength="40" required placeholder="Les potes du foot"></div>
+        <button class="btn solid">Créer</button><p class="msg"></p></form>
+      <form id="lj"><h2>Rejoindre</h2>
+        <div class="field"><label for="lcode">Code reçu</label><input id="lcode" name="code" maxlength="6" required autocapitalize="characters" spellcheck="false" class="codein"></div>
+        <button class="btn solid">Rejoindre</button><p class="msg"></p></form>
+    </div>`;
+  $('#lc').onsubmit = async (e) => {
+    e.preventDefault();
+    try { const x = await api('leagues', { name: $('#ln').value }); go('/ligue/' + x.code + '?new=1'); } catch (err) { $('#lc .msg').textContent = err.message; }
+  };
+  $('#lj').onsubmit = async (e) => {
+    e.preventDefault();
+    const code = $('#lcode').value.trim().toUpperCase();
+    try { await api('leagues/' + encodeURIComponent(code) + '/join', {}); go('/ligue/' + code); } catch (err) { $('#lj .msg').textContent = err.message; }
+  };
+}
+
+async function pageLeague(code) {
+  const l = await api('leagues/' + code);
+  renderWho(l.user);
+  const url = `${location.origin}/ligue/${l.code}`;
+  const invite = shareBox(`Rejoins ma ligue « ${l.name} » sur FoOotix.com ⚽ Un joueur à deviner chaque jour, on compare nos points. Code : ${l.code}`, url, 'Inviter mes potes');
+  const day = (x) => x.todayStatus === 'won' ? `<span class="ok">+${x.today}</span> <span class="muted">(${x.n})</span>`
+    : x.todayStatus === 'gaveup' ? '<span class="muted">abandon</span>'
+    : x.todayStatus === 'playing' && x.n ? `<span class="muted">en cours (${x.n})</span>` : '<span class="muted">–</span>';
+  const head = `<div class="pagehead"><div><div class="kicker">Ligue · ${l.size} joueur${l.size > 1 ? 's' : ''}${l.owner ? ` · créée par ${esc(l.owner)}` : ''}</div><h1>${esc(l.name)}</h1>
+    <p>Code <span class="code big">${l.code}</span></p></div></div>`;
+  if (!l.member) {
+    app.innerHTML = `${head}
+      <p>On t'a invité dans cette ligue. ${l.user ? '' : 'Crée un compte (un pseudo et un mot de passe), puis rejoins-la en un clic.'}</p>
+      <p>${l.user ? '<button class="btn solid" id="join">Rejoindre la ligue</button>' : `<a class="btn solid" href="/compte?next=/ligue/${l.code}" data-link>Créer un compte et rejoindre</a>`}</p><p class="msg" id="jm"></p>
+      ${l.table.length ? `<table class="rank"><caption>En tête</caption><tbody>${l.table.map((x) => `<tr><td>${x.rank}</td><td>${esc(x.username)}</td><td class="r big">${x.total} pts</td></tr>`).join('')}</tbody></table>` : ''}`;
+    const j = $('#join');
+    if (j) j.onclick = async () => { try { await api('leagues/' + l.code + '/join', {}); route(); } catch (err) { $('#jm').textContent = err.message; } };
+    return;
+  }
+  const fresh = new URLSearchParams(location.search).has('new');
+  app.innerHTML = `${head}
+    <div class="invite ${fresh ? 'fresh' : ''}"><div class="kicker">${fresh ? 'Ta ligue est prête, invite tes potes' : 'Inviter des potes'}</div>${invite}</div>
+    <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r">N° ${l.number}</th><th class="r opt">Série</th></tr></thead><tbody>
+    ${l.table.map((x) => `<tr class="${x.me ? 'me' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ' <span class="muted">(toi)</span>' : ''}</td><td class="r big">${x.total}</td><td class="r">${day(x)}</td><td class="r opt">${x.streak}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="rank-note">Les points sont ceux du classement général : chaque joueur trouvé rapporte, même avant d'avoir rejoint la ligue. Le chiffre entre parenthèses, c'est le nombre d'essais du jour.</p>
+    <p><a class="btn" href="/ligues" data-link>Toutes mes ligues</a> <button class="btn" id="leave">Quitter la ligue</button></p>`;
+  $('#leave').onclick = async () => {
+    if (!confirm(`Quitter « ${l.name} » ?`)) return;
+    await api('leagues/' + l.code + '/leave', {}); go('/ligues');
+  };
 }
 
 route();
