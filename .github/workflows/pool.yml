@@ -1,0 +1,25 @@
+name: Liste des joueurs
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: Nombre de joueurs
+        default: '600'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-pool.js ${{ inputs.size }}
+      - name: Enregistre la liste
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/pool.json
+          git commit -m "Met à jour la liste des joueurs depuis Wikidata" || echo "rien à commiter"
+          git push
