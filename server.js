@@ -22,9 +22,14 @@ async function refreshPlayers() {
     console.warn('Wikidata injoignable, on garde les fiches enregistrées :', e.message);
   }
 }
+// Pas de mise à jour au démarrage : la petite machine gratuite de Render doit d'abord répondre,
+// sinon le déploiement peut rester bloqué. On attend que la liste ait 24 h (10 min minimum).
 if (process.env.NO_REFRESH !== '1') {
-  setTimeout(refreshPlayers, 5000);
-  setInterval(refreshPlayers, 24 * 3600 * 1000);
+  const DAY = 24 * 3600 * 1000;
+  const age = Date.now() - new Date(POOL.generated || 0).getTime();
+  const first = Math.max(10 * 60 * 1000, DAY - age);
+  setTimeout(() => { refreshPlayers(); setInterval(refreshPlayers, DAY); }, first);
+  console.log(`Prochaine mise à jour des joueurs dans ${Math.round(first / 60000)} min.`);
 }
 
 const app = express();
