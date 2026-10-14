@@ -43,7 +43,7 @@ function renderWho(user, ed) {
   ME = user;
   if (ed) renderEdition(ed);
   $('#who').innerHTML = user
-    ? `<span><b>${esc(user.username)}</b></span><span class="streak" title="Jours d'affilée avec le joueur trouvé">Série ${user.streak} · ${user.found} trouvé${user.found > 1 ? 's' : ''}</span><button class="linkbtn" id="logout">Déconnexion</button>`
+    ? `<span><b>${esc(user.username)}</b></span><span class="streak" title="Tes points cumulés et ta série de jours d'affilée"><a href="/classement" data-link>${user.points} pts</a> · Série ${user.streak}</span><button class="linkbtn" id="logout">Déconnexion</button>`
     : `<a href="/compte" data-link>Se connecter</a>`;
   const lo = $('#logout');
   if (lo) lo.onclick = async () => { await api('logout', {}); go('/'); };
@@ -101,7 +101,11 @@ function spinReveal(box, oldHtml) {
 // thème : sombre par défaut, clair au choix (mémorisé dans le navigateur)
 function initTheme() {
   const b = $('#theme');
-  const label = () => { b.textContent = document.documentElement.dataset.theme === 'light' ? '◐ Mode sombre' : '◑ Mode clair'; };
+  const label = () => {
+    const light = document.documentElement.dataset.theme === 'light';
+    b.innerHTML = `${light ? '◐' : '◑'} <span>${light ? 'Mode sombre' : 'Mode clair'}</span>`;
+    b.title = light ? 'Passer en mode sombre' : 'Passer en mode clair';
+  };
   b.onclick = () => {
     const light = document.documentElement.dataset.theme !== 'light';
     if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
@@ -258,7 +262,8 @@ function drawGame(lastN) {
       <h1><span>Le joueur du jour est</span> ${esc(a.name)}</h1>
       <p>${won
         ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`
-        : `Tu as abandonné : il ne rejoindra pas ton album.`}</p>
+        : `Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`}</p>
+      ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} essai${st.score.guesses > 1 ? 's' : ''}${st.score.hints ? `, ${st.score.hints} indice${st.score.hints > 1 ? 's' : ''}` : ''}<br>rareté ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${String(st.score.mult).replace('.', ',')})${st.user ? '' : ' · <a href="/compte" data-link>crée un compte</a> pour les garder'}</span></div>` : ''}
       <div class="end-act">${won ? '<button class="btn solid" id="share">Partager</button>' : ''}<a class="btn" href="/album" data-link>Mon album</a><span class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></span></div>
     </div>`;
     tick();
@@ -470,19 +475,39 @@ function slot(d) {
 }
 
 // ——— Page : classement ———
+let RANK_TAB = 'points';
 async function pageRank() {
   const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
   renderWho(me.user, me);
-  const tbl = (cap, rows, val) => `<table class="rank"><caption>${cap}</caption>${rows.length
-    ? rows.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.username)}</td><td>${val(x)}</td></tr>`).join('')
-    : '<tr><td></td><td class="muted">Personne pour l’instant</td><td></td></tr>'}</table>`;
+  const empty = (cols) => `<tr><td colspan="${cols}" class="muted">Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.</td></tr>`;
+  const row = (x, cells) => `<tr class="${x.me ? 'me' : ''} ${x.gap ? 'gap' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ' <span class="muted">(toi)</span>' : ''}</td>${cells}</tr>`;
+  const podium = (list, val) => list.length ? `<div class="podium">${list.slice(0, 3).map((x, i) => `<div class="p${i + 1}"><div class="pl">${i + 1}<sup>${i ? 'e' : 'er'}</sup></div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : '';
+  const tabs = {
+    points: () => `${podium(r.points, (x) => `${x.total} pts`)}
+      <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r opt">Aujourd'hui</th><th class="r opt">Trouvés</th><th class="r opt">Série</th></tr></thead><tbody>
+      ${r.points.length ? r.points.map((x) => row(x, `<td class="r big">${x.total}</td><td class="r opt">${x.today ? '+' + x.today : '–'}</td><td class="r opt">${x.found}</td><td class="r opt">${x.streak}</td>`)).join('') : empty(6)}</tbody></table>
+      <p class="rank-note">Les points s'additionnent jour après jour. Moins tu poses de questions, plus tu marques, et un joueur peu connu rapporte jusqu'à deux fois plus qu'une star. Chaque indice retire 10 %.</p>`,
+    today: () => `${podium(r.today, (x) => `${x.pts} pts`)}
+      <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r">Essais</th></tr></thead><tbody>
+      ${r.today.length ? r.today.map((x) => row(x, `<td class="r big">${x.pts}</td><td class="r">${x.n}</td>`)).join('') : empty(4)}</tbody></table>`,
+    streaks: () => `${podium(r.streaks, (x) => `${x.streak} jour${x.streak > 1 ? 's' : ''}`)}
+      <div class="rank-wrap"><table class="rank"><caption>Séries en cours</caption><thead><tr><th>#</th><th>Joueur</th><th class="r">Jours</th></tr></thead><tbody>
+      ${r.streaks.length ? r.streaks.map((x) => row(x, `<td class="r big">${x.streak}</td>`)).join('') : empty(3)}</tbody></table>
+      <table class="rank"><caption>Records</caption><thead><tr><th>#</th><th>Joueur</th><th class="r">Jours</th></tr></thead><tbody>
+      ${r.records.length ? r.records.map((x) => row(x, `<td class="r">${x.best}</td>`)).join('') : empty(3)}</tbody></table></div>
+      <p class="rank-note">Une série, c'est le nombre de jours d'affilée où tu as trouvé le joueur. Un jour sans, ou un abandon, et elle repart de zéro.</p>`,
+  };
+  const names = { points: 'Général', today: "Aujourd'hui", streaks: 'Séries' };
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">Les habitués</div><h1>Classement</h1><p>Seuls les joueurs avec un compte apparaissent ici.</p></div></div>
-    <div class="cols">
-      ${tbl('Plus longues séries en cours', r.streaks.filter((x) => x.streak > 0), (x) => `${x.streak} j`)}
-      ${tbl('Joueurs trouvés', r.found, (x) => x.found)}
-      ${tbl("Les plus rapides aujourd'hui", r.today, (x) => `${x.n} essai${x.n > 1 ? 's' : ''}`)}
-    </div>`;
+    <div class="pagehead"><div><div class="kicker">${r.players} joueur${r.players > 1 ? 's' : ''} classé${r.players > 1 ? 's' : ''}</div><h1>Classement</h1><p>${me.user ? `Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${me.user.streak > 1 ? 's' : ''}</b>.` : `Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`}</p></div></div>
+    <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div id="tab"></div>`;
+  const show = () => {
+    $('#tab').innerHTML = tabs[RANK_TAB]();
+    app.querySelectorAll('.board-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === RANK_TAB));
+  };
+  app.querySelectorAll('.board-tabs button').forEach((b) => { b.onclick = () => { RANK_TAB = b.dataset.tab; show(); }; });
+  show();
 }
 
 // ——— Page : compte ———
@@ -516,6 +541,8 @@ function pageRules() {
     <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
     <div class="prose">
       <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort parmi 600 internationaux, légendes ou joueurs actuels, qui ont tous passé au moins trois saisons en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et un joueur ne revient pas avant que presque tous les autres soient passés.</p>
+      <h2>Les points</h2>
+      <p>Trouver le joueur rapporte des points&nbsp;: 100 si tu le trouves du premier coup, puis un peu moins à chaque essai (jamais moins de 10). Chaque indice demandé retire 10&nbsp;%. Enfin, la rareté multiplie le tout&nbsp;: une star comme Zidane compte ×1, un joueur méconnu jusqu'à ×2. Abandonner ne rapporte rien. Les points s'additionnent jour après jour dans le classement général.</p>
       <h2>La carte</h2>
       <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta meilleure température.</p>
       <h2>Deux façons de chercher</h2>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>try { if (localStorage.getItem('theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (e) {}</script>
+<script>var t = 'light'; try { t = localStorage.getItem('theme') || 'light'; } catch (e) {} if (t !== 'dark') document.documentElement.dataset.theme = 'light';</script>
 <title>Footix · le joueur mystère du jour</title>
 <meta name="description" content="Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">

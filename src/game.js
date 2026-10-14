@@ -244,7 +244,7 @@ function dayIndex(day) {
 function dayFromIndex(i) {
   return new Date(Date.parse(LAUNCH + 'T00:00:00Z') + i * 86400000).toISOString().slice(0, 10);
 }
-const score = (day, id) => crypto.createHmac('sha256', SECRET).update(day + ':' + id).digest().readUInt32BE(0);
+const drawScore = (day, id) => crypto.createHmac('sha256', SECRET).update(day + ':' + id).digest().readUInt32BE(0);
 // Tirage au sort fixe pour chaque date : le joueur qui obtient le plus petit « ticket »
 // parmi ceux qui ne sont pas tombés récemment. Aucun joueur ne revient avant d'avoir vu passer presque tous les autres.
 const picks = [];
@@ -258,7 +258,7 @@ function playerOfDay(day) {
     let best = null, bestScore = Infinity;
     for (const id of IDS) {
       if (recent.has(id)) continue;
-      const s = score(d, id);
+      const s = drawScore(d, id);
       if (s < bestScore) { bestScore = s; best = id; }
     }
     picks.push(best);
@@ -284,6 +284,21 @@ function hintText(p, k) {
     `Initiales : ${initials(p)}`,
     p.fact ? `Anecdote : ${p.fact}` : `Anecdote : il a connu ${new Set(p.clubs.map((c) => c.id)).size} clubs, dont ${p.clubs[p.clubs.length - 1].club} en dernier.`,
   ][k];
+}
+
+// ——— Points du jour ———
+// Moins d'essais = plus de points ; un joueur peu connu rapporte jusqu'à deux fois plus.
+function rarity(p) {
+  const sorted = [...PLAYERS].sort((a, b) => (b.links || 0) - (a.links || 0));
+  const i = Math.max(0, sorted.findIndex((x) => x.id === p.id));
+  const pct = sorted.length > 1 ? i / (sorted.length - 1) : 0;
+  return { mult: Math.round((1 + pct) * 100) / 100, stars: Math.min(5, 1 + Math.floor(pct * 5)) };
+}
+function score(p, guesses, hints) {
+  const base = Math.max(10, Math.round(100 * 0.93 ** (guesses - 1)));
+  const help = Math.max(0.3, 1 - 0.1 * hints);
+  const r = rarity(p);
+  return { points: Math.round(base * help * r.mult), base, help, mult: r.mult, stars: r.stars, guesses, hints };
 }
 
 // ——— La carte du joueur mystère, remplie avec ce que le joueur a découvert ———
@@ -370,5 +385,5 @@ function catalog() {
 
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
-  setPool, resolve, compare, askClue, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
+  setPool, resolve, score, rarity, compare, askClue, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
 };

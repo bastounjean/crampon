@@ -44,4 +44,7 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE INDEX IF NOT EXISTS games_day ON games(day, status);
 `);
 
+// points gagnés le jour où le joueur est trouvé (ajouté après coup)
+try { db.exec('ALTER TABLE games ADD COLUMN points INTEGER'); } catch { /* déjà là */ }
+
 module.exports = db;

@@ -1,5 +1,5 @@
 :root {
-  /* thème sombre par défaut */
+  /* thème sombre (le clair, par défaut, est posé par la page) */
   --paper: #12110e;
   --paper-2: #1d1b17;
   --card: #1a1814;
@@ -206,6 +206,26 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
 
 /* ——— Classement ——— */
 .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+.board-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--ink); margin-bottom: 18px; flex-wrap: wrap; }
+.board-tabs button { background: none; border: 0; padding: 8px 16px 7px; cursor: pointer; font-weight: 700; font-stretch: 85%; text-transform: uppercase; letter-spacing: .04em; font-size: 14px; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.board-tabs button.on { color: var(--ink); border-bottom-color: var(--red); }
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--ink); margin-bottom: 18px; }
+.podium > div { padding: 14px 16px; border-left: 1px solid var(--hair); }
+.podium > div:first-child { border-left: 0; }
+.podium .pl { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.podium .nm { font-size: 22px; font-weight: 800; font-stretch: 75%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.podium .pt { font-family: var(--mono); font-size: 15px; }
+.podium .p1 .nm { color: var(--red); }
+.rank-wrap { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 34px; align-items: start; }
+.rank th { text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 0 4px 6px; border-bottom: 2px solid var(--ink); }
+.rank th.r, .rank td.r { text-align: right; font-family: var(--mono); }
+.rank tr.me td { background: var(--paper-2); font-weight: 700; }
+.rank tr.gap td { border-top: 2px dotted var(--hair); }
+.rank td.big { font-weight: 700; font-size: 16px; }
+.rank-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.scorebox { display: inline-flex; gap: 14px; align-items: baseline; margin-top: 12px; padding: 8px 14px; border: 1px solid var(--ink); }
+.scorebox .pts { font: 700 30px/1 var(--mono); color: var(--red); }
+.scorebox .det { font-size: 13px; color: var(--muted); text-align: left; }
 .rank { width: 100%; border-collapse: collapse; font-size: 15px; }
 .rank caption { text-align: left; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
 .rank td { padding: 6px 4px; border-bottom: 1px solid var(--hair); }
@@ -232,6 +252,13 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
   .game { grid-template-columns: 1fr; }
   .game > aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--ink); padding-top: 18px; margin-top: 24px; }
   .cols { grid-template-columns: 1fr; }
+  .rank-wrap { grid-template-columns: 1fr; }
+  .podium { grid-template-columns: 1fr; }
+  .podium > div { border-left: 0; border-top: 1px solid var(--hair); }
+  .podium > div:first-child { border-top: 0; }
+  .rank .opt { display: none; }
+  .theme span { display: none; }
+  .who .streak { white-space: nowrap; }
   .infobox { float: none; width: 100%; margin: 0 0 16px; }
 }
 @media (max-width: 600px) {

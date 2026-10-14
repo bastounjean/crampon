@@ -79,7 +79,8 @@ function streakOf(userId) {
 
 function publicUser(req) {
   if (!req.user) return null;
-  return { username: req.user.username, ...streakOf(req.user.id) };
+  const points = db.prepare("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'").get(req.user.id).p;
+  return { username: req.user.username, points, ...streakOf(req.user.id) };
 }
 
 function dayStats(day) {
@@ -109,6 +110,7 @@ function state(req) {
     answer: over ? G.card(target) : null,
     card: G.revealCard(target, g.guesses, g.hints, over),
     rank, stats: dayStats(day),
+    score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
     yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: dayStats(G.dayFromIndex(idx - 1)) } : null,
     user: publicUser(req),
   };
@@ -139,8 +141,9 @@ app.post('/api/guess', (req, res) => {
   }
   g.guesses.push(entry);
   const won = r.type === 'player' && r.player.id === target.id;
-  db.prepare(`UPDATE games SET guesses = ?, status = ?, finished_at = ${won ? "strftime('%Y-%m-%d %H:%M:%f','now')" : 'finished_at'} WHERE id = ?`)
-    .run(JSON.stringify(g.guesses), won ? 'won' : 'playing', g.id);
+  const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;
+  db.prepare(`UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ${won ? "strftime('%Y-%m-%d %H:%M:%f','now')" : 'finished_at'} WHERE id = ?`)
+    .run(JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, g.id);
   res.json({ ...state(req), last: entry.n });
 });
 
@@ -202,15 +205,25 @@ app.get('/api/album', (req, res) => {
 });
 
 app.get('/api/leaderboard', (req, res) => {
-  const users = db.prepare("SELECT u.id, u.username, COUNT(g.id) found, AVG(json_array_length(g.guesses)) avg FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id").all();
-  const rows = users.map((u) => ({ username: u.username, found: u.found, avg: Math.round(u.avg), ...streakOf(u.id) }));
   const day = G.today();
-  const fastest = db.prepare("SELECT u.username, json_array_length(g.guesses) n FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY n, g.finished_at LIMIT 10").all(day);
-  res.json({
-    streaks: [...rows].sort((a, b) => b.streak - a.streak || b.found - a.found).slice(0, 20),
-    found: [...rows].sort((a, b) => b.found - a.found || a.avg - b.avg).slice(0, 20),
-    today: fastest,
-  });
+  const users = db.prepare(`SELECT u.id, u.username, COALESCE(SUM(g.points), 0) total, COUNT(g.id) found,
+      COALESCE(SUM(CASE WHEN g.day = ? THEN g.points END), 0) today
+    FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id`).all(day);
+  const rows = users.map((u) => ({ id: u.id, username: u.username, total: u.total, found: u.found, today: u.today, ...streakOf(u.id) }));
+  const me = req.user ? req.user.id : null;
+  const ranked = (list, key) => list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === me }));
+  const top = (list, n) => {
+    const out = list.slice(0, n);
+    const mine = list.find((x) => x.me);
+    if (mine && mine.rank > n) out.push({ ...mine, gap: true });
+    return out.map(({ id, ...x }) => x);
+  };
+  const points = ranked([...rows].sort((a, b) => b.total - a.total || b.found - a.found || a.username.localeCompare(b.username)));
+  const streaks = ranked(rows.filter((x) => x.streak > 0).sort((a, b) => b.streak - a.streak || b.total - a.total));
+  const records = ranked([...rows].sort((a, b) => b.best - a.best || b.total - a.total));
+  const today = ranked(db.prepare(`SELECT u.id, u.username, g.points pts, json_array_length(g.guesses) n
+      FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY g.points DESC, g.finished_at`).all(day));
+  res.json({ points: top(points, 50), streaks: top(streaks, 20), records: top(records, 10), today: top(today, 20), players: rows.length });
 });
 
 // ——— Comptes ———
