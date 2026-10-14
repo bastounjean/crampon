@@ -43,13 +43,13 @@ function renderWho(user, ed) {
   ME = user;
   if (ed) renderEdition(ed);
   $('#who').innerHTML = user
-    ? `<span><b>${esc(user.username)}</b></span><span class="streak" title="Tes points cumulés et ta série de jours d'affilée"><a href="/classement" data-link>${user.points} pts</a> · Série ${user.streak}</span><button class="linkbtn" id="logout">Déconnexion</button>`
-    : `<a href="/compte" data-link>Se connecter</a>`;
+    ? `<a class="pts" href="/classement" data-link title="Tes points cumulés et ta série"><b>${user.points}</b> pts · série <b>${user.streak}</b></a><a class="me" href="/compte" data-link>${esc(user.username)}</a>`
+    : `<a class="login" href="/compte" data-link>Se connecter</a>`;
   const lo = $('#logout');
   if (lo) lo.onclick = async () => { await api('logout', {}); go('/'); };
 }
 function renderEdition(st) {
-  $('#edition').innerHTML = `<b>N° ${st.number}</b><br>${esc(fmtDate(st.day))}`;
+  $('#edition').innerHTML = `<b>N° ${st.number}</b> · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}`;
 }
 
 // ——— Routeur ———
@@ -62,7 +62,7 @@ window.addEventListener('popstate', route);
 
 async function route() {
   const p = location.pathname;
-  document.querySelectorAll('.mast-sub nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p));
   window.scrollTo(0, 0);
   clearInterval(window.__tick);
   try {
@@ -512,8 +512,16 @@ async function pageRank() {
 }
 
 // ——— Page : compte ———
-function pageAuth() {
-  api('me').then((m) => renderWho(m.user, m));
+async function pageAuth() {
+  const m = await api('me');
+  renderWho(m.user, m);
+  if (m.user) {
+    app.innerHTML = `
+      <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>${esc(m.user.username)}</h1><p><b>${m.user.points}</b> points · <b>${m.user.found}</b> joueur${m.user.found > 1 ? 's' : ''} trouvé${m.user.found > 1 ? 's' : ''} · série de <b>${m.user.streak}</b> jour${m.user.streak > 1 ? 's' : ''} (record ${m.user.best})</p></div></div>
+      <p><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/classement" data-link>Classement</a> <button class="btn" id="logout">Se déconnecter</button></p>`;
+    $('#logout').onclick = async () => { await api('logout', {}); go('/'); };
+    return;
+  }
   app.innerHTML = `
     <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>Compte</h1><p>Un pseudo et un mot de passe suffisent. Ta partie du jour te suit.</p></div></div>
     <div class="auth">
