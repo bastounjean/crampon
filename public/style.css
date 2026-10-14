@@ -114,11 +114,16 @@ aside section { margin-bottom: 28px; }
 .daystats b { font-family: var(--mono); }
 .nudge { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 10px 0; font-size: 14px; margin-top: 22px; }
 
-.won { border: 2px solid var(--ink); padding: 18px 20px; margin-bottom: 20px; background: #fffdf8; display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; }
-.won.lost { border-color: var(--red); }
-.won h2 { font-size: 34px; font-weight: 900; font-stretch: 70%; text-transform: uppercase; }
-.won p { margin: 4px 0 0; font-family: var(--serif); }
-.won .actions { display: flex; flex-direction: column; gap: 8px; }
+.end { text-align: center; margin-bottom: 22px; }
+.end h1 { font-size: 46px; font-weight: 900; font-stretch: 70%; text-transform: uppercase; line-height: .95; margin-top: 6px; }
+.end h1 span { display: block; font-size: 18px; font-weight: 700; font-stretch: 80%; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+.end p { font-family: var(--serif); font-size: 17px; margin: 10px 0 0; }
+.end-act { display: flex; gap: 10px 14px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 14px; font-size: 14px; }
+.end.late, .path.late { animation: endIn .5s 1.9s both; }
+@keyframes endIn { from { opacity: 0; transform: translateY(6px); } }
+#fcard.spinning { perspective: 900px; }
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+.logo span { text-transform: none; color: var(--red); font-size: .42em; letter-spacing: 0; margin-left: 2px; }
 .countdown { font-family: var(--mono); }
 
 /* ——— Fiche joueur, façon Wikipédia ——— */
@@ -208,7 +213,7 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
   .logo { font-size: 46px; }
   .intro h1 { font-size: 30px; }
   .board .bar { display: none; }
-  .won { grid-template-columns: 1fr; }
+  .end h1 { font-size: 34px; }
   .auth { grid-template-columns: 1fr; }
   .auth form + form { border-left: 0; border-top: 2px solid var(--ink); }
   .wiki { padding: 14px; }

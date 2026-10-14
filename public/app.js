@@ -103,6 +103,48 @@ function suggest(q) {
 
 // ——— Page : jeu ———
 let ST = null;
+let PLAYING = false;
+
+// la carte tourne sur elle-même, puis se retourne sur le joueur
+function spinReveal(box, oldHtml) {
+  const fresh = box.innerHTML;
+  box.innerHTML = oldHtml;
+  const el = box.firstElementChild;
+  if (!el.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) { box.innerHTML = fresh; return; }
+  box.classList.add('spinning');
+  el.animate([{ transform: 'rotateY(0)' }, { transform: 'rotateY(990deg)' }], { duration: 1300, easing: 'cubic-bezier(.5,0,.9,.6)' }).onfinish = () => {
+    box.innerHTML = fresh;
+    box.firstElementChild.animate([{ transform: 'rotateY(-90deg)' }, { transform: 'rotateY(0)' }], { duration: 650, easing: 'cubic-bezier(.2,.9,.3,1.15)' })
+      .onfinish = () => box.classList.remove('spinning');
+  };
+}
+
+// confettis, dessinés à la main sur un canevas
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const c = document.createElement('canvas');
+  c.className = 'confetti';
+  document.body.appendChild(c);
+  const x = c.getContext('2d');
+  const W = (c.width = innerWidth), H = (c.height = innerHeight);
+  const cols = ['#c4371d', '#d8bb62', '#1f5f3f', '#2f5d8a', '#15140f', '#ecd88f'];
+  const bits = Array.from({ length: 160 }, (_, i) => ({
+    x: W / 2 + (Math.random() - .5) * 120, y: H * .45,
+    vx: (Math.random() - .5) * 16, vy: -Math.random() * 15 - 6,
+    w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - .5) * .4,
+    c: cols[i % cols.length],
+  }));
+  const t0 = performance.now();
+  (function frame(t) {
+    x.clearRect(0, 0, W, H);
+    for (const b of bits) {
+      b.vy += .38; b.vx *= .985; b.x += b.vx; b.y += b.vy; b.r += b.vr;
+      x.save(); x.translate(b.x, b.y); x.rotate(b.r); x.scale(1, Math.cos(b.r * 2));
+      x.fillStyle = b.c; x.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); x.restore();
+    }
+    if (t - t0 < 3500) requestAnimationFrame(frame); else c.remove();
+  })(t0);
+}
 async function pageGame() {
   const [st] = await Promise.all([api('today'), catalog()]);
   ST = st;
@@ -111,8 +153,8 @@ async function pageGame() {
   app.innerHTML = `
     <div class="game">
       <div class="left">
-        <div id="banner"></div>
         <div class="hero">
+          <div id="banner"></div>
           <div class="intro">
             <div class="kicker">Le joueur mystère n° ${st.number}</div>
             <h1>Qui se cache derrière le maillot&nbsp;?</h1>
@@ -199,8 +241,14 @@ function drawGame(lastN) {
   // carte et jauge
   const best = st.guesses.reduce((m, g) => (g.temp > (m?.temp ?? -1) ? g : m), null);
   const t = best ? best.temp : 0;
+  const prevCard = $('#fcard').innerHTML;
+  const justEnded = PLAYING && over; // la partie vient de se terminer sous les yeux du joueur
+  PLAYING = !over;
   $('#fcard').innerHTML = fifaCard(st.card, best ? t : '?', st.status === 'won');
+  if (justEnded && st.status === 'gaveup' && prevCard) spinReveal($('#fcard'), prevCard);
+  if (justEnded && st.status === 'won') confetti();
   $('#path').innerHTML = clubPath(st.card.path, over);
+  if (justEnded && st.status === 'gaveup') $('#path').firstElementChild?.classList.add('late');
   $('#gauge').innerHTML = `<h3>Ta jauge</h3>
     <div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
@@ -211,11 +259,15 @@ function drawGame(lastN) {
   if (over) {
     const a = st.answer;
     const n = st.guesses.length;
-    $('#banner').innerHTML = st.status === 'won'
-      ? `<div class="won"><div><div class="kicker">Trouvé</div><h2>${esc(a.name)}</h2><p>En ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
-         <div class="actions"><button class="btn solid" id="share">Partager</button><a class="btn" href="/album" data-link>Mon album</a></div></div>`
-      : `<div class="won lost"><div><div class="kicker">Abandon</div><h2>${esc(a.name)}</h2><p>C'était lui. Ce joueur ne rejoindra pas ton album.</p><p class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></p></div>
-         <div class="actions"><a class="btn" href="/album" data-link>Mon album</a></div></div>`;
+    const won = st.status === 'won';
+    $('#banner').innerHTML = `<div class="end ${won ? '' : 'lost'} ${justEnded && !won ? 'late' : ''}">
+      <div class="kicker">Le joueur mystère n° ${st.number}</div>
+      <h1><span>Le joueur du jour est</span> ${esc(a.name)}</h1>
+      <p>${won
+        ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`
+        : `Tu as abandonné : il ne rejoindra pas ton album.`}</p>
+      <div class="end-act">${won ? '<button class="btn solid" id="share">Partager</button>' : ''}<a class="btn" href="/album" data-link>Mon album</a><span class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></span></div>
+    </div>`;
     tick();
     const sh = $('#share');
     if (sh) sh.onclick = share;
