@@ -243,7 +243,59 @@ async function fetchPlayers(ids, { batch = 60, log = () => {} } = {}) {
     log(`  ${Math.min(i + batch, ids.length)}/${ids.length}`);
     await sleep(800);
   }
+  await addFacts(all, log);
   return all;
 }
 
-module.exports = { fetchPoolIds, fetchPlayers, posCode };
+// ——— Anecdote : une phrase de l'introduction Wikipédia, nom du joueur masqué ———
+const strip = (x) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const STRONG = /(illustr|inscri|expuls|carton rouge|anecdote|insolite|unique|surprise|record|premier joueur|premier footballeur|seul joueur|plus jeune|plus vieux|meilleur buteur|meilleur passeur|surnomm|légende|légendaire|considéré|célèbre|connu pour|réputé|historique|élu|ballon d'or|soulier d'or|coupe du monde|ligue des champions|euro|triplé|doublé|capitaine|emblématique|icône|carrière|remport|vainqueur|champion|finale)/gi;
+
+function pickFact(p, text) {
+  if (!text) return null;
+  const words = [...new Set([p.name, ...(p.aliases || []), p.title || ''].join(' ').split(/[\s,()'’-]+/).filter((w) => w.length >= 3))]
+    .sort((a, b) => b.length - a.length);
+  const sents = text.replace(/\s+/g, ' ').replace(/\([^()]*\)/g, '').replace(/\s+([,.])/g, '$1')
+    .split(/(?<=[.!?])\s+(?=[A-ZÉÈÀÂ«])/).map((x) => x.trim()).filter(Boolean);
+  let best = null, bestScore = -1;
+  sents.forEach((sent, i) => {
+    if (i === 0) return; // la première phrase donne poste et nationalité : déjà dans les autres indices
+    if (sent.length < 50 || sent.length > 280) return;
+    let masked = sent;
+    for (const w of words) masked = masked.replace(new RegExp(`(?<![\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'giu'), '…');
+    masked = masked.replace(/…(\s*…)+/g, '…');
+    // reste-t-il un morceau du nom (accents ou non) ?
+    if (words.some((w) => w.length >= 4 && strip(masked).includes(strip(w)))) return;
+    const score = (sent.match(STRONG) || []).length * 3 + (/\d/.test(sent) ? 1 : 0) - i * 0.2;
+    if (score > bestScore) { best = masked; bestScore = score; }
+  });
+  return best;
+}
+
+async function addFacts(players, log = () => {}) {
+  const byTitle = {};
+  for (const p of players) if (p.title) byTitle[p.title] = p;
+  const titles = Object.keys(byTitle);
+  let n = 0;
+  for (let i = 0; i < titles.length; i += 20) {
+    const chunk = titles.slice(i, i + 20);
+    const url = `https://fr.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&redirects=1&prop=extracts&exintro=1&explaintext=1&exlimit=20&titles=${encodeURIComponent(chunk.join('|'))}`;
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(60000) });
+      if (!r.ok) continue;
+      const q = (await r.json()).query || {};
+      const back = {};
+      for (const m of [...(q.normalized || []), ...(q.redirects || [])]) back[m.to] = back[m.from] || m.from;
+      for (const pg of q.pages || []) {
+        const p = byTitle[pg.title] || byTitle[back[pg.title]];
+        if (!p) continue;
+        const f = pickFact(p, pg.extract);
+        if (f) { p.fact = f; n++; }
+      }
+    } catch (e) { /* pas d'anecdote pour ce lot */ }
+    await sleep(300);
+  }
+  log(`  anecdotes : ${n}/${players.length}`);
+}
+
+module.exports = { fetchPoolIds, fetchPlayers, posCode, pickFact };

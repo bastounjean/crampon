@@ -19,7 +19,9 @@ const fmtDate = (d, opts = { weekday: 'long', day: 'numeric', month: 'long', yea
 
 // ——— Température ———
 function heat(t) {
-  const stops = [[0, [47, 93, 138]], [35, [120, 130, 120]], [60, [185, 130, 28]], [100, [196, 55, 29]]];
+  const stops = document.documentElement.dataset.theme === 'light'
+    ? [[0, [47, 93, 138]], [35, [120, 130, 120]], [60, [185, 130, 28]], [100, [196, 55, 29]]]
+    : [[0, [111, 159, 214]], [35, [150, 160, 150]], [60, [217, 164, 65]], [100, [228, 92, 60]]];
   let a = stops[0], b = stops[stops.length - 1];
   for (let i = 0; i < stops.length - 1; i++) if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; }
   const k = (t - a[0]) / (b[0] - a[0] || 1);
@@ -77,29 +79,6 @@ async function route() {
   }
 }
 
-// ——— Catalogue pour l'autocomplétion ———
-let CAT = null;
-async function catalog() {
-  if (!CAT) CAT = await api('catalog');
-  return CAT;
-}
-function suggest(q) {
-  const n = norm(q);
-  if (n.length < 2) return [];
-  const score = (keys) => {
-    let best = 0;
-    for (const k of keys) {
-      if (k === n) best = Math.max(best, 4);
-      else if (k.startsWith(n)) best = Math.max(best, 3);
-      else if (k.split(' ').some((w) => w.startsWith(n))) best = Math.max(best, 2);
-      else if (n.length >= 3 && k.includes(n)) best = Math.max(best, 1);
-    }
-    return best;
-  };
-  const players = CAT.players.map((p) => ({ type: 'player', id: p.id, label: p.name, kind: p.sub, s: score(p.keys) })).filter((x) => x.s);
-  const clues = CAT.clues.map((c) => ({ type: 'clue', id: c.id, label: c.label, kind: c.kind, s: score(c.terms) })).filter((x) => x.s);
-  return [...players, ...clues].sort((a, b) => b.s - a.s || (a.type === 'player' ? -1 : 1) || a.label.localeCompare(b.label, 'fr')).slice(0, 9);
-}
 
 // ——— Page : jeu ———
 let ST = null;
@@ -119,6 +98,21 @@ function spinReveal(box, oldHtml) {
   };
 }
 
+// thème : sombre par défaut, clair au choix (mémorisé dans le navigateur)
+function initTheme() {
+  const b = $('#theme');
+  const label = () => { b.textContent = document.documentElement.dataset.theme === 'light' ? '◐ Mode sombre' : '◑ Mode clair'; };
+  b.onclick = () => {
+    const light = document.documentElement.dataset.theme !== 'light';
+    if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+    try { localStorage.setItem('theme', light ? 'light' : 'dark'); } catch (e) {}
+    label();
+    if (ST && $('#gauge')) drawGame();
+  };
+  label();
+}
+initTheme();
+
 // confettis, dessinés à la main sur un canevas
 function confetti() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -127,7 +121,7 @@ function confetti() {
   document.body.appendChild(c);
   const x = c.getContext('2d');
   const W = (c.width = innerWidth), H = (c.height = innerHeight);
-  const cols = ['#c4371d', '#d8bb62', '#1f5f3f', '#2f5d8a', '#15140f', '#ecd88f'];
+  const cols = ['#c4371d', '#d8bb62', '#1f5f3f', '#2f5d8a', getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(), '#ecd88f'];
   const bits = Array.from({ length: 160 }, (_, i) => ({
     x: W / 2 + (Math.random() - .5) * 120, y: H * .45,
     vx: (Math.random() - .5) * 16, vy: -Math.random() * 15 - 6,
@@ -146,7 +140,7 @@ function confetti() {
   })(t0);
 }
 async function pageGame() {
-  const [st] = await Promise.all([api('today'), catalog()]);
+  const st = await api('today');
   ST = st;
   renderWho(st.user);
   renderEdition(st);
@@ -166,10 +160,9 @@ async function pageGame() {
         </div>
         <div class="search" id="search">
           <form autocomplete="off">
-            <input id="q" placeholder="Zidane, Ligue 1, Brésil, attaquant, années 90…" aria-label="Ta proposition" spellcheck="false">
+            <input id="q" placeholder="Écris ici" aria-label="Ta proposition" spellcheck="false" autocapitalize="off" autocorrect="off">
             <button>Tenter</button>
           </form>
-          <ul class="sugg" id="sugg" hidden></ul>
         </div>
         <div class="msg" id="msg"></div>
         <div id="reveal"></div>
@@ -349,42 +342,25 @@ async function share() {
 }
 
 function bindSearch() {
-  const input = $('#q'), list = $('#sugg'), msg = $('#msg');
-  let items = [], sel = 0;
-  const draw = () => {
-    list.hidden = !items.length;
-    list.innerHTML = items.map((it, i) => `<li class="${i === sel ? 'on' : ''}" data-i="${i}"><span>${esc(it.label)}</span><span class="k">${esc(it.kind)}</span></li>`).join('');
-  };
-  input.addEventListener('input', () => { items = suggest(input.value); sel = 0; draw(); msg.textContent = ''; });
-  input.addEventListener('keydown', (e) => {
-    if (list.hidden) return;
-    if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
-    if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
-    if (e.key === 'Escape') { items = []; draw(); }
-  });
-  list.addEventListener('mousedown', (e) => {
-    const li = e.target.closest('li');
-    if (li) { e.preventDefault(); submit(items[+li.dataset.i]); }
-  });
-  input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 100));
-  $('#search form').addEventListener('submit', (e) => {
+  const input = $('#q'), msg = $('#msg');
+  input.addEventListener('input', () => { msg.textContent = ''; });
+  $('#search form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    submit(items.length ? items[sel] : { q: input.value });
-  });
-  async function submit(it) {
-    if (!it || (!it.id && !it.q?.trim())) return;
+    const q = input.value.trim();
+    if (!q) return;
     try {
-      const st = await api('guess', it.id ? { type: it.type, id: it.id } : { q: it.q });
+      const st = await api('guess', { q });
       ST = st;
-      input.value = ''; items = []; draw();
+      input.value = '';
       msg.textContent = st.dup ? `Déjà proposé (essai n° ${st.dup}).` : '';
       if (st.status === 'won') renderWho(st.user);
       drawGame(st.dup || st.last);
       if (st.status === 'playing') input.focus();
     } catch (err) {
       msg.textContent = err.message;
+      input.select();
     }
-  }
+  });
   input.focus();
 }
 

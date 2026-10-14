@@ -115,14 +115,15 @@ function state(req) {
 }
 
 // ——— API jeu ———
-app.get('/api/catalog', (req, res) => { res.set('Cache-Control', 'public, max-age=3600'); res.json(G.catalog()); });
 app.get('/api/today', (req, res) => res.json(state(req)));
 
 app.post('/api/guess', (req, res) => {
   const day = G.today();
   const target = G.playerOfDay(day);
-  const r = G.resolve(req.body || {});
-  if (!r) return res.status(400).json({ error: "Je ne connais pas ce joueur ni cet indice. Choisis une proposition dans la liste." });
+  const q = String((req.body || {}).q || '').slice(0, 80);
+  const r = G.resolve({ q });
+  if (!r) return res.status(400).json({ error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` });
+  if (r.error) return res.status(400).json({ error: r.error });
   const g = getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'La partie du jour est terminée.' });
   const key = r.type === 'player' ? r.player.id : r.clue.id;

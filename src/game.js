@@ -97,20 +97,91 @@ function buildClues() {
   add('act:1', 'Toujours en activité', 'Carrière', ['en activite', 'actif', 'joue encore'], (p) => p.active, 12);
   add('act:0', 'Retraité', 'Carrière', ['retraite', 'a la retraite', 'legende'], (p) => !p.active, 12);
   CLUE_BY_ID = Object.fromEntries(CLUES.map((c) => [c.id, c]));
+  buildIndex();
 }
 
-// ——— Résolution d'une saisie ———
-function resolve({ type, id, q }) {
-  if (type === 'player' && BY_ID[id] && IDS.includes(id)) return { type: 'player', player: BY_ID[id] };
-  if (type === 'clue' && CLUE_BY_ID[id]) return { type: 'clue', clue: CLUE_BY_ID[id] };
-  const n = norm(q || '');
-  if (!n) return null;
-  let p = PLAYERS.find((x) => norm(x.name) === n) || PLAYERS.find((x) => x.keys.includes(n));
-  if (!p && LAST[n]) p = BY_ID[LAST[n]];
+// ——— Résolution d'une saisie (texte libre, sans liste de suggestions) ———
+// Les villes renvoient vers leur club : « Marseille » → Olympique de Marseille.
+const GENERIC = new Set('fc cf ac as ss ssc us ogc rc sc cd rcd sv vfb vfl tsg afc sad club football futbol fussball calcio de du des la le les l d el del di olympique stade real sporting united city athletic atletico racing borussia hotspur wanderers rovers albion county town inter internazionale deportivo sociedad union associazione sportiva societa associacao sport clube esporte spor kulubu sk ks fk nk gnk hnk cska psv afc ajax bv'.split(' '));
+const CITY_ADJ = { lyonnais: 'lyon', rennais: 'rennes', brestois: 'brest', lavallois: 'laval', niortais: 'niort', bastiais: 'bastia', ajaccien: 'ajaccio', nancy: 'nancy', lorient: 'lorient', munchen: 'munich', torino: 'turin', napoli: 'naples', roma: 'rome', firenze: 'florence', genova: 'genes', milano: 'milan', sevilla: 'seville', barcelona: 'barcelone', lisboa: 'lisbonne', koln: 'cologne', '1 fc koln': 'cologne' };
+const CITY_EXTRA = { 'juventus fc': ['turin'], 'arsenal fc': ['londres', 'london'], 'chelsea fc': ['londres', 'london'], 'tottenham hotspur fc': ['londres', 'london'], 'west ham united fc': ['londres', 'london'], 'fulham fc': ['londres', 'london'], 'crystal palace fc': ['londres', 'london'], 'queens park rangers fc': ['londres', 'london'], 'everton fc': ['liverpool'], 'paris saint germain fc': ['paris'], 'fc internazionale milano': ['milan'], 'inter milan': ['milan'] };
+let CITY = {}, FUZZY = [], CLUB_FANS = {};
+
+function buildIndex() {
+  CLUB_FANS = {};
+  for (const p of PLAYERS) for (const id of new Set(p.clubs.map((c) => c.id))) CLUB_FANS[id] = (CLUB_FANS[id] || 0) + 1;
+  CITY = {};
+  const addCity = (t, id) => { if (t.length >= 4 && !GENERIC.has(t)) (CITY[t] = CITY[t] || new Set()).add(id); };
+  for (const [id, name] of Object.entries(CLUB_NAMES)) {
+    const n = norm(name);
+    const words = n.split(' ').filter((w) => !GENERIC.has(w) && !/^\d+$/.test(w));
+    words.forEach((w) => addCity(CITY_ADJ[w] || w, id));
+    if (words.length > 1) addCity(words.join(' '), id); // « saint etienne », « bayer leverkusen »
+    for (const c of CITY_EXTRA[n] || []) addCity(c, id);
+  }
+  FUZZY = [];
+  for (const p of PLAYERS) for (const k of p.keys) FUZZY.push([k, 'p:' + p.id]);
+  for (const [last, id] of Object.entries(LAST)) if (id) FUZZY.push([last, 'p:' + id]);
+  for (const c of CLUES) for (const t of c.terms) FUZZY.push([t, 'c:' + c.id]);
+  for (const t of Object.keys(CITY)) FUZZY.push([t, 'v:' + t]);
+}
+
+function lev(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1); // lettres inversées
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return max + 1;
+    var prev2 = prev; prev = cur;
+  }
+  return prev[b.length];
+}
+
+// plusieurs clubs pour un même mot : on prend le plus connu s'il l'est nettement
+function pickClub(ids, word) {
+  ids = [...new Set(ids)].sort((a, b) => (CLUB_FANS[b] || 0) - (CLUB_FANS[a] || 0));
+  if (!ids.length) return null;
+  if (ids.length === 1 || (CLUB_FANS[ids[0]] || 0) >= 2 * (CLUB_FANS[ids[1]] || 0))
+    return { type: 'clue', clue: CLUE_BY_ID['club:' + ids[0]] };
+  const names = ids.slice(0, 4).map((id) => shortName(CLUB_NAMES[id]));
+  return { error: `Plusieurs clubs possibles pour « ${word} » : ${names.join(', ')}${ids.length > 4 ? ', etc' : ''}. Précise lequel.` };
+}
+
+function exact(n) {
+  const p = PLAYERS.find((x) => x.keys.includes(n)) || (LAST[n] ? BY_ID[LAST[n]] : null);
   if (p) return { type: 'player', player: p };
-  const c = CLUES.find((x) => x.terms.includes(n));
-  if (c) return { type: 'clue', clue: c };
-  return null;
+  if (LAST[n] === false) return { error: `Plusieurs joueurs s'appellent « ${n} ». Ajoute le prénom.` };
+  const cs = CLUES.filter((x) => x.terms.includes(n));
+  const clubs = [...cs.filter((c) => c.kind === 'Club').map((c) => c.id.slice(5)), ...(CITY[n] || [])];
+  const other = cs.find((c) => c.kind !== 'Club');
+  if (other) return { type: 'clue', clue: other };
+  return pickClub(clubs, n);
+}
+
+function resolve({ q }) {
+  const n = norm(q || '').replace(/^(a |au |en |le |la |l |les |joue a |a joue a |a joue au |passe par )+/, '').trim();
+  if (!n) return null;
+  const hit = exact(n);
+  if (hit) return hit;
+  // fautes de frappe : une lettre de travers jusqu'à 7 lettres, deux au-delà
+  const max = n.length < 4 ? 0 : n.length < 8 ? 1 : 2;
+  if (!max) return null;
+  let best = max + 1, terms = new Set();
+  for (const [t] of FUZZY) {
+    const d = lev(n, t, Math.min(max, best));
+    if (d < best) { best = d; terms = new Set([t]); } else if (d === best) terms.add(t);
+  }
+  if (best > max) return null;
+  const outs = [...terms].map(exact).filter(Boolean);
+  const keyOf = (r) => r.error || (r.player ? 'p' + r.player.id : 'c' + r.clue.id);
+  if (new Set(outs.map(keyOf)).size !== 1) return { error: `« ${q.trim()} » ressemble à plusieurs choses. Précise un peu.` };
+  return outs[0];
 }
 
 // ——— Proximité entre deux joueurs ———
@@ -197,7 +268,7 @@ function playerOfDay(day) {
 
 // ——— Indices débloqués au fil des essais ———
 const HINT_EVERY = 8;
-const MAX_HINTS = 6;
+const MAX_HINTS = 7;
 function bestClub(p) {
   const len = (c) => ((c.to ?? NOW_YEAR) - (c.from ?? NOW_YEAR));
   return [...p.clubs].filter((c) => c.league && !c.loan).sort((a, b) => len(b) - len(a))[0] || p.clubs[0];
@@ -211,6 +282,7 @@ function hintText(p, k) {
     `Nationalité : ${p.nat[0].name}`,
     `A joué à ${bestClub(p).club}`,
     `Initiales : ${initials(p)}`,
+    p.fact ? `Anecdote : ${p.fact}` : `Anecdote : il a connu ${new Set(p.clubs.map((c) => c.id)).size} clubs, dont ${p.clubs[p.clubs.length - 1].club} en dernier.`,
   ][k];
 }
 
