@@ -90,7 +90,7 @@ SELECT ?p ?st ?team ?teamLabel ?start ?end ?caps ?goals ?howLabel ?lg ?cc ?ccLab
   const logos = [];
   for (let i = 0; i < teamIds.length; i += 300) {
     logos.push(...await sparql(`
-SELECT ?team (SAMPLE(?logo) AS ?logo) (SAMPLE(?hex) AS ?hex) WHERE {
+SELECT ?team (GROUP_CONCAT(DISTINCT ?logo; separator="|") AS ?logos) (SAMPLE(?hex) AS ?hex) WHERE {
   VALUES ?team { ${values(teamIds.slice(i, i + 300))} }
   OPTIONAL { ?team wdt:P154 ?logo }
   OPTIONAL { ?team wdt:P6364 ?col . ?col wdt:P465 ?hex }
@@ -100,7 +100,7 @@ SELECT ?team (SAMPLE(?logo) AS ?logo) (SAMPLE(?hex) AS ?hex) WHERE {
 }
 
 const year = (d) => (d ? +d.slice(0, 4) : null);
-const YOUTH = /(espoirs|moins de|\bU-?\d{2}\b|-\d{2} ans|^équipe olympique|olympic team|\bB$|\bII$|\bC$|réserve|reserves?$|castilla|jeunes|juniors?$|youth|amateur)/i;
+const YOUTH = /(espoirs|moins de|\bU-?\d{2}\b|-\d{2} ans|^équipe olympique|olympic team|\bB$|\bII$|\bC$|réserve|reserves?$|castilla|jeunes|juniors?$|junior team|youth|amateur)/i;
 
 function posCode(label) {
   const l = (label || '').toLowerCase();
@@ -114,7 +114,14 @@ function posCode(label) {
 function build({ base, attrs, teams, logos = [] }, links = {}) {
   const P = {};
   const LOGO = {};
-  for (const r of logos) LOGO[qid(r.team)] = { logo: r.logo ? r.logo.replace(/^http:/, 'https:') : null, color: /^[0-9a-f]{6}$/i.test(r.hex || '') ? '#' + r.hex : null };
+  // plusieurs logos possibles : on évite les versions blanches ou monochromes, illisibles sur fond clair
+  const pickLogo = (all) => {
+    const l = (all || '').split('|').filter(Boolean);
+    const bad = (f) => /white|blanc|bianco|weiss|negativ|inverted|pictogram|monochrome|black|wordmark/i.test(decodeURIComponent(f));
+    const f = l.find((x) => !bad(x)) || l[0];
+    return f ? f.replace(/^http:/, 'https:') : null;
+  };
+  for (const r of logos) LOGO[qid(r.team)] = { logo: pickLogo(r.logos), color: /^[0-9a-f]{6}$/i.test(r.hex || '') ? '#' + r.hex : null };
   for (const r of base) {
     const id = qid(r.p);
     const p = P[id] || (P[id] = { id, aliases: new Set() });
