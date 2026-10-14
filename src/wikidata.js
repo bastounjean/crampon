@@ -139,7 +139,7 @@ function build({ base, attrs, teams }, links = {}) {
     if (r.lg) s.league = LEAGUE_Q[qid(r.lg)];
     if (r.cc && !s.country) s.country = { code: qid(r.cc), name: r.ccLabel };
   }
-  const isNT = (s) => s.nt || (/^(équipe d|selección|seleção|national)/i.test(s.label || '') && /football/i.test(s.label || ''));
+  const isNT = (s) => s.nt || (/^(équipe d|selección|seleção|national)/i.test(s.label || '') && /football|soccer|futbol|fútbol|fussball/i.test(s.label || ''));
   for (const s of Object.values(stints)) {
     const p = P[s.pid];
     if (isNT(s)) {

@@ -12,8 +12,9 @@ const { fetchPoolIds, fetchPlayers } = require('../src/wikidata');
   const players = await fetchPlayers(ids.map((x) => x.id), { log: console.log });
   // au moins 3 saisons dans un club des 5 grands championnats
   const big5Years = (p) => p.clubs.filter((c) => c.league).reduce((n, c) => n + Math.max(1, (c.to ?? new Date().getFullYear()) - (c.from ?? (c.to ?? 2000) - 1)), 0);
-  const eligible = players.filter((p) => big5Years(p) >= 3);
-  console.log(`${eligible.length} avec au moins 3 saisons dans les 5 grands championnats.`);
+  // et international A : écarte les entraîneurs et personnalités connus pour autre chose que leur carrière de joueur
+  const eligible = players.filter((p) => big5Years(p) >= 3 && p.nt);
+  console.log(`${eligible.length} internationaux avec au moins 3 saisons dans les 5 grands championnats.`);
   players.length = 0; players.push(...eligible);
   players.sort((a, b) => b.links - a.links);
   const kept = players.slice(0, size);
