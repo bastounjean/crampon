@@ -1,4 +1,5 @@
 process.removeAllListeners('warning'); // masque l'avertissement "SQLite expérimental" de Node 22
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -265,8 +266,17 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/me', (req, res) => res.json({ user: publicUser(req), day: G.today(), number: G.dayIndex(G.today()) + 1 }));
 
 // ——— Front ———
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: PROD ? '1h' : 0 }));
-app.get(['/', '/album', '/classement', '/compte', '/regles', '/joueur/:id'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// la page porte l'empreinte des fichiers : après une mise à jour, le navigateur recharge le nouveau code
+const PUB = path.join(__dirname, 'public');
+const stamp = (f) => require('crypto').createHash('sha1').update(fs.readFileSync(path.join(PUB, f))).digest('hex').slice(0, 10);
+const INDEX = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
+  .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
+  .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`);
+app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/joueur/:id'], (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(INDEX);
+});
+app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Crampon tourne sur http://localhost:${port}`));
