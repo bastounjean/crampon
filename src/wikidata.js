@@ -85,7 +85,18 @@ SELECT ?p ?st ?team ?teamLabel ?start ?end ?caps ?goals ?howLabel ?lg ?cc ?ccLab
   OPTIONAL { ?team wdt:P31 wd:Q6979593 . BIND(1 AS ?nt) }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "fr,en". }
 }`);
-  return { base, attrs, teams };
+  // logo et couleur des clubs (fichiers Wikimedia Commons)
+  const teamIds = [...new Set(teams.map((r) => qid(r.team)))];
+  const logos = [];
+  for (let i = 0; i < teamIds.length; i += 300) {
+    logos.push(...await sparql(`
+SELECT ?team (SAMPLE(?logo) AS ?logo) (SAMPLE(?hex) AS ?hex) WHERE {
+  VALUES ?team { ${values(teamIds.slice(i, i + 300))} }
+  OPTIONAL { ?team wdt:P154 ?logo }
+  OPTIONAL { ?team wdt:P6364 ?col . ?col wdt:P465 ?hex }
+} GROUP BY ?team`));
+  }
+  return { base, attrs, teams, logos };
 }
 
 const year = (d) => (d ? +d.slice(0, 4) : null);
@@ -100,8 +111,10 @@ function posCode(label) {
   return null;
 }
 
-function build({ base, attrs, teams }, links = {}) {
+function build({ base, attrs, teams, logos = [] }, links = {}) {
   const P = {};
+  const LOGO = {};
+  for (const r of logos) LOGO[qid(r.team)] = { logo: r.logo ? r.logo.replace(/^http:/, 'https:') : null, color: /^[0-9a-f]{6}$/i.test(r.hex || '') ? '#' + r.hex : null };
   for (const r of base) {
     const id = qid(r.p);
     const p = P[id] || (P[id] = { id, aliases: new Set() });
@@ -148,7 +161,7 @@ function build({ base, attrs, teams }, links = {}) {
       continue;
     }
     if (/^équipe d/i.test(s.label || '') || YOUTH.test(s.label || '') || /^Q\d+$/.test(s.label || '')) continue;
-    (p.clubs = p.clubs || []).push({ id: s.team, club: s.label, from: s.from, to: s.to, loan: s.loan, league: s.league, country: s.country?.name || null });
+    (p.clubs = p.clubs || []).push({ id: s.team, club: s.label, from: s.from, to: s.to, loan: s.loan, league: s.league, country: s.country?.name || null, logo: LOGO[s.team]?.logo || null, color: LOGO[s.team]?.color || null });
   }
 
   const out = [];

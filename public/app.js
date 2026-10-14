@@ -147,7 +147,24 @@ async function pageGame() {
 
 // Carte façon FIFA : vide au départ, elle se remplit avec ce que tu découvres.
 const SILHOUETTE = `<svg viewBox="0 0 200 200" class="silh" aria-hidden="true"><path d="M100 22c-21 0-35 16-35 39 0 15 6 28 15 36l-1 11c-26 6-47 18-56 32-4 7-6 17-6 30v30h166v-30c0-13-2-23-6-30-9-14-30-26-56-32l-1-11c9-8 15-21 15-36 0-23-14-39-35-39z"/></svg>`;
-const shortClub = (n) => n && n.replace(/^(FC|AS|AC|SS|SSC|US|OGC|RC|SC|CF|CD|RCD|SV|VfB|VfL|TSG|1\. FC|Olympique|Stade|Real Club|Club Atlético)\s+/i, '').replace(/\s+(FC|CF|AFC|SAD|AC|BC)$/i, '');
+const shortClub = (n) => n && n.replace(/^(FC|AS|AC|SS|SSC|US|OGC|RC|SC|CF|CD|RCD|SV|VfB|VfL|TSG|1\. FC|Olympique|Stade|Real Club|Club Atlético)\s+/i, '').replace(/\s+(FC|CF|AFC|SAD|AC|BC)$/i, '').replace(/^(de la|de|du|des) /i, '');
+// sigle de secours quand le club n'a pas de logo libre sur Wikimedia
+const crestText = (n) => (shortClub(n) || n || '?').replace(/[^\p{L}\d ]/gu, ' ').split(/\s+/).filter((w) => w.length > 1 || /\d/.test(w)).slice(0, 3).map((w) => w[0].toUpperCase()).join('') || '?';
+function crest(c) {
+  const mono = `<span class="mono" style="${c.color ? `background:${esc(c.color)};color:#fff` : ''}">${esc(crestText(c.name))}</span>`;
+  return c.logo ? `<img src="${esc(c.logo)}?width=64" alt="${esc(c.name)}" loading="lazy" onerror="this.outerHTML=this.nextElementSibling.innerHTML"><template>${mono}</template>` : mono;
+}
+function clubPath(path, over) {
+  if (!path || !path.length) return '';
+  const found = path.filter(Boolean).length;
+  return `<div class="path">
+    <div class="path-h"><span>Parcours</span><span>${found}/${path.length} club${path.length > 1 ? 's' : ''}</span></div>
+    <ol>${path.map((c, i) => c
+      ? `<li class="on" title="${esc(c.name)}">${crest(c)}</li>`
+      : `<li title="Club n°${i + 1}, pas encore trouvé"><span class="q">${i + 1}</span></li>`).join('')}</ol>
+    ${found || over ? '' : '<p class="path-tip">Chaque club trouvé (« même club ») prend sa place ici, dans l\'ordre de sa carrière.</p>'}
+  </div>`;
+}
 function fifaCard(c, rating, found) {
   const v = (x, ph = '?') => (x == null || x === '' ? `<span class="ph">${ph}</span>` : esc(x));
   const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '<span class="ph box">?</span>';
@@ -170,7 +187,7 @@ function fifaCard(c, rating, found) {
       </dl>
       <div class="fut-bo">Ballon d'or : ${c.bo === null ? '<span class="ph">?</span>' : c.bo ? 'oui' : 'non'}</div>
     </div>
-  </div>`;
+  </div>${clubPath(c.path, found)}`;
 }
 
 function drawGame(lastN) {

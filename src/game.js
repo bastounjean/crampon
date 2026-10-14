@@ -254,6 +254,12 @@ function revealCard(target, guesses, hints, over) {
     addClub(bestClub(target).id); target.leagues.forEach(addLeague);
   }
   const nat = k.nat && target.nat.find((n) => n.code === k.nat);
+  // parcours : chaque club dans l'ordre de la carrière, dévoilé quand il est trouvé
+  const path = [];
+  for (const c of target.clubs) {
+    if (path.some((x) => x.id === c.id)) continue;
+    path.push({ id: c.id, club: c.club, logo: c.logo || null, color: c.color || null });
+  }
   const club = k.clubs.length ? target.clubs.find((c) => c.id === k.clubs[k.clubs.length - 1]) : null;
   return {
     name: over ? target.name : hints > 5 ? initials(target) : null,
@@ -263,6 +269,7 @@ function revealCard(target, guesses, hints, over) {
     cont: k.cont || (nat ? nat.cont : null),
     club: club ? club.club : null,
     clubs: k.clubs.length,
+    path: path.map((c) => (over || k.clubs.includes(c.id) ? { name: c.club, logo: c.logo, color: c.color } : null)),
     leagues: k.leagues.map((l) => LEAGUES[l].short),
     born: k.year || (k.decade ? `${String(k.decade).slice(0, 3)}x` : null),
     status: k.active ? (target.active ? 'Actif' : 'Retraité') : null,

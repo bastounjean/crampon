@@ -245,6 +245,16 @@ table.wt td.num { white-space: nowrap; }
 .fut-bo { text-align: center; font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: uppercase; letter-spacing: .04em; }
 .fut .ph { opacity: .45; }
 .fut .ph.box { font-weight: 800; }
+.path { width: 236px; margin-top: 14px; }
+.path-h { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--ink); padding-bottom: 4px; margin-bottom: 8px; }
+.path ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.path li { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--hair); position: relative; }
+.path li + li::before { content: ''; position: absolute; left: -6px; top: 50%; width: 6px; border-top: 1px solid var(--hair); }
+.path li.on { border: 1px solid var(--ink); background: #fff; }
+.path li img { width: 80%; height: 80%; object-fit: contain; }
+.path .q { font: 600 11px/1 var(--mono); opacity: .4; }
+.path .mono { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font: 800 12px/1 var(--cond); font-stretch: 75%; letter-spacing: .02em; }
+.path-tip { font-size: 12px; color: var(--muted, #6b6455); margin: 8px 0 0; line-height: 1.35; }
 .board caption { text-align: left; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; padding: 22px 0 4px; }
 
 /* ——— Page Wikipédia intégrée ——— */
