@@ -34,6 +34,15 @@ if (process.env.NO_REFRESH !== '1') {
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Une seule adresse officielle : www.foootix.com et l'adresse Render renvoient vers foootix.com
+// (mieux pour Google, AdSense, et les comptes : les cookies sont liés au domaine).
+const DOMAIN = process.env.SITE_DOMAIN || 'foootix.com';
+app.use((req, res, next) => {
+  const host = (req.hostname || '').toLowerCase();
+  if (host === 'www.' + DOMAIN || host.endsWith('.onrender.com')) return res.redirect(301, `https://${DOMAIN}${req.originalUrl}`);
+  next();
+});
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 
@@ -420,6 +429,12 @@ const INDEX = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
   .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
   .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`)
   .replace('</head>', () => `${adHead}<script>window.FOOTIX = ${JSON.stringify(CONFIG).replace(/</g, '\\u003c')};</script>\n</head>`);
+app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
+app.get('/sitemap.xml', (req, res) => {
+  const pages = ['/', '/regles', '/classement', '/album', '/ligues'];
+  for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
+  res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
+});
 app.get('/ads.txt', (req, res) => {
   if (!ADS) return res.status(404).type('text').send('');
   res.type('text').send(`google.com, ${ADS.replace('ca-', '')}, DIRECT, f08c47fec0942fa0\n`);
