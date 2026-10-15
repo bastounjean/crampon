@@ -35,12 +35,11 @@ if (process.env.NO_REFRESH !== '1') {
 const app = express();
 app.set('trust proxy', 1);
 
-// Une seule adresse officielle : www.foootix.com et l'adresse Render renvoient vers foootix.com
-// (mieux pour Google, AdSense, et les comptes : les cookies sont liés au domaine).
+// L'adresse Render renvoie vers le vrai domaine. Le choix entre www et sans www est laissé à Render
+// (il redirige déjà l'un vers l'autre : le refaire ici créait une boucle).
 const DOMAIN = process.env.SITE_DOMAIN || 'foootix.com';
 app.use((req, res, next) => {
-  const host = (req.hostname || '').toLowerCase();
-  if (host === 'www.' + DOMAIN || host.endsWith('.onrender.com')) return res.redirect(301, `https://${DOMAIN}${req.originalUrl}`);
+  if ((req.hostname || '').toLowerCase().endsWith('.onrender.com')) return res.redirect(301, `https://${DOMAIN}${req.originalUrl}`);
   next();
 });
 app.use(express.json({ limit: '10kb' }));
