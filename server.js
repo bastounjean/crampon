@@ -54,11 +54,19 @@ const A = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(
   if (!res.headersSent) res.status(500).json({ error: 'Petit souci de serveur, réessaie dans un instant.' });
 });
 
+const SESS = new Map(); // sessions gardées 5 min en mémoire pour éviter une requête à chaque clic
+
 // ——— Identité : compte connecté, sinon visiteur anonyme ———
 app.use('/api', A(async (req, res, next) => {
   const sid = req.cookies.sid;
   if (sid) {
-    req.user = (await db.get('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', sid)) || null;
+    const c = SESS.get(sid);
+    if (c && Date.now() - c.t < 5 * 60 * 1000) req.user = c.user;
+    else {
+      req.user = (await db.get('SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', sid)) || null;
+      if (SESS.size > 5000) SESS.clear();
+      SESS.set(sid, { t: Date.now(), user: req.user });
+    }
   }
   let aid = req.cookies.aid;
   if (!aid || !/^[a-f0-9]{32}$/.test(aid)) {
@@ -103,16 +111,27 @@ function streakFrom(days) {
 }
 const streakOf = async (userId) => streakFrom((await wonDays([userId])).get(userId));
 
+// Chaque requête vers la base coûte un aller-retour : on les lance en parallèle quand on peut.
 async function publicUser(req) {
   if (!req.user) return null;
-  const { p } = await db.get("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'", req.user.id);
-  return { username: req.user.username, points: p, ...(await streakOf(req.user.id)) };
+  const [{ p }, st] = await Promise.all([
+    db.get("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'", req.user.id),
+    streakOf(req.user.id),
+  ]);
+  return { username: req.user.username, points: p, ...st };
 }
 
+// stats du jour : mêmes chiffres pour tout le monde, gardés 20 s en mémoire
+const STATS = new Map();
 async function dayStats(day) {
-  const r = await db.get(`SELECT COUNT(*) n, AVG(${J('guesses')}) avg FROM games WHERE day = ? AND status = 'won'`, day);
-  const { n } = await db.get(`SELECT COUNT(*) n FROM games WHERE day = ? AND ${J('guesses')} > 0`, day);
-  return { found: r.n, avg: r.avg ? Math.round(r.avg) : null, players: n };
+  const c = STATS.get(day);
+  if (c && Date.now() - c.t < 20000) return c.v;
+  const r = await db.get(`SELECT COUNT(*) FILTER (WHERE status = 'won') n, AVG(CASE WHEN status = 'won' THEN ${J('guesses')} END) avg,
+      COUNT(*) FILTER (WHERE ${J('guesses')} > 0) players FROM games WHERE day = ?`, day);
+  const v = { found: r.n, avg: r.avg ? Math.round(r.avg) : null, players: r.players };
+  if (STATS.size > 50) STATS.clear();
+  STATS.set(day, { t: Date.now(), v });
+  return v;
 }
 
 async function state(req) {
@@ -122,11 +141,13 @@ async function state(req) {
   const g = (await getGame(req, day, false)) || { status: 'playing', guesses: [], hints: 0 };
   const n = g.guesses.length;
   const over = g.status !== 'playing';
-  let rank = null;
-  if (g.status === 'won') {
-    rank = (await db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at)).n;
-  }
   const yesterday = idx > 0 ? G.playerOfDay(G.dayFromIndex(idx - 1)) : null;
+  const [rank, stats, yStats, user] = await Promise.all([
+    g.status === 'won' ? db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at).then((r) => r.n) : null,
+    dayStats(day),
+    yesterday ? dayStats(G.dayFromIndex(idx - 1)) : null,
+    publicUser(req),
+  ]);
   return {
     day, number: idx + 1, status: g.status, guesses: g.guesses,
     best: g.guesses.reduce((m, x) => Math.max(m, x.temp), 0),
@@ -135,10 +156,10 @@ async function state(req) {
     nextHintAt: g.hints < G.MAX_HINTS ? (g.hints + 1) * G.HINT_EVERY : null,
     answer: over ? G.card(target) : null,
     card: G.revealCard(target, g.guesses, g.hints, over),
-    rank, stats: await dayStats(day),
+    rank, stats,
     score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
-    yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: await dayStats(G.dayFromIndex(idx - 1)) } : null,
-    user: await publicUser(req),
+    yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: yStats } : null,
+    user,
   };
 }
 
@@ -171,6 +192,7 @@ app.post('/api/guess', A(async (req, res) => {
   const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;
   await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
     JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, won ? db.now() : g.finished_at, g.id);
+  if (won || g.guesses.length === 1) STATS.delete(day);
   res.json({ ...(await state(req)), last: entry.n });
 }));
 
@@ -214,7 +236,8 @@ app.get('/api/album', A(async (req, res) => {
   const day = G.today();
   const idx = G.dayIndex(day);
   const [col, val] = owner(req);
-  const mine = Object.fromEntries((await db.all(`SELECT day, status, ${J('guesses')} n, hints FROM games WHERE ${col} = ?`, val)).map((r) => [r.day, r]));
+  const [rows, user] = await Promise.all([db.all(`SELECT day, status, ${J('guesses')} n, hints FROM games WHERE ${col} = ?`, val), publicUser(req)]);
+  const mine = Object.fromEntries(rows.map((r) => [r.day, r]));
   const days = [];
   for (let i = idx; i >= 0; i--) {
     const d = G.dayFromIndex(i);
@@ -227,7 +250,7 @@ app.get('/api/album', A(async (req, res) => {
       player: visible ? { id: p.id, name: p.name, pos: G.card(p).pos, nat: G.card(p).nat[0], img: p.img ? p.img.replace(/^http:/, 'https:') + '?width=240' : null } : null,
     });
   }
-  res.json({ days, user: await publicUser(req), total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
+  res.json({ days, user, total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
 }));
 
 app.get('/api/leaderboard', A(async (req, res) => {
@@ -281,12 +304,9 @@ app.get('/api/leagues', A(async (req, res) => {
   if (!req.user) return res.json({ leagues: [], user: null });
   const ls = await db.all(`SELECT l.id, l.code, l.name, l.owner_id, (SELECT COUNT(*) FROM league_members x WHERE x.league_id = l.id) members
     FROM leagues l JOIN league_members m ON m.league_id = l.id WHERE m.user_id = ? ORDER BY m.joined_at`, req.user.id);
-  const leagues = [];
-  for (const l of ls) {
-    const t = await leagueTable(l.id, req.user.id);
-    leagues.push({ code: l.code, name: l.name, members: l.members, mine: l.owner_id === req.user.id, rank: (t.find((x) => x.me) || {}).rank, leader: t[0] && t[0].username });
-  }
-  res.json({ user: await publicUser(req), leagues });
+  const [user, ...tables] = await Promise.all([publicUser(req), ...ls.map((l) => leagueTable(l.id, req.user.id))]);
+  const leagues = ls.map((l, i) => ({ code: l.code, name: l.name, members: l.members, mine: l.owner_id === req.user.id, rank: (tables[i].find((x) => x.me) || {}).rank, leader: tables[i][0] && tables[i][0].username }));
+  res.json({ user, leagues });
 }));
 
 app.post('/api/leagues', slowDown, A(async (req, res) => {
@@ -389,12 +409,13 @@ app.post('/api/delete-account', slowDown, A(async (req, res) => {
   const u = await db.get('SELECT pass FROM users WHERE id = ?', req.user.id);
   if (!check(String((req.body || {}).password || ''), u.pass)) return res.status(400).json({ error: 'Mot de passe incorrect.' });
   await db.run('DELETE FROM users WHERE id = ?', req.user.id);
+  SESS.clear();
   res.clearCookie('sid');
   res.json({ ok: true });
 }));
 
 app.post('/api/logout', A(async (req, res) => {
-  if (req.cookies.sid) await db.run('DELETE FROM sessions WHERE token = ?', req.cookies.sid);
+  if (req.cookies.sid) { SESS.delete(req.cookies.sid); await db.run('DELETE FROM sessions WHERE token = ?', req.cookies.sid); }
   res.clearCookie('sid');
   res.json({ ok: true });
 }));

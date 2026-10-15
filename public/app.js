@@ -7,12 +7,40 @@ const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/[ʼ'’`.\-]/g, ' ').replace(/[^a-z0-9ıİşğøæœß ]/g, '').replace(/\s+/g, ' ').trim()
   .replace(/ø/g, 'o').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g');
 
-async function api(path, body) {
+async function fetchJSON(path, body) {
   const r = await fetch('/api/' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || 'Erreur réseau');
   return j;
 }
+// Les pages déjà vues s'affichent tout de suite depuis la mémoire, puis se mettent à jour en fond.
+// Toute action (essai, connexion…) vide la mémoire pour ne jamais montrer un état périmé.
+const CACHE = new Map();
+function api(path, body) {
+  if (body) { CACHE.clear(); return fetchJSON(path, body); }
+  const c = CACHE.get(path);
+  if (c && (c.pending || Date.now() - c.t < 60000)) {
+    if (!c.pending && !c.refreshing) refresh(path);
+    return c.p;
+  }
+  return refresh(path);
+}
+function refresh(path) {
+  const e = { t: Date.now(), pending: true };
+  e.p = fetchJSON(path).then((j) => { e.pending = false; e.t = Date.now(); return j; }, (err) => { CACHE.delete(path); throw err; });
+  const old = CACHE.get(path);
+  // tant que la nouvelle version n'est pas là, on garde l'ancienne pour un affichage instantané
+  if (old && !old.pending) old.refreshing = true;
+  if (old && !old.pending) e.p.then(() => CACHE.set(path, e), () => {}); else CACHE.set(path, e);
+  return e.p;
+}
+// charge d'avance ce qu'affiche un onglet, dès qu'on le survole ou qu'on pose le doigt dessus
+const PREFETCH = { '/': ['today'], '/album': ['album'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'], '/regles': ['me'], '/compte': ['me'] };
+function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p).catch(() => {})); }
+['mouseover', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
+  const a = e.target.closest && e.target.closest('a[data-link]');
+  if (a) prefetch(a.getAttribute('href'));
+}, { passive: true }));
 
 const fmtDate = (d, opts = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) =>
   new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC', ...opts });
@@ -778,4 +806,4 @@ async function pageLeague(code) {
   };
 }
 
-route();
+route().then(() => setTimeout(() => Object.keys(PREFETCH).forEach(prefetch), 800));
