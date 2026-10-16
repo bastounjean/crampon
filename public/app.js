@@ -112,8 +112,16 @@ document.addEventListener('click', (e) => {
 });
 window.addEventListener('popstate', route);
 
+// compteur de visites maison (voir /stats) : la page vue, et d'où vient le visiteur à son arrivée
+let REF = document.referrer;
+function hit(p) {
+  try { fetch('/api/hit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p, r: REF }), keepalive: true }).catch(() => {}); } catch {}
+  REF = '';
+}
+
 async function route() {
   const p = location.pathname;
+  hit(p);
   document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
   window.scrollTo(0, 0);
   clearInterval(window.__tick);
@@ -712,6 +720,7 @@ function pagePrivacy() {
         <tr><td>Pseudo et mot de passe (chiffré, illisible même pour nous)</td><td>Ton compte</td><td>Jusqu’à ce que tu le supprimes</td></tr>
         <tr><td>Tes parties&nbsp;: propositions, indices, résultat, points</td><td>Jeu, album, série, classement</td><td>Tant que le compte existe</td></tr>
         <tr><td>Adresse IP</td><td>Limiter les tentatives de connexion</td><td>10 minutes, en mémoire</td></tr>
+        <tr><td>Pages vues, site d’où tu arrives, mobile ou ordinateur</td><td>Compter les visites, sans outil extérieur ni adresse IP</td><td>Chiffres par jour, sans rien qui t’identifie</td></tr>
       </table>
       <p>Pas d’adresse e-mail, pas de nom, rien n’est revendu. Ton pseudo et tes points apparaissent dans le classement public.</p>
       <h2>Cookies du site</h2>

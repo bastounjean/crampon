@@ -469,6 +469,8 @@ app.get('/ads.txt', (req, res) => {
   if (!ADS) return res.status(404).type('text').send('');
   res.type('text').send(`google.com, ${ADS.replace('ca-', '')}, DIRECT, f08c47fec0942fa0\n`);
 });
+require('./src/stats')({ app, db, G, A, slowDown, DOMAIN });
+
 app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.type('html').send(INDEX);

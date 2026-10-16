@@ -63,6 +63,7 @@ Tout se règle dans l'onglet Environment de Render, rien ne s'active tant que c'
 | `SITE_ADDRESS` | `12 rue …, 75000 Paris` | adresse de l'éditeur |
 | `SITE_CONTACT` | `contact@footix.fr` | contact affiché sur les pages légales |
 | `ADS_PREVIEW` | `1` | cadres gris à la place des pubs, pour voir la mise en page |
+| `ADMIN_PASSWORD` | `un-mot-de-passe` | ouvre la page privée `/stats` (visiteurs, sources, parties, comptes) |
 
 Le consentement aux cookies passe par le message RGPD de Google (AdSense → Confidentialité et messages), certifié IAB TCF.
 
