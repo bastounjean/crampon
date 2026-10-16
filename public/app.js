@@ -153,7 +153,17 @@ window.addEventListener('fresh', (e) => {
 });
 
 // compteur de visites maison (voir /stats) : la page vue, et d'où vient le visiteur à son arrivée
+// un lien de campagne comme foootix.com/?s=tiktok1 est compté à part dans /stats, puis retiré de l'adresse
 let REF = document.referrer;
+{
+  const q = new URLSearchParams(location.search);
+  const src = q.get('s') || q.get('utm_source');
+  if (src) {
+    REF = 'src:' + src;
+    q.delete('s'); q.delete('utm_source'); q.delete('utm_medium'); q.delete('utm_campaign');
+    history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
+  }
+}
 function hit(p) {
   try { fetch('/api/hit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p, r: REF }), keepalive: true }).catch(() => {}); } catch {}
   REF = '';

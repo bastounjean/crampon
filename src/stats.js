@@ -20,7 +20,9 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
     const path = String(p).replace(/^\/(joueur|ligue)\/.*/, '/$1');
     if (!PAGES.includes(path)) return;
     let ref = null;
-    try {
+    const src = /^src:([\w.-]{1,30})$/i.exec(String(r));
+    if (src) ref = 'lien « ' + src[1].toLowerCase() + ' »';
+    else try {
       const h = new URL(String(r)).hostname.replace(/^www\./, '').toLowerCase();
       if (h && !h.endsWith(DOMAIN) && !h.endsWith('onrender.com')) ref = h.slice(0, 80);
     } catch {}
