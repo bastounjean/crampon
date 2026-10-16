@@ -4,6 +4,7 @@ const { LEAGUES, COUNTRIES, POSITIONS } = require('./data/meta');
 const NOW_YEAR = new Date().getFullYear();
 const LAUNCH = process.env.LAUNCH_DATE || '2026-10-13';
 const SECRET = process.env.SECRET || 'change-moi-en-production';
+if (!process.env.SECRET && process.env.NODE_ENV === 'production') console.warn('ATTENTION : SECRET non défini, les joueurs à venir sont prévisibles depuis le code.');
 const TZ = 'Europe/Paris';
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()

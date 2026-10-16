@@ -118,7 +118,8 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
     const NAMES = { '/': 'Jeu du jour', '/album': 'Album', '/classement': 'Classement', '/compte': 'Compte', '/regles': 'Règles', '/ligues': 'Ligues', '/ligue': 'Page d\'une ligue', '/joueur': 'Fiches joueurs', '/confidentialite': 'Confidentialité', '/mentions-legales': 'Mentions légales' };
     const totalPv = pages.reduce((s, r) => s + r.n, 0);
 
-    return `
+    const warn = process.env.SECRET ? '' : '<p class="err"><b>Attention :</b> la variable SECRET n\'est pas définie sur Render. Quelqu\'un qui lit le code peut deviner les joueurs des prochains jours. Préviens Claude avant de la créer : la changer modifie aussi les joueurs déjà passés.</p>';
+    return `${warn}
       <div class="kpis">
         <div><b>${live}</b><span>en ce moment</span></div>
         <div><b>${t.n}</b><span>visiteurs aujourd'hui <em>(hier ${y.n})</em></span></div>

@@ -43,6 +43,30 @@ app.use((req, res, next) => {
   if ((req.hostname || '').toLowerCase().endsWith('.onrender.com')) return res.redirect(301, `https://${DOMAIN}${req.originalUrl}`);
   next();
 });
+app.disable('x-powered-by');
+// Protections de base du navigateur : pas d'affichage du site dans un cadre d'un autre site (anti-clickjacking),
+// HTTPS forcé, types de fichiers respectés, pas d'adresse complète transmise aux autres sites.
+app.use((req, res, next) => {
+  res.set({
+    'Content-Security-Policy': "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'",
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  });
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
+// Limite par adresse IP : 300 appels par minute (un joueur normal en fait une vingtaine).
+// Évite qu'un script inonde le serveur ou la base.
+const HITS = new Map();
+setInterval(() => HITS.clear(), 60 * 1000).unref();
+app.use('/api', (req, res, next) => {
+  const n = (HITS.get(req.ip) || 0) + 1;
+  HITS.set(req.ip, n);
+  if (n > 300) return res.status(429).json({ error: 'Trop de requêtes, attends une minute.' });
+  next();
+});
 app.use(compression()); // fichiers et réponses compressés : 3 à 5 fois moins lourds à télécharger
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
@@ -396,6 +420,7 @@ async function openSession(req, res, userId) {
 }
 
 const attempts = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, a] of attempts) if (!a.some((t) => now - t < 10 * 60 * 1000)) attempts.delete(k); }, 10 * 60 * 1000).unref();
 function slowDown(req, res, next) {
   const k = req.ip;
   const now = Date.now();
