@@ -37,20 +37,22 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
 
   let flushing = false;
   async function flush() {
+    for (const [k, t] of LIVE) if (Date.now() - t > 10 * 60 * 1000) LIVE.delete(k);
     if (flushing || (!VBUF.size && !PBUF.size)) return;
     flushing = true;
     const vs = [...VBUF]; const ps = [...PBUF];
     VBUF.clear(); PBUF.clear();
     try {
-      for (const [k, v] of vs) {
-        const [day, vid] = k.split('|');
-        await db.run(`INSERT INTO visits (day, vid, views, ref, mobile) VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (day, vid) DO UPDATE SET views = visits.views + excluded.views, ref = COALESCE(visits.ref, excluded.ref)`, day, vid, v.views, v.ref, v.mobile);
+      // écrit par paquets de 200 lignes : une seule requête au lieu d'une par visiteur
+      for (let i = 0; i < vs.length; i += 200) {
+        const part = vs.slice(i, i + 200);
+        await db.run(`INSERT INTO visits (day, vid, views, ref, mobile) VALUES ${part.map(() => '(?, ?, ?, ?, ?)').join(', ')}
+          ON CONFLICT (day, vid) DO UPDATE SET views = visits.views + excluded.views, ref = COALESCE(visits.ref, excluded.ref)`,
+        ...part.flatMap(([k, v]) => [...k.split('|'), v.views, v.ref, v.mobile]));
       }
-      for (const [k, n] of ps) {
-        const [day, path] = k.split('|');
-        await db.run(`INSERT INTO page_views (day, path, views) VALUES (?, ?, ?)
-          ON CONFLICT (day, path) DO UPDATE SET views = page_views.views + excluded.views`, day, path, n);
+      if (ps.length) {
+        await db.run(`INSERT INTO page_views (day, path, views) VALUES ${ps.map(() => '(?, ?, ?)').join(', ')}
+          ON CONFLICT (day, path) DO UPDATE SET views = page_views.views + excluded.views`, ...ps.flatMap(([k, n]) => [...k.split('|'), n]));
       }
     } catch (e) { console.warn('Stats non enregistrées :', e.message); }
     flushing = false;

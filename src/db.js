@@ -75,7 +75,7 @@ if (PG) {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false },
-    max: 5,
+    max: 10,
   });
   pool.on('error', (e) => console.warn('Postgres :', e.message));
   const conv = (sql) => { let i = 0; return sql.replace(/\?/g, () => '$' + ++i); };

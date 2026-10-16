@@ -57,19 +57,21 @@ app.use((req, res, next) => {
   if (req.secure) res.set('Strict-Transport-Security', 'max-age=31536000');
   next();
 });
-// Limite par adresse IP : 300 appels par minute (un joueur normal en fait une vingtaine).
+app.use(compression({ level: 1 })); // réponses compressées 3 à 5 fois, au niveau le plus rapide pour ménager le processeur
+app.use(express.json({ limit: '10kb' }));
+app.use(cookieParser());
+// Limite d'appels : 300 par minute et par visiteur (un joueur normal en fait une vingtaine), et bien plus par
+// adresse IP, car sur mobile des centaines de personnes partagent parfois la même adresse chez l'opérateur.
 // Évite qu'un script inonde le serveur ou la base.
 const HITS = new Map();
 setInterval(() => HITS.clear(), 60 * 1000).unref();
+const bump = (k) => { const n = (HITS.get(k) || 0) + 1; HITS.set(k, n); return n; };
 app.use('/api', (req, res, next) => {
-  const n = (HITS.get(req.ip) || 0) + 1;
-  HITS.set(req.ip, n);
-  if (n > 300) return res.status(429).json({ error: 'Trop de requêtes, attends une minute.' });
+  const aid = /^[a-f0-9]{32}$/.test(req.cookies.aid || '') ? req.cookies.aid : '';
+  const over = aid ? bump('a' + aid) > 300 || bump('i' + req.ip) > 20000 : bump('n' + req.ip) > 3000;
+  if (over) return res.status(429).json({ error: 'Trop de requêtes, attends une minute.' });
   next();
 });
-app.use(compression()); // fichiers et réponses compressés : 3 à 5 fois moins lourds à télécharger
-app.use(express.json({ limit: '10kb' }));
-app.use(cookieParser());
 
 const PROD = process.env.NODE_ENV === 'production';
 const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: PROD, maxAge: 1000 * 60 * 60 * 24 * 395 }; // 13 mois, la limite conseillée par la CNIL
@@ -121,8 +123,11 @@ async function getGame(req, day, create) {
 async function wonDays(userIds) {
   const out = new Map(userIds.map((id) => [id, new Set()]));
   if (!userIds.length) return out;
-  const rows = await db.all(`SELECT user_id, day FROM games WHERE status = 'won' AND user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds);
-  for (const r of rows) out.get(r.user_id).add(r.day);
+  // au-delà de quelques centaines de joueurs, une liste d'identifiants devient plus lourde que de tout lire
+  const rows = userIds.length > 300
+    ? await db.all("SELECT user_id, day FROM games WHERE status = 'won' AND user_id IS NOT NULL")
+    : await db.all(`SELECT user_id, day FROM games WHERE status = 'won' AND user_id IN (${userIds.map(() => '?').join(',')})`, ...userIds);
+  for (const r of rows) { const s = out.get(r.user_id); if (s) s.add(r.day); }
   return out;
 }
 function streakFrom(days) {
@@ -405,10 +410,12 @@ app.post('/api/leagues/:code/leave', A(async (req, res) => {
 }));
 
 // ——— Comptes ———
-const hash = (pw, salt = crypto.randomBytes(16).toString('hex')) => salt + ':' + crypto.scryptSync(pw, salt, 32).toString('hex');
-const check = (pw, stored) => {
+// scrypt est volontairement lent (50 ms) : on le fait tourner à côté pour ne pas bloquer les autres joueurs
+const scrypt = require('util').promisify(crypto.scrypt);
+const hash = async (pw, salt = crypto.randomBytes(16).toString('hex')) => salt + ':' + (await scrypt(pw, salt, 32)).toString('hex');
+const check = async (pw, stored) => {
   const [salt, h] = stored.split(':');
-  return crypto.timingSafeEqual(Buffer.from(h, 'hex'), crypto.scryptSync(pw, salt, 32));
+  return crypto.timingSafeEqual(Buffer.from(h, 'hex'), await scrypt(pw, salt, 32));
 };
 
 async function openSession(req, res, userId) {
@@ -421,13 +428,17 @@ async function openSession(req, res, userId) {
 
 const attempts = new Map();
 setInterval(() => { const now = Date.now(); for (const [k, a] of attempts) if (!a.some((t) => now - t < 10 * 60 * 1000)) attempts.delete(k); }, 10 * 60 * 1000).unref();
+// Anti-force brute : 20 essais par 10 min pour un même pseudo depuis une même adresse,
+// et 300 au total par adresse et par action (assez pour une école ou un réseau mobile partagé)
 function slowDown(req, res, next) {
-  const k = req.ip;
   const now = Date.now();
-  const a = (attempts.get(k) || []).filter((t) => now - t < 10 * 60 * 1000);
-  if (a.length > 20) return res.status(429).json({ error: 'Trop de tentatives, réessaie dans quelques minutes.' });
-  a.push(now);
-  attempts.set(k, a);
+  const who = String((req.body && req.body.username) || '').toLowerCase().slice(0, 30);
+  for (const [k, max] of [[req.ip + req.path + '|' + who, 20], [req.ip + req.path, 300]]) {
+    const a = (attempts.get(k) || []).filter((t) => now - t < 10 * 60 * 1000);
+    if (a.length >= max) return res.status(429).json({ error: 'Trop de tentatives, réessaie dans quelques minutes.' });
+    a.push(now);
+    attempts.set(k, a);
+  }
   next();
 }
 
@@ -437,7 +448,7 @@ app.post('/api/signup', slowDown, A(async (req, res) => {
   if (!/^[\p{L}0-9_.-]{3,20}$/u.test(u)) return res.status(400).json({ error: 'Pseudo : 3 à 20 caractères, lettres, chiffres, point, tiret ou underscore.' });
   if (String(password).length < 6) return res.status(400).json({ error: 'Mot de passe : 6 caractères minimum.' });
   if (await db.get('SELECT 1 x FROM users WHERE lower(username) = lower(?)', u)) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
-  const r = await db.run('INSERT INTO users (username, pass, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id', u, hash(String(password)), db.now());
+  const r = await db.run('INSERT INTO users (username, pass, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id', u, await hash(String(password)), db.now());
   if (!r.rows.length) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
   await openSession(req, res, r.rows[0].id);
   res.json({ ok: true });
@@ -446,7 +457,7 @@ app.post('/api/signup', slowDown, A(async (req, res) => {
 app.post('/api/login', slowDown, A(async (req, res) => {
   const { username = '', password = '' } = req.body || {};
   const u = await db.get('SELECT * FROM users WHERE lower(username) = lower(?)', String(username).trim());
-  if (!u || !check(String(password), u.pass)) return res.status(400).json({ error: 'Pseudo ou mot de passe incorrect.' });
+  if (!u || !(await check(String(password), u.pass))) return res.status(400).json({ error: 'Pseudo ou mot de passe incorrect.' });
   await openSession(req, res, u.id);
   res.json({ ok: true });
 }));
@@ -455,7 +466,7 @@ app.post('/api/login', slowDown, A(async (req, res) => {
 app.post('/api/delete-account', slowDown, A(async (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Tu n’es pas connecté.' });
   const u = await db.get('SELECT pass FROM users WHERE id = ?', req.user.id);
-  if (!check(String((req.body || {}).password || ''), u.pass)) return res.status(400).json({ error: 'Mot de passe incorrect.' });
+  if (!(await check(String((req.body || {}).password || ''), u.pass))) return res.status(400).json({ error: 'Mot de passe incorrect.' });
   await db.run('DELETE FROM users WHERE id = ?', req.user.id);
   SESS.clear();
   res.clearCookie('sid');
@@ -509,9 +520,33 @@ app.get('/ads.txt', (req, res) => {
 });
 require('./src/stats')({ app, db, G, A, slowDown, DOMAIN });
 
+// Fichiers du site compressés une fois pour toutes au démarrage (au lieu de l'être à chaque visite)
+const zlib = require('zlib');
+function packed(body, type, cache) {
+  const raw = Buffer.from(body);
+  return {
+    type, cache, raw,
+    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }),
+    gz: zlib.gzipSync(raw, { level: 9 }),
+  };
+}
+function sendPacked(req, res, f) {
+  const enc = req.acceptsEncodings('br', 'gzip');
+  res.set({ 'Content-Type': f.type, 'Cache-Control': f.cache, Vary: 'Accept-Encoding' });
+  if (enc === 'br') return res.set('Content-Encoding', 'br').end(f.br);
+  if (enc === 'gzip') return res.set('Content-Encoding', 'gzip').end(f.gz);
+  res.end(f.raw);
+}
+const ASSET_CACHE = PROD ? 'public, max-age=2592000' : 'no-cache';
+const ASSETS = {
+  '/app.js': packed(fs.readFileSync(path.join(PUB, 'app.js')), 'application/javascript; charset=utf-8', ASSET_CACHE),
+  '/style.css': packed(fs.readFileSync(path.join(PUB, 'style.css')), 'text/css; charset=utf-8', ASSET_CACHE),
+};
+const PAGE = packed(INDEX, 'text/html; charset=utf-8', 'no-cache');
+app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
+
 app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
-  res.set('Cache-Control', 'no-cache');
-  res.type('html').send(INDEX);
+  sendPacked(req, res, PAGE);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
   // pendant que le navigateur charge la page, pour que les premières données arrivent sans attente.
   // Pas pour UptimeRobot et les robots, sinon la base ne dormirait jamais (quota gratuit).
