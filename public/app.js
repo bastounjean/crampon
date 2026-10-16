@@ -1,6 +1,13 @@
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);
+// Langue : choisie par le serveur (téléphone en français → français, sinon anglais), changeable en bas de page
+const LANG = (window.FOOTIX || {}).lang === 'en' ? 'en' : 'fr';
+const EN = LANG === 'en';
+const L = (fr, en) => (EN ? en : fr);
+const LOC = EN ? 'en-GB' : 'fr-FR';
+const s_ = (n) => ((EN ? n !== 1 : n > 1) ? 's' : ''); // pluriel : « 0 joueur » mais « 0 players »
+const ord = (n) => EN ? `${n}<sup>${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}</sup>` : `${n}<sup>${n === 1 ? 'er' : 'e'}</sup>`;
 const app = $('#app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -10,7 +17,7 @@ const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 async function fetchJSON(path, body) {
   const r = await fetch('/api/' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || 'Erreur réseau');
+  if (!r.ok) throw new Error(j.error || L('Erreur réseau', 'Network error'));
   return j;
 }
 // Les pages déjà vues s'affichent tout de suite depuis la mémoire, même anciennes, puis se mettent à jour
@@ -63,7 +70,7 @@ function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p, null, tru
 }, { passive: true }));
 
 const fmtDate = (d, opts = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) =>
-  new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { timeZone: 'UTC', ...opts });
+  new Date(d + 'T12:00:00Z').toLocaleDateString(LOC, { timeZone: 'UTC', ...opts });
 
 // ——— Température ———
 function heat(t) {
@@ -76,13 +83,13 @@ function heat(t) {
   return `rgb(${a[1].map((v, i) => Math.round(v + (b[1][i] - v) * k)).join(',')})`;
 }
 function word(t) {
-  if (t >= 100) return 'Trouvé';
-  if (t >= 85) return 'Tout proche';
-  if (t >= 65) return 'Brûlant';
-  if (t >= 45) return 'Chaud';
-  if (t >= 25) return 'Tiède';
-  if (t >= 10) return 'Froid';
-  return 'Glacial';
+  if (t >= 100) return L('Trouvé', 'Found');
+  if (t >= 85) return L('Tout proche', 'So close');
+  if (t >= 65) return L('Brûlant', 'Burning');
+  if (t >= 45) return L('Chaud', 'Hot');
+  if (t >= 25) return L('Tiède', 'Warm');
+  if (t >= 10) return L('Froid', 'Cold');
+  return L('Glacial', 'Freezing');
 }
 
 // ——— En-tête ———
@@ -91,13 +98,13 @@ function renderWho(user, ed) {
   ME = user;
   if (ed) renderEdition(ed);
   $('#who').innerHTML = user
-    ? `<a class="pts" href="/classement" data-link title="Tes points cumulés et ta série"><b>${user.points}</b> pts · série <b>${user.streak}</b></a><a class="me" href="/compte" data-link>${esc(user.username)}</a>`
-    : `<a class="login" href="/compte" data-link>Se connecter</a>`;
+    ? `<a class="pts" href="/classement" data-link title="${L('Tes points cumulés et ta série', 'Your total points and streak')}"><b>${user.points}</b> pts · ${L('série', 'streak')} <b>${user.streak}</b></a><a class="me" href="/compte" data-link>${esc(user.username)}</a>`
+    : `<a class="login" href="/compte" data-link>${L('Se connecter', 'Log in')}</a>`;
   const lo = $('#logout');
   if (lo) lo.onclick = async () => { await api('logout', {}); go('/'); };
 }
 function renderEdition(st) {
-  $('#edition').innerHTML = `<b>N° ${st.number}</b> · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}`;
+  $('#edition').innerHTML = `<b>${L('N°', 'No.')} ${st.number}</b> · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}`;
 }
 
 // ——— Publicité ———
@@ -106,9 +113,9 @@ function renderEdition(st) {
 // il bloque les cookies publicitaires tant que le visiteur n'a pas choisi.
 const CFG = window.FOOTIX || {};
 function adSlot(where) {
-  if (CFG.preview) return `<div class="ad ad-${where}"><span>Publicité</span><div class="ad-fake"></div></div>`;
+  if (CFG.preview) return `<div class="ad ad-${where}"><span>${L('Publicité', 'Advertisement')}</span><div class="ad-fake"></div></div>`;
   if (!CFG.ads || !CFG.slot) return '';
-  return `<div class="ad ad-${where}"><span>Publicité</span><ins class="adsbygoogle" style="display:block" data-ad-client="${esc(CFG.ads)}" data-ad-slot="${esc(CFG.slot)}" data-ad-format="auto" data-full-width-responsive="true"></ins></div>`;
+  return `<div class="ad ad-${where}"><span>${L('Publicité', 'Advertisement')}</span><ins class="adsbygoogle" style="display:block" data-ad-client="${esc(CFG.ads)}" data-ad-slot="${esc(CFG.slot)}" data-ad-format="auto" data-full-width-responsive="true"></ins></div>`;
 }
 function fillAds() {
   if (!CFG.ads) return;
@@ -123,6 +130,12 @@ if (CFG.ads) {
   c.hidden = false;
   $('a', c).onclick = (e) => { e.preventDefault(); window.googlefc.callbackQueue.push(() => window.googlefc.showRevocationMessage()); };
 }
+// changer de langue : retenu un an dans un cookie, puis on recharge la page
+$('#lang').onclick = (e) => {
+  e.preventDefault();
+  document.cookie = `lang=${EN ? 'fr' : 'en'}; max-age=${3600 * 24 * 365}; path=/; samesite=lax`;
+  location.reload();
+};
 
 // ——— Routeur ———
 function go(path) { history.pushState({}, '', path); route(); }
@@ -170,7 +183,7 @@ async function route({ quiet = false } = {}) {
     if (p === '/mentions-legales') return pageLegal();
     const m = p.match(/^\/joueur\/([\w-]+)$/);
     if (m) return await pagePlayer(m[1]);
-    app.innerHTML = '<p>Page introuvable. <a href="/" data-link>Retour au jeu</a></p>';
+    app.innerHTML = `<p>${L('Page introuvable.', 'Page not found.')} <a href="/" data-link>${L('Retour au jeu', 'Back to the game')}</a></p>`;
   } catch (e) {
     app.innerHTML = `<p class="msg">${esc(e.message)}</p>`;
   } finally {
@@ -204,8 +217,8 @@ function initTheme() {
   const b = $('#theme');
   const label = () => {
     const light = document.documentElement.dataset.theme === 'light';
-    b.innerHTML = `${light ? '◐' : '◑'} <span>${light ? 'Mode sombre' : 'Mode clair'}</span>`;
-    b.title = light ? 'Passer en mode sombre' : 'Passer en mode clair';
+    b.innerHTML = `${light ? '◐' : '◑'} <span>${light ? L('Mode sombre', 'Dark mode') : L('Mode clair', 'Light mode')}</span>`;
+    b.title = light ? L('Passer en mode sombre', 'Switch to dark mode') : L('Passer en mode clair', 'Switch to light mode');
   };
   b.onclick = () => {
     const light = document.documentElement.dataset.theme !== 'light';
@@ -255,14 +268,14 @@ async function pageGame() {
         <div class="hero">
           <div id="banner"></div>
           <div class="intro">
-            <div class="kicker">Le joueur mystère n° ${st.number}</div>
-            <h1>Qui se cache derrière le maillot&nbsp;?</h1>
-            <p>Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.</p>
+            <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}</div>
+            <h1>${L('Qui se cache derrière le maillot&nbsp;?', "Who's behind the shirt?")}</h1>
+            <p>${L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'A player, a club, a city, a country, a position, a generation: every discovery fills in his card.')}</p>
           </div>
           <div class="search" id="search">
             <form autocomplete="off">
-              <input id="q" placeholder="Écris ici" aria-label="Ta proposition" spellcheck="false" autocapitalize="off" autocorrect="off">
-              <button>Tenter</button>
+              <input id="q" placeholder="${L('Écris ici', 'Type here')}" aria-label="${L('Ta proposition', 'Your guess')}" spellcheck="false" autocapitalize="off" autocorrect="off">
+              <button>${L('Tenter', 'Guess')}</button>
             </form>
             <div class="msg" id="msg"></div>
           </div>
@@ -277,7 +290,7 @@ async function pageGame() {
         </div>
         <div id="reveal"></div>
         <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
-        ${st.user ? '' : `<div class="nudge">Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.</div>`}
+        ${st.user ? '' : `<div class="nudge">${L('Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.', 'You are playing without an account. <a href="/compte" data-link>Create one</a> to keep your streak and fill your album. Today\'s game will be kept.')}</div>`}
       </div>
       <aside>
         <section id="facts"></section>
@@ -304,11 +317,11 @@ function clubPath(path, over) {
   if (!path || !path.length) return '';
   const found = path.filter(Boolean).length;
   return `<div class="path">
-    <div class="path-h"><span>Son parcours</span><span>${found}/${path.length} club${path.length > 1 ? 's' : ''}</span></div>
+    <div class="path-h"><span>${L('Son parcours', 'His career')}</span><span>${found}/${path.length} club${s_(path.length)}</span></div>
     <ol>${path.map((c, i) => `<li>${i ? ARROW : ''}` + (c
       ? `<div class="club on${c.logo && /white|blanc|bianco|weiss|negativ|inverted/i.test(decodeURIComponent(c.logo)) ? ' dk' : ''}" title="${esc(c.name)}"><span class="crest">${crest(c)}</span><span class="cn">${esc(shortClub(c.name))}</span></div></li>`
-      : `<div class="club" title="Club n°${i + 1}, pas encore trouvé"><span class="crest"><span class="q">?</span></span><span class="cn">${i + 1}<sup>${i ? 'e' : 'er'}</sup> club</span></div></li>`)).join('')}</ol>
-    ${found || over ? '' : '<p class="path-tip">Chaque club trouvé prend sa place, dans l\'ordre de sa carrière.</p>'}
+      : `<div class="club" title="${L(`Club n°${i + 1}, pas encore trouvé`, `Club #${i + 1}, not found yet`)}"><span class="crest"><span class="q">?</span></span><span class="cn">${ord(i + 1)} club</span></div></li>`)).join('')}</ol>
+    ${found || over ? '' : `<p class="path-tip">${L('Chaque club trouvé prend sa place, dans l\'ordre de sa carrière.', 'Each club you find takes its place, in career order.')}</p>`}
   </div>`;
 }
 function fifaCard(c, rating, found) {
@@ -325,13 +338,13 @@ function fifaCard(c, rating, found) {
       <div class="fut-name">${c.name ? esc(c.name) : '<span class="ph">• • • • • •</span>'}</div>
       <dl class="fut-stats">
         <div><dt>NAT</dt><dd>${v(c.nat?.name)}</dd></div>
-        <div><dt>NÉ</dt><dd>${v(c.born)}</dd></div>
+        <div><dt>${L('NÉ', 'BORN')}</dt><dd>${v(c.born)}</dd></div>
         <div><dt>CLUB</dt><dd title="${esc(c.club || '')}">${v(shortClub(c.club))}</dd></div>
-        <div><dt>CHAMP</dt><dd>${v(c.leagues.join(' '))}</dd></div>
+        <div><dt>${L('CHAMP', 'LEAGUE')}</dt><dd>${v(c.leagues.join(' '))}</dd></div>
         <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
-        <div><dt>STATUT</dt><dd>${v(c.status)}</dd></div>
+        <div><dt>${L('STATUT', 'STATUS')}</dt><dd>${v(c.status)}</dd></div>
       </dl>
-      <div class="fut-bo">Ballon d'or : ${c.bo === null ? '<span class="ph">?</span>' : c.bo ? 'oui' : 'non'}</div>
+      <div class="fut-bo">${L("Ballon d'or : ", "Ballon d'Or: ")}${c.bo === null ? '<span class="ph">?</span>' : c.bo ? L('oui', 'yes') : L('non', 'no')}</div>
     </div>
   </div>`;
 }
@@ -353,10 +366,10 @@ function drawGame(lastN) {
   if (justEnded && st.status === 'won') confetti();
   $('#path').innerHTML = clubPath(st.card.path, over);
   if (justEnded && st.status === 'gaveup') $('#path').firstElementChild?.classList.add('late');
-  $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : 'À toi'}</span></div>
+  $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : L('À toi', 'Your turn')}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
     <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-    <div class="bestof">${best ? 'Elle monte à chaque piste qui resserre l’étau.' : 'Fais un premier essai pour la remplir.'}</div>`;
+    <div class="bestof">${best ? L('Elle monte à chaque piste qui resserre l’étau.', 'It rises with every clue that narrows it down.') : L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.')}</div>`;
 
   // bannière de fin + page Wikipédia
   if (over) {
@@ -364,14 +377,15 @@ function drawGame(lastN) {
     const n = st.guesses.length;
     const won = st.status === 'won';
     $('#banner').innerHTML = `<div class="end ${won ? '' : 'lost'} ${justEnded && !won ? 'late' : ''}">
-      <div class="kicker">Le joueur mystère n° ${st.number}</div>
-      <h1><span>Le joueur du jour est</span> ${esc(a.name)}</h1>
+      <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}</div>
+      <h1><span>${L('Le joueur du jour est', "Today's player is")}</span> ${esc(a.name)}</h1>
       <p>${won
-        ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`
-        : `Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`}</p>
-      ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} essai${st.score.guesses > 1 ? 's' : ''}${st.score.hints ? `, ${st.score.hints} indice${st.score.hints > 1 ? 's' : ''}` : ''}<br>rareté ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${String(st.score.mult).replace('.', ',')})${st.user ? '' : ' · <a href="/compte" data-link>crée un compte</a> pour les garder'}</span></div>` : ''}
-      <div class="end-share"><div class="kicker">Défie tes potes</div>${shareBox(resultText(st), location.origin)}</div>
-      <div class="end-act"><a class="btn" href="/ligues" data-link>Mes ligues</a><a class="btn" href="/album" data-link>Mon album</a><span class="muted">Prochain joueur dans <span class="countdown" id="cd"></span></span></div>
+        ? L(`Trouvé en ${n} essai${s_(n)}${st.hints.length ? ` et ${st.hints.length} indice${s_(st.hints.length)}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`,
+          `Found in ${n} ${n > 1 ? 'tries' : 'try'}${st.hints.length ? ` and ${st.hints.length} hint${s_(st.hints.length)}` : ''}. You are the ${ord(st.rank)} to find him today.`)
+        : L(`Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`, `You gave up: he won't join your album, and no points today.`)}</p>
+      ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} ${L('essai', st.score.guesses > 1 ? 'trie' : 'try')}${L(s_(st.score.guesses), st.score.guesses > 1 ? 's' : '')}${st.score.hints ? `, ${st.score.hints} ${L('indice', 'hint')}${s_(st.score.hints)}` : ''}<br>${L('rareté', 'rarity')} ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${EN ? st.score.mult : String(st.score.mult).replace('.', ',')})${st.user ? '' : L(' · <a href="/compte" data-link>crée un compte</a> pour les garder', ' · <a href="/compte" data-link>create an account</a> to keep them')}</span></div>` : ''}
+      <div class="end-share"><div class="kicker">${L('Défie tes potes', 'Challenge your friends')}</div>${shareBox(resultText(st), location.origin)}</div>
+      <div class="end-act"><a class="btn" href="/ligues" data-link>${L('Mes ligues', 'My leagues')}</a><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a><span class="muted">${L('Prochain joueur dans', 'Next player in')} <span class="countdown" id="cd"></span></span></div>
     </div>`;
     tick();
     const rv = $('#reveal');
@@ -380,7 +394,7 @@ function drawGame(lastN) {
 
   if (over && !$('#bw').dataset.closed) {
     $('#bw').dataset.closed = 1; $('#bw').open = false;
-    $('#bws').style.display = ''; $('#bws').textContent = `Tes essais (${st.guesses.length})`;
+    $('#bws').style.display = ''; $('#bws').textContent = `${L('Tes essais', 'Your guesses')} (${st.guesses.length})`;
   }
   // tableau des essais : le dernier en haut, puis du plus chaud au plus froid
   const rows = [...st.guesses].sort((a, b) => b.temp - a.temp || b.n - a.n);
@@ -389,48 +403,50 @@ function drawGame(lastN) {
       <td class="n">${g.n}</td>
       <td class="lbl">${esc(g.label)}${g.type === 'clue' ? `<small>${esc(g.cat)}</small>` : ''}
         <div class="tags">${g.type === 'clue'
-          ? `<span class="tag ${g.yes ? 'yes' : 'no'}">${g.yes ? 'Oui' : 'Non'}</span>`
+          ? `<span class="tag ${g.yes ? 'yes' : 'no'}">${g.yes ? L('Oui', 'Yes') : L('Non', 'No')}</span>`
           : g.tags.map((t) => `<span class="tag ${t.ok ? 'ok' : t.half ? 'half' : ''}">${t.dir === 'up' ? '↑ ' : t.dir === 'down' ? '↓ ' : ''}${esc(t.t)}</span>`).join('')}</div></td>
       <td class="t" style="color:${heat(g.temp)}">${g.temp}°</td>
       <td class="bar"><div class="minibar"><i style="width:${g.temp}%;background:${heat(g.temp)}"></i></div></td>
     </tr>`;
   $('#lastg').innerHTML = last && !over
-    ? `<span class="lg-n">Essai ${last.n}</span><b>${esc(last.label)}</b><span class="lg-t" style="color:${heat(last.temp)}">${last.temp}°</span>${last.type === 'clue'
-        ? `<span class="tag ${last.yes ? 'yes' : 'no'}">${last.yes ? 'Oui' : 'Non'}</span>`
+    ? `<span class="lg-n">${L('Essai', 'Guess')} ${last.n}</span><b>${esc(last.label)}</b><span class="lg-t" style="color:${heat(last.temp)}">${last.temp}°</span>${last.type === 'clue'
+        ? `<span class="tag ${last.yes ? 'yes' : 'no'}">${last.yes ? L('Oui', 'Yes') : L('Non', 'No')}</span>`
         : last.tags.map((t) => `<span class="tag ${t.ok ? 'ok' : t.half ? 'half' : ''}">${t.dir === 'up' ? '↑ ' : t.dir === 'down' ? '↓ ' : ''}${esc(t.t)}</span>`).join('')}`
     : '';
   $('#board').innerHTML = st.guesses.length
-    ? `<thead><tr><th>N°</th><th>Proposition</th><th style="text-align:right">Temp.</th><th class="bar"></th></tr></thead><tbody>
+    ? `<thead><tr><th>${L('N°', '#')}</th><th>${L('Proposition', 'Guess')}</th><th style="text-align:right">Temp.</th><th class="bar"></th></tr></thead><tbody>
        ${rows.map((g) => row(g, last && !over && g.n === last.n ? 'last' : '')).join('')}</tbody>`
     : '';
 
   // ce que tu sais
   const clues = st.guesses.filter((g) => g.type === 'clue');
-  $('#facts').innerHTML = `<h3>Ce que tu sais</h3>` + (clues.length
-    ? `<ul class="facts">${[...clues].sort((a, b) => b.yes - a.yes).map((g) => `<li class="${g.yes ? '' : 'no'}"><span>${esc(g.label)}</span><span class="${g.yes ? 'y' : 'nn'}">${g.yes ? 'OUI' : 'non'}</span></li>`).join('')}</ul>`
-    : `<p class="muted" style="font-size:14px;margin:0">Rien encore. Tape « Ligue 1 », « Brésil » ou « gardien » pour poser une question.</p>`);
+  $('#facts').innerHTML = `<h3>${L('Ce que tu sais', 'What you know')}</h3>` + (clues.length
+    ? `<ul class="facts">${[...clues].sort((a, b) => b.yes - a.yes).map((g) => `<li class="${g.yes ? '' : 'no'}"><span>${esc(g.label)}</span><span class="${g.yes ? 'y' : 'nn'}">${g.yes ? L('OUI', 'YES') : L('non', 'no')}</span></li>`).join('')}</ul>`
+    : `<p class="muted" style="font-size:14px;margin:0">${L('Rien encore. Tape « Ligue 1 », « Brésil » ou « gardien » pour poser une question.', 'Nothing yet. Type “Premier League”, “Brazil” or “goalkeeper” to ask a question.')}</p>`);
 
   // indices
   const n = st.guesses.length;
-  $('#hints').innerHTML = `<h3>Indices</h3>
+  $('#hints').innerHTML = `<h3>${L('Indices', 'Hints')}</h3>
     ${st.hints.length ? `<ol>${st.hints.map((h) => `<li>${esc(h)}</li>`).join('')}</ol>` : ''}
     ${over ? '' : st.hintReady
-      ? `<button class="btn" id="hint">Révéler un indice</button>`
-      : st.nextHintAt ? `<p class="muted" style="font-size:14px;margin:0 0 10px">Prochain indice après ${st.nextHintAt} essais (encore ${st.nextHintAt - n}).</p>` : ''}
-    ${over ? '' : `<p style="margin:12px 0 0"><button class="linkbtn muted" id="giveup">Abandonner et voir la réponse</button></p>`}`;
+      ? `<button class="btn" id="hint">${L('Révéler un indice', 'Reveal a hint')}</button>`
+      : st.nextHintAt ? `<p class="muted" style="font-size:14px;margin:0 0 10px">${L(`Prochain indice après ${st.nextHintAt} essais (encore ${st.nextHintAt - n}).`, `Next hint after ${st.nextHintAt} guesses (${st.nextHintAt - n} to go).`)}</p>` : ''}
+    ${over ? '' : `<p style="margin:12px 0 0"><button class="linkbtn muted" id="giveup">${L('Abandonner et voir la réponse', 'Give up and see the answer')}</button></p>`}`;
   const h = $('#hint');
   if (h) h.onclick = async () => { ST = await api('hint', {}); drawGame(); };
   const gu = $('#giveup');
   if (gu) gu.onclick = async () => {
-    if (!confirm("Abandonner ? Le joueur du jour ne rejoindra pas ton album et ta série repartira de zéro.")) return;
+    if (!confirm(L("Abandonner ? Le joueur du jour ne rejoindra pas ton album et ta série repartira de zéro.", "Give up? Today's player won't join your album and your streak will reset to zero."))) return;
     ST = await api('giveup', {}); renderWho(ST.user); drawGame();
   };
 
   // stats du jour
   const s = st.stats;
-  $('#daystats').innerHTML = `<h3>Aujourd'hui</h3>
-    <p><b>${s.found}</b> joueur${s.found > 1 ? 's ont' : ' a'} trouvé${s.avg ? `, en <b>${s.avg}</b> essais en moyenne` : ''}.</p>
-    ${st.yesterday ? `<p>Hier, c'était <a href="/joueur/${st.yesterday.id}" data-link><b style="font-family:inherit">${esc(st.yesterday.name)}</b></a> (${st.yesterday.stats.found} l'ont trouvé).</p>` : ''}`;
+  const yname = st.yesterday ? `<a href="/joueur/${st.yesterday.id}" data-link><b style="font-family:inherit">${esc(st.yesterday.name)}</b></a>` : '';
+  $('#daystats').innerHTML = `<h3>${L("Aujourd'hui", 'Today')}</h3>
+    <p>${L(`<b>${s.found}</b> joueur${s.found > 1 ? 's ont' : ' a'} trouvé${s.avg ? `, en <b>${s.avg}</b> essais en moyenne` : ''}.`,
+      `<b>${s.found}</b> player${s_(s.found)} found him${s.avg ? `, in <b>${s.avg}</b> guesses on average` : ''}.`)}</p>
+    ${st.yesterday ? `<p>${L(`Hier, c'était ${yname} (${st.yesterday.stats.found} l'ont trouvé).`, `Yesterday it was ${yname} (${st.yesterday.stats.found} found him).`)}</p>` : ''}`;
 }
 
 function tick() {
@@ -451,7 +467,7 @@ function tick() {
 // ——— Partage ———
 // Un seul bouton : sur téléphone (et la plupart des ordis), il ouvre la feuille de partage du système
 // avec toutes les applis et les contacts. Là où elle n'existe pas, le texte est copié.
-function shareBox(text, url, label = 'Partager') {
+function shareBox(text, url, label = L('Partager', 'Share')) {
   const id = 'sh' + Math.random().toString(36).slice(2, 7);
   setTimeout(() => {
     const btn = document.getElementById(id);
@@ -461,7 +477,7 @@ function shareBox(text, url, label = 'Partager') {
         try { await navigator.share({ text, url }); return; } catch (e) { if (e.name === 'AbortError') return; }
       }
       const full = `${text}\n${url}`;
-      try { await navigator.clipboard.writeText(full); btn.textContent = 'Copié, colle-le où tu veux'; } catch { prompt('Copie ce texte :', full); }
+      try { await navigator.clipboard.writeText(full); btn.textContent = L('Copié, colle-le où tu veux', 'Copied, paste it anywhere'); } catch { prompt(L('Copie ce texte :', 'Copy this text:'), full); }
     };
   });
   return `<div class="sharebox"><button class="btn solid sh" id="${id}" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M6 11H4v10h16V11h-2"/></svg>${label}</button></div>`;
@@ -473,9 +489,9 @@ function resultText(st) {
   for (let i = 0; i < marks.length; i += 6) rows.push(marks.slice(i, i + 6).join(''));
   const n = st.guesses.length;
   const head = st.status === 'won'
-    ? `Trouvé en ${n} essai${n > 1 ? 's' : ''}${st.hints.length ? ` et ${st.hints.length} indice${st.hints.length > 1 ? 's' : ''}` : ''}${st.score ? ` · +${st.score.points} pts` : ''}`
-    : `Abandon après ${n} essai${n > 1 ? 's' : ''} 🏳️`;
-  return `FoOotix.com n°${st.number} ⚽\n${head}\n${rows.join('\n')}\nEt toi, tu le trouves en combien ?`;
+    ? L(`Trouvé en ${n} essai${s_(n)}${st.hints.length ? ` et ${st.hints.length} indice${s_(st.hints.length)}` : ''}`, `Found in ${n} ${n > 1 ? 'tries' : 'try'}${st.hints.length ? ` and ${st.hints.length} hint${s_(st.hints.length)}` : ''}`) + (st.score ? ` · +${st.score.points} pts` : '')
+    : L(`Abandon après ${n} essai${s_(n)} 🏳️`, `Gave up after ${n} ${n > 1 ? 'tries' : 'try'} 🏳️`);
+  return `FoOotix.com ${L('n°', '#')}${st.number} ⚽\n${head}\n${rows.join('\n')}\n${L('Et toi, tu le trouves en combien ?', 'How many tries will you need?')}`;
 }
 
 function bindSearch() {
@@ -489,7 +505,7 @@ function bindSearch() {
       const st = await api('guess', { q });
       ST = st;
       input.value = '';
-      msg.textContent = st.dup ? `Déjà proposé (essai n° ${st.dup}).` : '';
+      msg.textContent = st.dup ? L(`Déjà proposé (essai n° ${st.dup}).`, `Already guessed (guess #${st.dup}).`) : '';
       if (st.status === 'won') renderWho(st.user);
       drawGame(st.dup || st.last);
       if (st.status === 'playing') input.focus();
@@ -502,12 +518,25 @@ function bindSearch() {
 }
 
 // ——— Page Wikipédia du joueur ———
-const WIKI = 'https://fr.wikipedia.org';
+// les fiches pointent vers Wikipédia en français ; en anglais, on suit le lien vers la page anglaise
+const FRWIKI = 'https://fr.wikipedia.org';
+const WIKI = EN ? 'https://en.wikipedia.org' : FRWIKI;
 const wikiUrl = (title) => `${WIKI}/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+const EN_TITLE = {};
+async function wikiTitle(frTitle) {
+  if (!EN) return frTitle;
+  if (EN_TITLE[frTitle]) return EN_TITLE[frTitle];
+  const r = await fetch(`${FRWIKI}/w/api.php?action=query&prop=langlinks&lllang=en&redirects=1&format=json&origin=*&titles=${encodeURIComponent(frTitle)}`);
+  const j = await r.json();
+  const pg = Object.values((j.query && j.query.pages) || {})[0];
+  const t = pg && pg.langlinks && pg.langlinks[0] && pg.langlinks[0]['*'];
+  if (!t) throw new Error('no English page');
+  return (EN_TITLE[frTitle] = t);
+}
 
 async function fetchWikiHtml(title) {
   const r = await fetch(`${WIKI}/api/rest_v1/page/html/${encodeURIComponent(title.replace(/ /g, '_'))}?redirect=true`);
-  if (!r.ok) throw new Error('Wikipédia ' + r.status);
+  if (!r.ok) throw new Error('Wikipedia ' + r.status);
   const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
   doc.querySelectorAll('script, link, meta, base, .navbox, .navbox-container, .bandeau-portail, .homonymie, .bandeau-container, .metadata, .noprint, .mw-editsection, [role="navigation"]').forEach((e) => e.remove());
   doc.querySelectorAll('a[href]').forEach((a) => {
@@ -517,7 +546,7 @@ async function fetchWikiHtml(title) {
     else if (h.startsWith('/')) a.href = WIKI + h;
     if (!h.startsWith('#')) { a.target = '_blank'; a.rel = 'noopener'; }
   });
-  doc.querySelectorAll('a').forEach((a) => { if (/^modifier( le code)?$/i.test(a.textContent.trim())) (a.closest('.navbar, p, div') || a).remove(); });
+  doc.querySelectorAll('a').forEach((a) => { if (/^(modifier( le code)?|edit|edit source)$/i.test(a.textContent.trim())) (a.closest('.navbar, p, div') || a).remove(); });
   doc.querySelectorAll('img').forEach((img) => {
     for (const at of ['src', 'srcset']) {
       const v = img.getAttribute(at);
@@ -528,19 +557,21 @@ async function fetchWikiHtml(title) {
   // on coupe les sections de fin (notes, liens externes, voir aussi)
   doc.querySelectorAll('section').forEach((s) => {
     const h = s.querySelector(':scope > h2');
-    if (h && /^(notes|références|liens externes|voir aussi|bibliographie|annexes)/i.test(h.textContent.trim())) s.remove();
+    if (h && /^(notes|références|liens externes|voir aussi|bibliographie|annexes|references|external links|see also|bibliography|further reading|sources)/i.test(h.textContent.trim())) s.remove();
   });
   return doc.body.innerHTML;
 }
 
 async function showWiki(el, p, head = '') {
-  el.innerHTML = `<article class="wikiart">${head}<div class="wa-top"><span>Wikipédia, l'encyclopédie libre</span><a href="${wikiUrl(p.title || p.name)}" target="_blank" rel="noopener">Ouvrir sur Wikipédia ↗</a></div><h1 class="wa-title">${esc(p.title || p.name)}</h1><div class="mw-parser-output" id="wbody"><p class="note">Chargement de la page Wikipédia…</p></div></article>`;
+  el.innerHTML = `<article class="wikiart">${head}<div class="wa-top"><span>${L("Wikipédia, l'encyclopédie libre", 'Wikipedia, the free encyclopedia')}</span><a id="wlink" href="${EN ? FRWIKI + '/wiki/' + encodeURIComponent((p.title || p.name).replace(/ /g, '_')) : wikiUrl(p.title || p.name)}" target="_blank" rel="noopener">${L('Ouvrir sur Wikipédia ↗', 'Open on Wikipedia ↗')}</a></div><h1 class="wa-title">${esc(p.title || p.name)}</h1><div class="mw-parser-output" id="wbody"><p class="note">${L('Chargement de la page Wikipédia…', 'Loading the Wikipedia page…')}</p></div></article>`;
   try {
     const body = $('#wbody', el);
-    body.innerHTML = await fetchWikiHtml(p.title || p.name);
+    const title = await wikiTitle(p.title || p.name);
+    if (EN) { $('.wa-title', el).textContent = title; $('#wlink', el).href = wikiUrl(title); }
+    body.innerHTML = await fetchWikiHtml(title);
     if (body.scrollHeight > 2000) {
       body.classList.add('wa-clip');
-      body.insertAdjacentHTML('afterend', `<button class="btn wa-more">Lire tout l'article</button>`);
+      body.insertAdjacentHTML('afterend', `<button class="btn wa-more">${L("Lire tout l'article", 'Read the whole article')}</button>`);
       $('.wa-more', el).onclick = (e) => { body.classList.remove('wa-clip'); e.target.remove(); };
     }
   } catch {
@@ -550,13 +581,13 @@ async function showWiki(el, p, head = '') {
 
 // si Wikipédia ne répond pas : une fiche maison à partir de nos données
 function fallbackCard(p) {
-  const span = (c) => c.to == null ? (c.from ? `depuis ${c.from}` : '') : c.from === c.to ? `${c.from}` : `${c.from ?? '?'}–${c.to}`;
-  return `<p class="note">Wikipédia n'a pas répondu, voici la fiche résumée.</p>
-    <p><b>${esc(p.name)}</b>, né le ${esc(fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' }))}${p.place ? ` à ${esc(p.place)}` : ''}, ${esc(p.pos.toLowerCase())} (${esc(p.nat.join(' / '))}).</p>
-    <h2>Carrière en club</h2>
-    <table class="wikitable"><tr><th>Période</th><th>Club</th><th>Championnat</th></tr>
-    ${p.clubs.map((c) => `<tr><td>${span(c)}</td><td>${esc(c.club)}${c.loan ? ' (prêt)' : ''}</td><td>${esc(c.leagueName || '—')}</td></tr>`).join('')}</table>
-    ${p.nt ? `<h2>Sélection</h2><p>${esc(p.nt.team)}${p.nt.from ? `, ${p.nt.from}–${p.nt.to ?? ''}` : ''}${p.nt.caps ? ` : ${p.nt.caps} sélections, ${p.nt.goals ?? 0} buts` : ''}.</p>` : ''}`;
+  const span = (c) => c.to == null ? (c.from ? `${L('depuis', 'since')} ${c.from}` : '') : c.from === c.to ? `${c.from}` : `${c.from ?? '?'}–${c.to}`;
+  return `<p class="note">${L("Wikipédia n'a pas répondu, voici la fiche résumée.", "Wikipedia didn't answer, here is a short profile.")}</p>
+    <p><b>${esc(p.name)}</b>, ${L('né le', 'born')} ${esc(fmtDate(p.born, { day: 'numeric', month: 'long', year: 'numeric' }))}${p.place ? ` ${L('à', 'in')} ${esc(p.place)}` : ''}, ${esc(p.pos.toLowerCase())} (${esc(p.nat.join(' / '))}).</p>
+    <h2>${L('Carrière en club', 'Club career')}</h2>
+    <table class="wikitable"><tr><th>${L('Période', 'Years')}</th><th>Club</th><th>${L('Championnat', 'League')}</th></tr>
+    ${p.clubs.map((c) => `<tr><td>${span(c)}</td><td>${esc(c.club)}${c.loan ? L(' (prêt)', ' (loan)') : ''}</td><td>${esc(c.leagueName || '—')}</td></tr>`).join('')}</table>
+    ${p.nt ? `<h2>${L('Sélection', 'National team')}</h2><p>${esc(p.nt.team)}${p.nt.from ? `, ${p.nt.from}–${p.nt.to ?? ''}` : ''}${p.nt.caps ? L(` : ${p.nt.caps} sélections, ${p.nt.goals ?? 0} buts`, `: ${p.nt.caps} caps, ${p.nt.goals ?? 0} goals`) : ''}.</p>` : ''}`;
 }
 
 async function pagePlayer(id) {
@@ -564,11 +595,12 @@ async function pagePlayer(id) {
   renderWho(me.user, me);
   const s = p.stats;
   const mine = p.mine
-    ? p.mine.status === 'won' ? `Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${p.mine.guesses > 1 ? 's' : ''}, il est dans ton album.`
-      : p.mine.status === 'gaveup' ? 'Tu as abandonné ce jour-là.' : `Tu ne l'as pas trouvé (${p.mine.guesses} essais).`
-    : "Tu n'as pas joué ce jour-là.";
-  const head = `<div class="wa-crampon">Joueur mystère n° ${p.number} du ${esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }))}. ${mine} ${s.found} joueur${s.found > 1 ? 's' : ''} l'${s.found > 1 ? 'ont' : 'a'} trouvé.</div>`;
-  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/" data-link>Jouer</a></p>`;
+    ? p.mine.status === 'won' ? L(`Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You found him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`)
+      : p.mine.status === 'gaveup' ? L('Tu as abandonné ce jour-là.', 'You gave up that day.') : L(`Tu ne l'as pas trouvé (${p.mine.guesses} essais).`, `You didn't find him (${p.mine.guesses} guesses).`)
+    : L("Tu n'as pas joué ce jour-là.", "You didn't play that day.");
+  const when = esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }));
+  const head = `<div class="wa-crampon">${L(`Joueur mystère n° ${p.number} du ${when}.`, `Mystery player #${p.number}, ${when}.`)} ${mine} ${L(`${s.found} joueur${s_(s.found)} l'${s.found > 1 ? 'ont' : 'a'} trouvé.`, `${s.found} player${s_(s.found)} found him.`)}</div>`;
+  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/" data-link>${L('Jouer', 'Play')}</a></p>`;
   await showWiki($('#wp'), p, head);
 }
 
@@ -580,29 +612,29 @@ async function pageAlbum() {
   const past = a.days.filter((d) => !d.today).length;
   app.innerHTML = `
     <div class="pagehead">
-      <div><div class="kicker">Ta collection</div><h1>Mon album</h1>
-      <p>Un joueur par jour. Ceux que tu rates restent vides pour toujours.</p></div>
+      <div><div class="kicker">${L('Ta collection', 'Your collection')}</div><h1>${L('Mon album', 'My album')}</h1>
+      <p>${L('Un joueur par jour. Ceux que tu rates restent vides pour toujours.', 'One player a day. The ones you miss stay empty forever.')}</p></div>
       <div class="counters">
-        <div><b>${won}</b><span>trouvés</span></div>
-        <div><b>${past - a.days.filter((d) => !d.today && d.status === 'won').length}</b><span>manqués</span></div>
-        <div><b>${a.user ? a.user.streak : '—'}</b><span>série</span></div>
+        <div><b>${won}</b><span>${L('trouvés', 'found')}</span></div>
+        <div><b>${past - a.days.filter((d) => !d.today && d.status === 'won').length}</b><span>${L('manqués', 'missed')}</span></div>
+        <div><b>${a.user ? a.user.streak : '—'}</b><span>${L('série', 'streak')}</span></div>
         <div><b>${a.user ? a.user.best : '—'}</b><span>record</span></div>
       </div>
     </div>
-    ${a.user ? '' : `<p class="nudge" style="margin:0 0 20px">Sans compte, ton album ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour le garder.</p>`}
+    ${a.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ton album ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour le garder.', 'Without an account, your album only lives on this device. <a href="/compte" data-link>Create an account</a> to keep it.')}</p>`}
     <div class="album">${a.days.map(slot).join('')}</div>
     ${adSlot('wide')}`;
 }
 function slot(d) {
   const date = fmtDate(d.day, { day: 'numeric', month: 'short' });
   if (d.today && d.status !== 'won' && d.status !== 'gaveup') {
-    return `<a class="slot today" href="/" data-link><div class="top"><span>N° ${d.number}</span><span>${date}</span></div>
-      <div class="face"><div><div class="q">?</div><div class="sub">${d.guesses ? `${d.guesses} essai${d.guesses > 1 ? 's' : ''}, continue` : 'À trouver aujourd’hui'}</div></div></div>
-      <div class="bot">Aujourd'hui</div></a>`;
+    return `<a class="slot today" href="/" data-link><div class="top"><span>${L('N°', 'No.')} ${d.number}</span><span>${date}</span></div>
+      <div class="face"><div><div class="q">?</div><div class="sub">${d.guesses ? L(`${d.guesses} essai${s_(d.guesses)}, continue`, `${d.guesses} guess${d.guesses > 1 ? 'es' : ''}, keep going`) : L('À trouver aujourd’hui', 'To find today')}</div></div></div>
+      <div class="bot">${L("Aujourd'hui", 'Today')}</div></a>`;
   }
   const cls = d.status === 'won' ? 's-won' : d.status === 'gaveup' ? 's-gaveup s-missed' : 's-missed';
-  const bot = d.status === 'won' ? `Trouvé · ${d.guesses} essai${d.guesses > 1 ? 's' : ''}` : d.status === 'gaveup' ? 'Abandonné' : 'Manqué';
-  return `<a class="slot ${cls} ${d.today ? 'today' : ''}" href="/joueur/${d.player.id}" data-link><div class="top"><span>N° ${d.number}</span><span>${date}</span></div>
+  const bot = d.status === 'won' ? L(`Trouvé · ${d.guesses} essai${s_(d.guesses)}`, `Found · ${d.guesses} ${d.guesses > 1 ? 'tries' : 'try'}`) : d.status === 'gaveup' ? L('Abandonné', 'Gave up') : L('Manqué', 'Missed');
+  return `<a class="slot ${cls} ${d.today ? 'today' : ''}" href="/joueur/${d.player.id}" data-link><div class="top"><span>${L('N°', 'No.')} ${d.number}</span><span>${date}</span></div>
     <div class="pic">${d.player.img ? `<img src="${esc(d.player.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
     <div class="face"><div><div class="nm">${esc(d.player.name)}</div><div class="sub">${esc(d.player.pos)} · ${esc(d.player.nat)}</div></div></div>
     <div class="bot">${bot}</div></a>`;
@@ -613,27 +645,27 @@ let RANK_TAB = 'points';
 async function pageRank() {
   const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
   renderWho(me.user, me);
-  const empty = (cols) => `<tr><td colspan="${cols}" class="muted">Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.</td></tr>`;
-  const row = (x, cells) => `<tr class="${x.me ? 'me' : ''} ${x.gap ? 'gap' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ' <span class="muted">(toi)</span>' : ''}</td>${cells}</tr>`;
-  const podium = (list, val) => list.length ? `<div class="podium">${list.slice(0, 3).map((x, i) => `<div class="p${i + 1}"><div class="pl">${i + 1}<sup>${i ? 'e' : 'er'}</sup></div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : '';
+  const empty = (cols) => `<tr><td colspan="${cols}" class="muted">${L("Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.", "Nobody yet. Find today's player with an account to get things started.")}</td></tr>`;
+  const row = (x, cells) => `<tr class="${x.me ? 'me' : ''} ${x.gap ? 'gap' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ` <span class="muted">${L('(toi)', '(you)')}</span>` : ''}</td>${cells}</tr>`;
+  const podium = (list, val) => list.length ? `<div class="podium">${list.slice(0, 3).map((x, i) => `<div class="p${i + 1}"><div class="pl">${ord(i + 1)}</div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : '';
   const tabs = {
     points: () => `${podium(r.points, (x) => `${x.total} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r opt">Aujourd'hui</th><th class="r opt">Trouvés</th><th class="r opt">Série</th></tr></thead><tbody>
+      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r opt">${L("Aujourd'hui", 'Today')}</th><th class="r opt">${L('Trouvés', 'Found')}</th><th class="r opt">${L('Série', 'Streak')}</th></tr></thead><tbody>
       ${r.points.length ? r.points.map((x) => row(x, `<td class="r big">${x.total}</td><td class="r opt">${x.today ? '+' + x.today : '–'}</td><td class="r opt">${x.found}</td><td class="r opt">${x.streak}</td>`)).join('') : empty(6)}</tbody></table>
-      <p class="rank-note">Les points s'additionnent jour après jour. Moins tu poses de questions, plus tu marques, et un joueur peu connu rapporte jusqu'à deux fois plus qu'une star. Chaque indice retire 10 %.</p>`,
+      <p class="rank-note">${L("Les points s'additionnent jour après jour. Moins tu poses de questions, plus tu marques, et un joueur peu connu rapporte jusqu'à deux fois plus qu'une star. Chaque indice retire 10 %.", 'Points add up day after day. The fewer questions you ask, the more you score, and a little-known player is worth up to twice as much as a star. Each hint costs 10%.')}</p>`,
     today: () => `${podium(r.today, (x) => `${x.pts} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r">Essais</th></tr></thead><tbody>
+      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r">${L('Essais', 'Guesses')}</th></tr></thead><tbody>
       ${r.today.length ? r.today.map((x) => row(x, `<td class="r big">${x.pts}</td><td class="r">${x.n}</td>`)).join('') : empty(4)}</tbody></table>`,
-    streaks: () => `${podium(r.streaks, (x) => `${x.streak} jour${x.streak > 1 ? 's' : ''}`)}
-      <div class="rank-wrap"><table class="rank"><caption>Séries en cours</caption><thead><tr><th>#</th><th>Joueur</th><th class="r">Jours</th></tr></thead><tbody>
+    streaks: () => `${podium(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`)}
+      <div class="rank-wrap"><table class="rank"><caption>${L('Séries en cours', 'Current streaks')}</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
       ${r.streaks.length ? r.streaks.map((x) => row(x, `<td class="r big">${x.streak}</td>`)).join('') : empty(3)}</tbody></table>
-      <table class="rank"><caption>Records</caption><thead><tr><th>#</th><th>Joueur</th><th class="r">Jours</th></tr></thead><tbody>
+      <table class="rank"><caption>Records</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
       ${r.records.length ? r.records.map((x) => row(x, `<td class="r">${x.best}</td>`)).join('') : empty(3)}</tbody></table></div>
-      <p class="rank-note">Une série, c'est le nombre de jours d'affilée où tu as trouvé le joueur. Un jour sans, ou un abandon, et elle repart de zéro.</p>`,
+      <p class="rank-note">${L("Une série, c'est le nombre de jours d'affilée où tu as trouvé le joueur. Un jour sans, ou un abandon, et elle repart de zéro.", 'A streak is the number of days in a row you found the player. Miss a day, or give up, and it resets to zero.')}</p>`,
   };
-  const names = { points: 'Général', today: "Aujourd'hui", streaks: 'Séries' };
+  const names = { points: L('Général', 'Overall'), today: L("Aujourd'hui", 'Today'), streaks: L('Séries', 'Streaks') };
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">${r.players} joueur${r.players > 1 ? 's' : ''} classé${r.players > 1 ? 's' : ''}</div><h1>Classement</h1><p>${me.user ? `Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${me.user.streak > 1 ? 's' : ''}</b>.` : `Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`}</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L(`${r.players} joueur${s_(r.players)} classé${s_(r.players)}`, `${r.players} ranked player${s_(r.players)}`)}</div><h1>${L('Classement', 'Ranking')}</h1><p>${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div id="tab"></div>
     ${adSlot('wide')}`;
@@ -657,12 +689,12 @@ async function pageAuth() {
   renderWho(m.user, m);
   if (m.user) {
     app.innerHTML = `
-      <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>${esc(m.user.username)}</h1><p><b>${m.user.points}</b> points · <b>${m.user.found}</b> joueur${m.user.found > 1 ? 's' : ''} trouvé${m.user.found > 1 ? 's' : ''} · série de <b>${m.user.streak}</b> jour${m.user.streak > 1 ? 's' : ''} (record ${m.user.best})</p></div></div>
-      <p><a class="btn" href="/album" data-link>Mon album</a> <a class="btn" href="/classement" data-link>Classement</a> <button class="btn" id="logout">Se déconnecter</button></p>
-      <details class="danger"><summary>Supprimer mon compte</summary>
-        <form id="fd"><p>Ton compte, tes points, ta série et ton album seront effacés pour de bon.</p>
-          <div class="field"><label for="dp">Mot de passe</label><input id="dp" name="password" type="password" autocomplete="current-password" required></div>
-          <button class="btn">Supprimer définitivement</button><p class="msg"></p></form>
+      <div class="pagehead"><div><div class="kicker">${L('Ton vestiaire', 'Your locker room')}</div><h1>${esc(m.user.username)}</h1><p>${L(`<b>${m.user.points}</b> points · <b>${m.user.found}</b> joueur${s_(m.user.found)} trouvé${s_(m.user.found)} · série de <b>${m.user.streak}</b> jour${s_(m.user.streak)} (record ${m.user.best})`, `<b>${m.user.points}</b> points · <b>${m.user.found}</b> player${s_(m.user.found)} found · <b>${m.user.streak}</b>-day streak (record ${m.user.best})`)}</p></div></div>
+      <p><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/classement" data-link>${L('Classement', 'Ranking')}</a> <button class="btn" id="logout">${L('Se déconnecter', 'Log out')}</button></p>
+      <details class="danger"><summary>${L('Supprimer mon compte', 'Delete my account')}</summary>
+        <form id="fd"><p>${L('Ton compte, tes points, ta série et ton album seront effacés pour de bon.', 'Your account, points, streak and album will be erased for good.')}</p>
+          <div class="field"><label for="dp">${L('Mot de passe', 'Password')}</label><input id="dp" name="password" type="password" autocomplete="current-password" required></div>
+          <button class="btn">${L('Supprimer définitivement', 'Delete permanently')}</button><p class="msg"></p></form>
       </details>`;
     $('#logout').onclick = async () => { await api('logout', {}); go('/'); };
     $('#fd').onsubmit = async (e) => {
@@ -672,16 +704,16 @@ async function pageAuth() {
     return;
   }
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">Ton vestiaire</div><h1>Compte</h1><p>Un pseudo et un mot de passe suffisent. Ta partie du jour te suit.</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L('Ton vestiaire', 'Your locker room')}</div><h1>${L('Compte', 'Account')}</h1><p>${L('Un pseudo et un mot de passe suffisent. Ta partie du jour te suit.', "A username and a password are all you need. Today's game comes with you.")}</p></div></div>
     <div class="auth">
-      <form id="fl"><h2>Connexion</h2>
-        <div class="field"><label for="lu">Pseudo</label><input id="lu" name="username" autocomplete="username" required></div>
-        <div class="field"><label for="lp">Mot de passe</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
-        <button class="btn solid">Se connecter</button><p class="msg"></p></form>
-      <form id="fs"><h2>Nouveau compte</h2>
-        <div class="field"><label for="su">Pseudo</label><input id="su" name="username" autocomplete="username" required minlength="3" maxlength="20"></div>
-        <div class="field"><label for="sp">Mot de passe (6 caractères min.)</label><input id="sp" name="password" type="password" autocomplete="new-password" required minlength="6"></div>
-        <button class="btn solid">Créer mon compte</button><p class="msg"></p></form>
+      <form id="fl"><h2>${L('Connexion', 'Log in')}</h2>
+        <div class="field"><label for="lu">${L('Pseudo', 'Username')}</label><input id="lu" name="username" autocomplete="username" required></div>
+        <div class="field"><label for="lp">${L('Mot de passe', 'Password')}</label><input id="lp" name="password" type="password" autocomplete="current-password" required></div>
+        <button class="btn solid">${L('Se connecter', 'Log in')}</button><p class="msg"></p></form>
+      <form id="fs"><h2>${L('Nouveau compte', 'New account')}</h2>
+        <div class="field"><label for="su">${L('Pseudo', 'Username')}</label><input id="su" name="username" autocomplete="username" required minlength="3" maxlength="20"></div>
+        <div class="field"><label for="sp">${L('Mot de passe (6 caractères min.)', 'Password (6 characters min.)')}</label><input id="sp" name="password" type="password" autocomplete="new-password" required minlength="6"></div>
+        <button class="btn solid">${L('Créer mon compte', 'Create my account')}</button><p class="msg"></p></form>
     </div>`;
   for (const [id, path] of [['#fl', 'login'], ['#fs', 'signup']]) {
     const f = $(id);
@@ -695,7 +727,25 @@ async function pageAuth() {
 // ——— Page : règles ———
 function pageRules() {
   api('me').then((m) => renderWho(m.user, m));
-  app.innerHTML = `
+  app.innerHTML = EN ? `
+    <div class="pagehead"><div><div class="kicker">How it works</div><h1>Rules</h1></div></div>
+    <div class="prose">
+      <p>Every day at midnight (Paris time), one footballer is drawn from 600 internationals, legends and current players, who all spent at least three seasons in the Premier League, LaLiga, Serie A, Bundesliga or Ligue 1. The draw is the same for everyone, and a player doesn't come back until almost all the others have been drawn.</p>
+      <h2>Points</h2>
+      <p>Finding the player earns points: 100 if you get him on the first try, then a little less with each guess (never below 10). Each hint you ask for costs 10%. Rarity multiplies the total: a star like Zidane counts ×1, a little-known player up to ×2. Giving up earns nothing. Points add up day after day in the overall ranking.</p>
+      <h2>The card</h2>
+      <p>At first, the mystery player's card is empty: a silhouette and question marks. Everything you discover goes on it: nationality, position, year or decade of birth, a club, his leagues, whether he still plays, whether he won the Ballon d'Or. The number in the top left corner is your temperature.</p>
+      <h2>Two ways to search</h2>
+      <p><b>Guess a player.</b> You see what your player has in common with the mystery one: same nationality, same or nearby position, teammates at a club, shared clubs or leagues. An arrow tells you whether the mystery player is older or younger.</p>
+      <p><b>Ask a question.</b> Type a league, a club, a country, a continent, a position, a birth decade, “Ballon d'Or” or “retired”. You get a yes or no, stored under “What you know”.</p>
+      <h2>Temperature</h2>
+      <p>It measures everything you know about the mystery player. At the start, 600 players are possible: you're at 0°. Every yes, every no, every common point with a guessed player rules some out. When about ten are left, you're around 65°; at 99°, only one is left, you just have to name him. 100° means you won.</p>
+      <h2>Hints</h2>
+      <p>Every 8 guesses, you can reveal a hint: position, generation, continent, nationality, a club, then his initials.</p>
+      <h2>Your album and your streak</h2>
+      <p>Every player you find joins your album, and his Wikipedia page shows up right away. Missed days stay as empty slots, you can't replay a past date. Your streak counts the days in a row you found the player. Giving up resets it.</p>
+      <p class="muted" style="font-size:14px">Players and their careers come from Wikidata, updated daily. Pages come from Wikipedia (CC BY-SA).</p>
+    </div>` : `
     <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
     <div class="prose">
       <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort parmi 600 internationaux, légendes ou joueurs actuels, qui ont tous passé au moins trois saisons en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et un joueur ne revient pas avant que presque tous les autres soient passés.</p>
@@ -717,15 +767,27 @@ function pageRules() {
 }
 
 // ——— Pages : mentions légales et confidentialité ———
-const todo = (v, what) => v ? esc(v) : `<mark>${what} à compléter</mark>`;
+const todo = (v, what) => v ? esc(v) : `<mark>${what} ${L('à compléter', 'to be filled in')}</mark>`;
 const contact = () => CFG.contact
   ? (CFG.contact.includes('@') ? `<a href="mailto:${esc(CFG.contact)}">${esc(CFG.contact)}</a>` : esc(CFG.contact))
-  : todo('', 'Adresse e-mail de contact');
-const HOST = 'Render Services, Inc., 525 Brannan Street, Suite 300, San Francisco, CA 94107, États-Unis (render.com)';
+  : todo('', L('Adresse e-mail de contact', 'Contact email address'));
+const HOST = `Render Services, Inc., 525 Brannan Street, Suite 300, San Francisco, CA 94107, ${L('États-Unis', 'USA')} (render.com)`;
 
 function pageLegal() {
   api('me').then((m) => renderWho(m.user, m));
-  app.innerHTML = `
+  app.innerHTML = EN ? `
+    <div class="pagehead"><div><div class="kicker">Who's behind FoOotix</div><h1>Legal notice</h1></div></div>
+    <div class="prose">
+      <h2>Publisher</h2>
+      <p>${todo(CFG.owner, 'Publisher name')}<br>${todo(CFG.address, 'Postal address')}<br>Contact: ${contact()}</p>
+      <p>Publication director: ${todo(CFG.owner, 'Name')}.</p>
+      <h2>Host</h2>
+      <p>${HOST}.</p>
+      <h2>Content</h2>
+      <p>Player profiles (clubs, dates, positions, nationalities) come from <a href="https://www.wikidata.org" target="_blank" rel="noopener">Wikidata</a>, under the CC0 licence. Summaries and anecdotes come from <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>, under the <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> licence, and may be reused under the same terms. Photos come from Wikimedia Commons; the author and licence of each one are listed on its Commons page.</p>
+      <p>Club names and crests are trademarks of their owners. They are only used to identify the clubs where the players played. FoOotix is not affiliated with any club or league, nor with FIFA, UEFA or any football federation.</p>
+      <p>Spotted a mistake, or a crest or photo that should be removed? Write to ${contact()}, we'll fix it quickly.</p>
+    </div>` : `
     <div class="pagehead"><div><div class="kicker">Qui est derrière FoOotix</div><h1>Mentions légales</h1></div></div>
     <div class="prose">
       <h2>Éditeur</h2>
@@ -743,7 +805,40 @@ function pageLegal() {
 function pagePrivacy() {
   api('me').then((m) => renderWho(m.user, m));
   const ads = !!CFG.ads;
-  app.innerHTML = `
+  app.innerHTML = EN ? `
+    <div class="pagehead"><div><div class="kicker">Your data</div><h1>Privacy and cookies</h1><p>What FoOotix keeps about you, why, and how to erase it.</p></div></div>
+    <div class="prose">
+      <h2>Data controller</h2>
+      <p>${todo(CFG.owner, 'Publisher name')}, reachable at ${contact()}.</p>
+      <h2>What the site stores</h2>
+      <table>
+        <tr><th>Data</th><th>Why</th><th>How long</th></tr>
+        <tr><td>Username and password (hashed, unreadable even to us)</td><td>Your account</td><td>Until you delete it</td></tr>
+        <tr><td>Your games: guesses, hints, result, points</td><td>Game, album, streak, ranking</td><td>As long as the account exists</td></tr>
+        <tr><td>IP address</td><td>Limit login attempts</td><td>10 minutes, in memory</td></tr>
+        <tr><td>Pages viewed, site you came from, mobile or computer</td><td>Count visits, with no third-party tool and no IP address</td><td>Daily totals, with nothing that identifies you</td></tr>
+      </table>
+      <p>No email address, no name, nothing is sold. Your username and points appear in the public ranking.</p>
+      <h2>Site cookies</h2>
+      <table>
+        <tr><th>Name</th><th>Purpose</th><th>Duration</th></tr>
+        <tr><td><code>aid</code></td><td>Find your game of the day if you play without an account</td><td>13 months</td></tr>
+        <tr><td><code>sid</code></td><td>Keep you logged in</td><td>13 months, or until you log out</td></tr>
+        <tr><td><code>lang</code></td><td>Remember the language you chose</td><td>1 year</td></tr>
+        <tr><td><code>theme</code> (local storage)</td><td>Remember light or dark mode</td><td>Until you clear your browser</td></tr>
+      </table>
+      <p>These are needed for the game to work: they are not used for ads or tracking, and the law does not require consent for them.</p>
+      <h2>Advertising</h2>
+      ${ads ? `<p>FoOotix is funded by Google AdSense ads. Google and its partners may set cookies to show ads, personalise them and measure their performance. They are only set with your consent, asked on your first visit. If you refuse, you still see ads, but not personalised ones.</p>
+      <p>You can change your mind at any time: <a href="#" id="cookies2">manage cookies</a>. Learn more: <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">how Google uses data from partner sites</a>.</p>`
+      : `<p>There are no ads on FoOotix for now. If they come, this page will be updated and your consent will be asked before any advertising cookie.</p>`}
+      <h2>Fonts and images</h2>
+      <p>Fonts come from Google Fonts, flags from flagcdn.com, photos and crests from Wikimedia. These services see your IP address when your browser loads their files, without cookies.</p>
+      <h2>Hosting</h2>
+      <p>The site is hosted by ${HOST}. Accounts and games are stored with Neon, Inc. (neon.tech), in a data centre in the same region. Data may therefore be processed in the United States, under the safeguards provided by the GDPR for such transfers.</p>
+      <h2>Your rights</h2>
+      <p>You can access, correct or erase your data, or object to its use. The easiest way: delete your account from the <a href="/compte" data-link>Account</a> page, everything is erased at once. For anything else, write to ${contact()}. If you think your rights are not respected, you can complain to the <a href="https://www.cnil.fr/en/complaints" target="_blank" rel="noopener">CNIL</a> (the French data protection authority).</p>
+    </div>` : `
     <div class="pagehead"><div><div class="kicker">Tes données</div><h1>Confidentialité et cookies</h1><p>Ce que FoOotix garde sur toi, pourquoi, et comment l’effacer.</p></div></div>
     <div class="prose">
       <h2>Responsable</h2>
@@ -762,9 +857,10 @@ function pagePrivacy() {
         <tr><th>Nom</th><th>Rôle</th><th>Durée</th></tr>
         <tr><td><code>aid</code></td><td>Retrouver ta partie du jour si tu joues sans compte</td><td>13 mois</td></tr>
         <tr><td><code>sid</code></td><td>Te garder connecté</td><td>13 mois, ou jusqu’à la déconnexion</td></tr>
+        <tr><td><code>lang</code></td><td>Retenir la langue choisie</td><td>1 an</td></tr>
         <tr><td><code>theme</code> (stockage local)</td><td>Retenir le mode clair ou sombre</td><td>Jusqu’à ce que tu vides ton navigateur</td></tr>
       </table>
-      <p>Ces trois-là sont nécessaires au fonctionnement du jeu&nbsp;: ils ne servent ni à la pub ni au suivi, et la loi ne demande pas de consentement pour eux.</p>
+      <p>Ces cookies sont nécessaires au fonctionnement du jeu&nbsp;: ils ne servent ni à la pub ni au suivi, et la loi ne demande pas de consentement pour eux.</p>
       <h2>Publicité</h2>
       ${ads ? `<p>FoOotix est financé par la publicité de Google AdSense. Google et ses partenaires peuvent déposer des cookies pour afficher des annonces, les personnaliser et mesurer leur efficacité. Ils ne sont déposés qu’avec ton accord, demandé à ta première visite. Si tu refuses, tu vois quand même des annonces, mais non personnalisées.</p>
       <p>Tu peux changer d’avis à tout moment&nbsp;: <a href="#" id="cookies2">gérer mes cookies</a>. Pour en savoir plus&nbsp;: <a href="https://policies.google.com/technologies/partner-sites?hl=fr" target="_blank" rel="noopener">comment Google utilise les données des sites partenaires</a>.</p>`
@@ -786,24 +882,24 @@ async function pageLeagues() {
   renderWho(r.user);
   if (!r.user) {
     app.innerHTML = `
-      <div class="pagehead"><div><div class="kicker">Entre potes</div><h1>Ligues</h1>
-      <p>Crée une ligue, envoie le code à tes amis, et comparez vos points chaque jour.</p></div></div>
-      <p><a class="btn solid" href="/compte?next=/ligues" data-link>Crée un compte pour commencer</a></p>`;
+      <div class="pagehead"><div><div class="kicker">${L('Entre potes', 'With friends')}</div><h1>${L('Ligues', 'Leagues')}</h1>
+      <p>${L('Crée une ligue, envoie le code à tes amis, et comparez vos points chaque jour.', 'Create a league, send the code to your friends, and compare your points every day.')}</p></div></div>
+      <p><a class="btn solid" href="/compte?next=/ligues" data-link>${L('Crée un compte pour commencer', 'Create an account to start')}</a></p>`;
     return;
   }
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">Entre potes</div><h1>Mes ligues</h1>
-    <p>Un classement rien qu'à vous, avec les points cumulés de chacun.</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L('Entre potes', 'With friends')}</div><h1>${L('Mes ligues', 'My leagues')}</h1>
+    <p>${L("Un classement rien qu'à vous, avec les points cumulés de chacun.", "A ranking just for you, with everyone's total points.")}</p></div></div>
     ${r.leagues.length ? `<div class="lglist">
-      ${r.leagues.map((l) => `<a class="lg" href="/ligue/${l.code}" data-link><span class="nm"><b>${esc(l.name)}</b><span class="code">${l.code}</span></span><span class="meta">${l.members} joueur${l.members > 1 ? 's' : ''}${l.leader ? ` · en tête : ${esc(l.leader)}` : ''}</span><span class="pl">${l.rank}<sup>${l.rank === 1 ? 'er' : 'e'}</sup></span></a>`).join('')}
-      </div>` : `<p class="muted">Tu n'es dans aucune ligue pour l'instant.</p>`}
+      ${r.leagues.map((l) => `<a class="lg" href="/ligue/${l.code}" data-link><span class="nm"><b>${esc(l.name)}</b><span class="code">${l.code}</span></span><span class="meta">${l.members} ${L('joueur', 'player')}${s_(l.members)}${l.leader ? ` · ${L('en tête', 'leader')} : ${esc(l.leader)}` : ''}</span><span class="pl">${ord(l.rank)}</span></a>`).join('')}
+      </div>` : `<p class="muted">${L("Tu n'es dans aucune ligue pour l'instant.", "You aren't in any league yet.")}</p>`}
     <div class="auth league-forms">
-      <form id="lc"><h2>Créer une ligue</h2>
-        <div class="field"><label for="ln">Nom</label><input id="ln" name="name" maxlength="40" required placeholder="Les potes du foot"></div>
-        <button class="btn solid">Créer</button><p class="msg"></p></form>
-      <form id="lj"><h2>Rejoindre</h2>
-        <div class="field"><label for="lcode">Code reçu</label><input id="lcode" name="code" maxlength="6" required autocapitalize="characters" spellcheck="false" class="codein"></div>
-        <button class="btn solid">Rejoindre</button><p class="msg"></p></form>
+      <form id="lc"><h2>${L('Créer une ligue', 'Create a league')}</h2>
+        <div class="field"><label for="ln">${L('Nom', 'Name')}</label><input id="ln" name="name" maxlength="40" required placeholder="${L('Les potes du foot', 'Sunday league legends')}"></div>
+        <button class="btn solid">${L('Créer', 'Create')}</button><p class="msg"></p></form>
+      <form id="lj"><h2>${L('Rejoindre', 'Join')}</h2>
+        <div class="field"><label for="lcode">${L('Code reçu', 'Code you received')}</label><input id="lcode" name="code" maxlength="6" required autocapitalize="characters" spellcheck="false" class="codein"></div>
+        <button class="btn solid">${L('Rejoindre', 'Join')}</button><p class="msg"></p></form>
     </div>`;
   $('#lc').onsubmit = async (e) => {
     e.preventDefault();
@@ -820,31 +916,31 @@ async function pageLeague(code) {
   const l = await api('leagues/' + code);
   renderWho(l.user);
   const url = `${location.origin}/ligue/${l.code}`;
-  const invite = shareBox(`Rejoins ma ligue « ${l.name} » sur FoOotix.com ⚽ Un joueur à deviner chaque jour, on compare nos points. Code : ${l.code}`, url, 'Inviter mes potes');
+  const invite = shareBox(L(`Rejoins ma ligue « ${l.name} » sur FoOotix.com ⚽ Un joueur à deviner chaque jour, on compare nos points. Code : ${l.code}`, `Join my league “${l.name}” on FoOotix.com ⚽ A footballer to guess every day, we compare our points. Code: ${l.code}`), url, L('Inviter mes potes', 'Invite my friends'));
   const day = (x) => x.todayStatus === 'won' ? `<span class="ok">+${x.today}</span> <span class="muted">(${x.n})</span>`
-    : x.todayStatus === 'gaveup' ? '<span class="muted">abandon</span>'
-    : x.todayStatus === 'playing' && x.n ? `<span class="muted">en cours (${x.n})</span>` : '<span class="muted">–</span>';
-  const head = `<div class="pagehead"><div><div class="kicker">Ligue · ${l.size} joueur${l.size > 1 ? 's' : ''}${l.owner ? ` · créée par ${esc(l.owner)}` : ''}</div><h1>${esc(l.name)}</h1>
+    : x.todayStatus === 'gaveup' ? `<span class="muted">${L('abandon', 'gave up')}</span>`
+    : x.todayStatus === 'playing' && x.n ? `<span class="muted">${L('en cours', 'playing')} (${x.n})</span>` : '<span class="muted">–</span>';
+  const head = `<div class="pagehead"><div><div class="kicker">${L('Ligue', 'League')} · ${l.size} ${L('joueur', 'player')}${s_(l.size)}${l.owner ? ` · ${L('créée par', 'created by')} ${esc(l.owner)}` : ''}</div><h1>${esc(l.name)}</h1>
     <p>Code <span class="code big">${l.code}</span></p></div></div>`;
   if (!l.member) {
     app.innerHTML = `${head}
-      <p>On t'a invité dans cette ligue. ${l.user ? '' : 'Crée un compte (un pseudo et un mot de passe), puis rejoins-la en un clic.'}</p>
-      <p>${l.user ? '<button class="btn solid" id="join">Rejoindre la ligue</button>' : `<a class="btn solid" href="/compte?next=/ligue/${l.code}" data-link>Créer un compte et rejoindre</a>`}</p><p class="msg" id="jm"></p>
-      ${l.table.length ? `<table class="rank"><caption>En tête</caption><tbody>${l.table.map((x) => `<tr><td>${x.rank}</td><td>${esc(x.username)}</td><td class="r big">${x.total} pts</td></tr>`).join('')}</tbody></table>` : ''}`;
+      <p>${L("On t'a invité dans cette ligue.", "You've been invited to this league.")} ${l.user ? '' : L('Crée un compte (un pseudo et un mot de passe), puis rejoins-la en un clic.', 'Create an account (a username and a password), then join in one click.')}</p>
+      <p>${l.user ? `<button class="btn solid" id="join">${L('Rejoindre la ligue', 'Join the league')}</button>` : `<a class="btn solid" href="/compte?next=/ligue/${l.code}" data-link>${L('Créer un compte et rejoindre', 'Create an account and join')}</a>`}</p><p class="msg" id="jm"></p>
+      ${l.table.length ? `<table class="rank"><caption>${L('En tête', 'Top')}</caption><tbody>${l.table.map((x) => `<tr><td>${x.rank}</td><td>${esc(x.username)}</td><td class="r big">${x.total} pts</td></tr>`).join('')}</tbody></table>` : ''}`;
     const j = $('#join');
     if (j) j.onclick = async () => { try { await api('leagues/' + l.code + '/join', {}); route(); } catch (err) { $('#jm').textContent = err.message; } };
     return;
   }
   const fresh = new URLSearchParams(location.search).has('new');
   app.innerHTML = `${head}
-    <div class="invite ${fresh ? 'fresh' : ''}"><div class="kicker">${fresh ? 'Ta ligue est prête, invite tes potes' : 'Inviter des potes'}</div>${invite}</div>
-    <table class="rank"><thead><tr><th>#</th><th>Joueur</th><th class="r">Points</th><th class="r">N° ${l.number}</th><th class="r opt">Série</th></tr></thead><tbody>
-    ${l.table.map((x) => `<tr class="${x.me ? 'me' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ' <span class="muted">(toi)</span>' : ''}</td><td class="r big">${x.total}</td><td class="r">${day(x)}</td><td class="r opt">${x.streak}</td></tr>`).join('')}
+    <div class="invite ${fresh ? 'fresh' : ''}"><div class="kicker">${fresh ? L('Ta ligue est prête, invite tes potes', 'Your league is ready, invite your friends') : L('Inviter des potes', 'Invite friends')}</div>${invite}</div>
+    <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r">${L('N°', 'No.')} ${l.number}</th><th class="r opt">${L('Série', 'Streak')}</th></tr></thead><tbody>
+    ${l.table.map((x) => `<tr class="${x.me ? 'me' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ` <span class="muted">${L('(toi)', '(you)')}</span>` : ''}</td><td class="r big">${x.total}</td><td class="r">${day(x)}</td><td class="r opt">${x.streak}</td></tr>`).join('')}
     </tbody></table>
-    <p class="rank-note">Les points sont ceux du classement général : chaque joueur trouvé rapporte, même avant d'avoir rejoint la ligue. Le chiffre entre parenthèses, c'est le nombre d'essais du jour.</p>
-    <p><a class="btn" href="/ligues" data-link>Toutes mes ligues</a> <button class="btn" id="leave">Quitter la ligue</button></p>`;
+    <p class="rank-note">${L("Les points sont ceux du classement général : chaque joueur trouvé rapporte, même avant d'avoir rejoint la ligue. Le chiffre entre parenthèses, c'est le nombre d'essais du jour.", "Points come from the overall ranking: every player found counts, even before joining the league. The number in brackets is today's guess count.")}</p>
+    <p><a class="btn" href="/ligues" data-link>${L('Toutes mes ligues', 'All my leagues')}</a> <button class="btn" id="leave">${L('Quitter la ligue', 'Leave the league')}</button></p>`;
   $('#leave').onclick = async () => {
-    if (!confirm(`Quitter « ${l.name} » ?`)) return;
+    if (!confirm(L(`Quitter « ${l.name} » ?`, `Leave “${l.name}”?`))) return;
     await api('leagues/' + l.code + '/leave', {}); go('/ligues');
   };
 }

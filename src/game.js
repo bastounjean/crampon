@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { LEAGUES, COUNTRIES, POSITIONS } = require('./data/meta');
+const I18N = require('./i18n');
 
 const NOW_YEAR = new Date().getFullYear();
 const LAUNCH = process.env.LAUNCH_DATE || '2026-10-13';
@@ -97,6 +98,8 @@ function buildClues() {
   add('hon:BO', "Ballon d'or", 'Palmarès', ['ballon d or', 'ballon dor', 'vainqueur du ballon d or'], (p) => p.bo, 30);
   add('act:1', 'Toujours en activité', 'Carrière', ['en activite', 'actif', 'joue encore'], (p) => p.active, 12);
   add('act:0', 'Retraité', 'Carrière', ['retraite', 'a la retraite', 'legende'], (p) => !p.active, 12);
+  // mots anglais acceptés aussi (version anglaise du site)
+  for (const c of CLUES) c.terms = [...new Set([...c.terms, ...I18N.extraTerms(c.id, c.label).map(norm)])].filter(Boolean);
   CLUE_BY_ID = Object.fromEntries(CLUES.map((c) => [c.id, c]));
   buildIndex();
 }
@@ -166,7 +169,7 @@ function exact(n) {
 }
 
 function resolve({ q }) {
-  const n = norm(q || '').replace(/^(a |au |en |le |la |l |les |joue a |a joue a |a joue au |passe par )+/, '').trim();
+  const n = norm(q || '').replace(/^(a |au |en |le |la |l |les |joue a |a joue a |a joue au |passe par |played for |plays for |played at |played in |the )+/, '').trim();
   if (!n) return null;
   const hit = exact(n);
   if (hit) return hit;

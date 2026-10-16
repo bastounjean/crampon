@@ -8,6 +8,7 @@ const compression = require('compression');
 const db = require('./src/db');
 const G = require('./src/game');
 const WD = require('./src/wikidata');
+const I18N = require('./src/i18n');
 
 // ——— Joueurs : liste figée dans le dépôt, fiches rafraîchies chaque jour depuis Wikidata ———
 const POOL = require('./src/data/pool.json');
@@ -70,6 +71,14 @@ app.use('/api', (req, res, next) => {
   const aid = /^[a-f0-9]{32}$/.test(req.cookies.aid || '') ? req.cookies.aid : '';
   const over = aid ? bump('a' + aid) > 300 || bump('i' + req.ip) > 20000 : bump('n' + req.ip) > 3000;
   if (over) return res.status(429).json({ error: 'Trop de requêtes, attends une minute.' });
+  next();
+});
+
+// Langue : celle choisie sur le site (cookie lang), sinon celle du téléphone ou du navigateur.
+// En anglais, toutes les réponses de l'API sont traduites juste avant l'envoi.
+app.use('/api', (req, res, next) => {
+  req.lang = I18N.pick(req);
+  if (req.lang === 'en') { const json = res.json.bind(res); res.json = (body) => json(I18N.deep(body)); }
   next();
 });
 
@@ -504,10 +513,27 @@ const CONFIG = {
 const adHead = ADS ? `<meta name="google-adsense-account" content="${ADS}">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADS}" crossorigin="anonymous"></script>
 ` : '';
-const INDEX = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
-  .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
-  .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`)
-  .replace('</head>', () => `${adHead}<script>window.FOOTIX = ${JSON.stringify(CONFIG).replace(/</g, '\\u003c')};</script>\n</head>`);
+const indexFor = (lang) => {
+  let h = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
+    .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
+    .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`)
+    .replace('</head>', () => `${adHead}<script>window.FOOTIX = ${JSON.stringify({ ...CONFIG, lang }).replace(/</g, '\\u003c')};</script>\n</head>`);
+  if (lang === 'en') {
+    for (const [fr, en] of [
+      ['<html lang="fr">', '<html lang="en">'],
+      ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
+      ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
+      ['Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.', 'A footballer to guess every day: legends and current players from the Premier League, LaLiga, Serie A, Bundesliga and Ligue 1.'],
+      ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'A footballer to guess every day. Find him in fewer tries than your friends.'],
+      ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Ligues</span>', '<span>Leagues</span>'], ['<span>Règles</span>', '<span>Rules</span>'],
+      ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
+      ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
+      ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
+      ['hreflang="en" lang="en">English version<', 'hreflang="fr" lang="fr">Version française<'],
+    ]) h = h.split(fr).join(en);
+  }
+  return h;
+};
 app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
 app.get('/sitemap.xml', (req, res) => {
   const pages = ['/', '/regles', '/classement', '/album', '/ligues'];
@@ -532,7 +558,7 @@ function packed(body, type, cache) {
 }
 function sendPacked(req, res, f) {
   const enc = req.acceptsEncodings('br', 'gzip');
-  res.set({ 'Content-Type': f.type, 'Cache-Control': f.cache, Vary: 'Accept-Encoding' });
+  res.set({ 'Content-Type': f.type, 'Cache-Control': f.cache, Vary: res.get('Vary') || 'Accept-Encoding' });
   if (enc === 'br') return res.set('Content-Encoding', 'br').end(f.br);
   if (enc === 'gzip') return res.set('Content-Encoding', 'gzip').end(f.gz);
   res.end(f.raw);
@@ -542,11 +568,12 @@ const ASSETS = {
   '/app.js': packed(fs.readFileSync(path.join(PUB, 'app.js')), 'application/javascript; charset=utf-8', ASSET_CACHE),
   '/style.css': packed(fs.readFileSync(path.join(PUB, 'style.css')), 'text/css; charset=utf-8', ASSET_CACHE),
 };
-const PAGE = packed(INDEX, 'text/html; charset=utf-8', 'no-cache');
+const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
 
 app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
-  sendPacked(req, res, PAGE);
+  res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
+  sendPacked(req, res, PAGES[I18N.pick(req)]);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
   // pendant que le navigateur charge la page, pour que les premières données arrivent sans attente.
   // Pas pour UptimeRobot et les robots, sinon la base ne dormirait jamais (quota gratuit).
