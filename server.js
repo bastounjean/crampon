@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 const db = require('./src/db');
 const G = require('./src/game');
 const WD = require('./src/wikidata');
@@ -42,6 +43,7 @@ app.use((req, res, next) => {
   if ((req.hostname || '').toLowerCase().endsWith('.onrender.com')) return res.redirect(301, `https://${DOMAIN}${req.originalUrl}`);
   next();
 });
+app.use(compression()); // fichiers et réponses compressés : 3 à 5 fois moins lourds à télécharger
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 
@@ -162,6 +164,14 @@ async function state(req) {
     user,
   };
 }
+
+// Diagnostic : temps d'un aller-retour vers la base, et depuis quand le serveur est réveillé
+app.get('/api/health', A(async (req, res) => {
+  const pings = [];
+  for (let i = 0; i < 3; i++) { const t = Date.now(); await db.get('SELECT 1 x'); pings.push(Date.now() - t); }
+  res.set('Cache-Control', 'no-store');
+  res.json({ base: db.kind, ping_base_ms: pings, serveur_eveille_depuis_min: Math.round(process.uptime() / 60) });
+}));
 
 // ——— API jeu ———
 app.get('/api/today', A(async (req, res) => res.json(await state(req))));
