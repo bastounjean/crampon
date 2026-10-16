@@ -13,30 +13,50 @@ async function fetchJSON(path, body) {
   if (!r.ok) throw new Error(j.error || 'Erreur réseau');
   return j;
 }
-// Les pages déjà vues s'affichent tout de suite depuis la mémoire, puis se mettent à jour en fond.
-// Toute action (essai, connexion…) vide la mémoire pour ne jamais montrer un état périmé.
+// Les pages déjà vues s'affichent tout de suite depuis la mémoire, même anciennes, puis se mettent à jour
+// en fond : si la nouvelle version diffère, la page ouverte se redessine toute seule.
 const CACHE = new Map();
-function api(path, body) {
-  if (body) { CACHE.clear(); return fetchJSON(path, body); }
+const USED = new Set(); // données lues par la page affichée
+const AUTH = /^(login|signup|logout|delete-account)$/;
+function api(path, body, bg) {
+  if (body) {
+    // un changement de compte rend tout faux ; une action de jeu périme seulement les autres pages
+    if (AUTH.test(path)) CACHE.clear();
+    else { CACHE.delete('today'); CACHE.delete('me'); CACHE.forEach((c) => { c.t = 0; }); }
+    const r = fetchJSON(path, body);
+    // essai, indice, abandon : la réponse est déjà l'état complet du jeu, on le garde pour le retour sur l'onglet
+    if (/^(guess|hint|giveup)$/.test(path)) r.then((j) => CACHE.set('today', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) }), () => {});
+    return r;
+  }
+  if (!bg) USED.add(path);
   const c = CACHE.get(path);
-  if (c && (c.pending || Date.now() - c.t < 60000)) {
-    if (!c.pending && !c.refreshing) refresh(path);
+  if (c && !c.pending) {
+    if (Date.now() - c.t > 15000 && !c.refreshing) refresh(path);
     return c.p;
   }
+  if (c) return c.p;
   return refresh(path);
 }
 function refresh(path) {
-  const e = { t: Date.now(), pending: true };
-  e.p = fetchJSON(path).then((j) => { e.pending = false; e.t = Date.now(); return j; }, (err) => { CACHE.delete(path); throw err; });
   const old = CACHE.get(path);
-  // tant que la nouvelle version n'est pas là, on garde l'ancienne pour un affichage instantané
-  if (old && !old.pending) old.refreshing = true;
-  if (old && !old.pending) e.p.then(() => CACHE.set(path, e), () => {}); else CACHE.set(path, e);
+  const e = { t: Date.now(), pending: true };
+  e.p = fetchJSON(path).then((j) => { e.pending = false; e.t = Date.now(); e.json = JSON.stringify(j); return j; });
+  if (old && !old.pending) {
+    // tant que la nouvelle version n'est pas là, on garde l'ancienne pour un affichage instantané
+    old.refreshing = true;
+    e.p.then(() => {
+      CACHE.set(path, e);
+      if (e.json !== old.json) window.dispatchEvent(new CustomEvent('fresh', { detail: path }));
+    }, () => { old.refreshing = false; });
+  } else {
+    CACHE.set(path, e);
+    e.p.catch(() => CACHE.delete(path));
+  }
   return e.p;
 }
 // charge d'avance ce qu'affiche un onglet, dès qu'on le survole ou qu'on pose le doigt dessus
 const PREFETCH = { '/': ['today'], '/album': ['album'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'], '/regles': ['me'], '/compte': ['me'] };
-function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p).catch(() => {})); }
+function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p, null, true).catch(() => {})); }
 ['mouseover', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
   const a = e.target.closest && e.target.closest('a[data-link]');
   if (a) prefetch(a.getAttribute('href'));
@@ -110,7 +130,14 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[data-link]');
   if (a && !e.metaKey && !e.ctrlKey) { e.preventDefault(); go(a.getAttribute('href')); }
 });
-window.addEventListener('popstate', route);
+window.addEventListener('popstate', () => route());
+// nouvelles données arrivées en fond pour la page affichée : on la redessine sans bouger
+// (sauf le jeu, qui se met à jour par ses propres actions, et si on est en train d'écrire)
+window.addEventListener('fresh', (e) => {
+  if (!USED.has(e.detail) || location.pathname === '/' || location.pathname === '/compte') return;
+  if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  route({ quiet: true });
+});
 
 // compteur de visites maison (voir /stats) : la page vue, et d'où vient le visiteur à son arrivée
 let REF = document.referrer;
@@ -119,11 +146,16 @@ function hit(p) {
   REF = '';
 }
 
-async function route() {
+let ROUTE = 0;
+async function route({ quiet = false } = {}) {
   const p = location.pathname;
-  hit(p);
+  const id = ++ROUTE;
+  USED.clear();
+  // si la page n'est pas prête presque tout de suite, on le montre (sinon on croit que le clic n'a pas marché)
+  const wait = setTimeout(() => { if (id === ROUTE) app.classList.add('loading'); }, 120);
+  if (!quiet) hit(p);
   document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
-  window.scrollTo(0, 0);
+  if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   try {
     if (p === '/') return await pageGame();
@@ -142,6 +174,8 @@ async function route() {
   } catch (e) {
     app.innerHTML = `<p class="msg">${esc(e.message)}</p>`;
   } finally {
+    clearTimeout(wait);
+    if (id === ROUTE) app.classList.remove('loading');
     fillAds();
   }
 }
@@ -815,4 +849,4 @@ async function pageLeague(code) {
   };
 }
 
-route().then(() => setTimeout(() => Object.keys(PREFETCH).forEach(prefetch), 800));
+route().then(() => setTimeout(() => Object.keys(PREFETCH).forEach(prefetch), 300));

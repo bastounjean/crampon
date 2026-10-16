@@ -203,6 +203,7 @@ app.post('/api/guess', A(async (req, res) => {
   await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
     JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, won ? db.now() : g.finished_at, g.id);
   if (won || g.guesses.length === 1) STATS.delete(day);
+  if (won) LB = null;
   res.json({ ...(await state(req)), last: entry.n });
 }));
 
@@ -263,13 +264,26 @@ app.get('/api/album', A(async (req, res) => {
   res.json({ days, user, total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
 }));
 
-app.get('/api/leaderboard', A(async (req, res) => {
-  const day = G.today();
-  const users = await db.all(`SELECT u.id, u.username, COALESCE(SUM(g.points), 0) total, COUNT(g.id) found,
+// classement : identique pour tout le monde, recalculé au plus toutes les 15 s (ou dès qu'un joueur trouve)
+let LB = null;
+async function board(day) {
+  if (LB && LB.day === day && Date.now() - LB.t < 15000) return LB;
+  const [users, today] = await Promise.all([
+    db.all(`SELECT u.id, u.username, COALESCE(SUM(g.points), 0) total, COUNT(g.id) found,
       COALESCE(SUM(CASE WHEN g.day = ? THEN g.points END), 0) today
-    FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id, u.username`, day);
+    FROM users u JOIN games g ON g.user_id = u.id AND g.status = 'won' GROUP BY u.id, u.username`, day),
+    db.all(`SELECT u.id, u.username, g.points pts, ${J('g.guesses')} n
+      FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY g.points DESC, g.finished_at`, day),
+  ]);
   const won = await wonDays(users.map((u) => u.id));
   const rows = users.map((u) => ({ id: u.id, username: u.username, total: u.total, found: u.found, today: u.today, ...streakFrom(won.get(u.id)) }));
+  LB = { day, t: Date.now(), rows, today };
+  return LB;
+}
+
+app.get('/api/leaderboard', A(async (req, res) => {
+  const day = G.today();
+  const { rows, today: todayRows } = await board(day);
   const me = req.user ? req.user.id : null;
   const ranked = (list) => list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === me }));
   const top = (list, n) => {
@@ -281,8 +295,7 @@ app.get('/api/leaderboard', A(async (req, res) => {
   const points = ranked([...rows].sort((a, b) => b.total - a.total || b.found - a.found || a.username.localeCompare(b.username)));
   const streaks = ranked(rows.filter((x) => x.streak > 0).sort((a, b) => b.streak - a.streak || b.total - a.total));
   const records = ranked([...rows].sort((a, b) => b.best - a.best || b.total - a.total));
-  const today = ranked(await db.all(`SELECT u.id, u.username, g.points pts, ${J('g.guesses')} n
-      FROM games g JOIN users u ON u.id = g.user_id WHERE g.day = ? AND g.status = 'won' ORDER BY g.points DESC, g.finished_at`, day));
+  const today = ranked(todayRows);
   res.json({ points: top(points, 50), streaks: top(streaks, 20), records: top(records, 10), today: top(today, 20), players: rows.length });
 }));
 
@@ -474,6 +487,10 @@ require('./src/stats')({ app, db, G, A, slowDown, DOMAIN });
 app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.type('html').send(INDEX);
+  // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
+  // pendant que le navigateur charge la page, pour que les premières données arrivent sans attente.
+  // Pas pour UptimeRobot et les robots, sinon la base ne dormirait jamais (quota gratuit).
+  if (!/bot|crawl|spider|monitor|uptime|preview|curl|wget|headless/i.test(req.get('user-agent') || '')) db.get('SELECT 1 x').catch(() => {});
 });
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 

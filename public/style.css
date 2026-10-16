@@ -467,3 +467,9 @@ table.wt td.num { white-space: nowrap; }
 .lg .pl { grid-area: pl; align-self: center; font-family: var(--mono); font-size: 26px; font-weight: 600; }
 .btn.sh { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; font-size: 14px; }
 .btn.sh svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* page en cours de chargement : le clic a bien été pris en compte */
+#app { transition: opacity .15s; }
+#app.loading { opacity: .45; pointer-events: none; }
+body::before { content: ''; position: fixed; top: 0; left: 0; height: 3px; width: 0; background: var(--bar-accent, #f0c548); z-index: 50; }
+body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.1,.7,.3,1); }
