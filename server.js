@@ -234,7 +234,10 @@ app.post('/api/guess', A(async (req, res) => {
     const c = G.askClue(target, r.clue);
     entry = { n: g.guesses.length + 1, key, type: 'clue', label: r.clue.label, cat: r.clue.kind, temp: c.temp, yes: c.yes };
   }
-  entry.temp = G.heat(target, [...g.guesses, entry]);
+  // la température ne monte que sur une bonne nouvelle : un « oui », ou un joueur qui partage quelque chose
+  const prev = g.guesses.length ? g.guesses[g.guesses.length - 1].temp : 0;
+  const good = r.type === 'player' ? entry.tags.some((t) => t.ok) : entry.yes;
+  entry.temp = good ? Math.max(prev, G.heat(target, [...g.guesses, entry])) : prev;
   g.guesses.push(entry);
   const won = r.type === 'player' && r.player.id === target.id;
   const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;

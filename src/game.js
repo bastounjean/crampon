@@ -264,7 +264,9 @@ function candidates(target, guesses) {
 function heat(target, guesses) {
   if (guesses.some((g) => g.key === target.id)) return 100;
   const left = Math.max(1, candidates(target, guesses).length);
-  return Math.min(99, Math.round(99 * (1 - Math.log(left) / Math.log(PLAYERS.length))));
+  // au carré : écarter quelques joueurs ne réchauffe presque pas, il faut vraiment resserrer l'étau
+  const k = 1 - Math.log(left) / Math.log(PLAYERS.length);
+  return Math.min(99, Math.round(99 * k * k));
 }
 
 // ——— Joueur du jour ———
