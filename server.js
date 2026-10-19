@@ -12,7 +12,9 @@ const I18N = require('./src/i18n');
 
 // ——— Joueurs : liste figée dans le dépôt, fiches rafraîchies chaque jour depuis Wikidata ———
 const POOL = require('./src/data/pool.json');
-G.setPool(POOL.ids, POOL.players, POOL.since);
+let EXTRA = [];
+try { EXTRA = require('./src/data/extra.json').players; } catch (e) { /* liste pas encore construite */ }
+G.setPool(POOL.ids, POOL.players, POOL.since, EXTRA);
 async function refreshPlayers() {
   try {
     const fresh = await WD.fetchPlayers(POOL.ids);

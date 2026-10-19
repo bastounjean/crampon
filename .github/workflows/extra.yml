@@ -1,0 +1,27 @@
+name: Joueurs à proposer
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: Nombre de joueurs
+        default: '4000'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-extra.js ${{ inputs.size }}
+      # sur une branche à part : la liste est relue avant d'aller sur le site
+      - name: Enregistre la liste
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b joueurs-extra
+          git add src/data/extra.json
+          git commit -m "Liste des joueurs à proposer depuis Wikidata"
+          git push -f origin joueurs-extra

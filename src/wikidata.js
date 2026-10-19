@@ -32,14 +32,14 @@ async function sparql(query, tries = 3) {
 
 // Les joueurs les plus connus passés par un club des 5 grands championnats,
 // classés par nombre d'articles Wikipédia (toutes langues) qui leur sont consacrés.
-async function fetchPoolIds(size = 600, { bornFrom } = {}) {
+async function fetchPoolIds(size = 600, { bornFrom, minLinks = 25 } = {}) {
   const rows = await sparql(`
 SELECT ?p (MAX(?sl) AS ?links) WHERE {
   VALUES ?lg { ${LEAGUE_VALUES} }
   ?club p:P118/ps:P118 ?lg .
   ?p p:P54/ps:P54 ?club .
   ?p wikibase:sitelinks ?sl .
-  FILTER(?sl >= 25)
+  FILTER(?sl >= ${+minLinks})
   ?p wdt:P21 wd:Q6581097 .${bornFrom ? `
   ?p wdt:P569 ?born . FILTER(YEAR(?born) >= ${+bornFrom})` : ''}
   ?fr schema:about ?p ; schema:isPartOf <https://fr.wikipedia.org/> .
@@ -236,7 +236,7 @@ function build({ base, attrs, teams, logos = [] }, links = {}) {
   return out;
 }
 
-async function fetchPlayers(ids, { batch = 60, log = () => {} } = {}) {
+async function fetchPlayers(ids, { batch = 60, log = () => {}, facts = true } = {}) {
   const all = [];
   for (let i = 0; i < ids.length; i += batch) {
     const chunk = ids.slice(i, i + batch);
@@ -244,7 +244,7 @@ async function fetchPlayers(ids, { batch = 60, log = () => {} } = {}) {
     log(`  ${Math.min(i + batch, ids.length)}/${ids.length}`);
     await sleep(800);
   }
-  await addFacts(all, log);
+  if (facts) await addFacts(all, log);
   return all;
 }
 

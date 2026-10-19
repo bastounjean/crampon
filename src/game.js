@@ -21,6 +21,7 @@ for (const [name, adj] of Object.values(COUNTRIES)) ADJ[norm(name)] = adj;
 // Les fiches sont rafraîchies depuis Wikidata par le serveur.
 let IDS = [];
 let PLAYERS = [];
+let EXTRA = []; // joueurs qu'on peut proposer mais qui ne tombent jamais (src/data/extra.json)
 let SINCE = {}; // joueurs ajoutés après coup : ils ne peuvent tomber qu'à partir de cette date
 const BY_ID = {}; // toutes les fiches déjà vues, même si elles sortent de la liste
 let CLUES = [], CLUE_BY_ID = {}, LAST = {}, CLUB_NAMES = {};
@@ -38,18 +39,27 @@ function prepare(raw) {
   return p;
 }
 
-function setPool(ids, players, since = {}) {
+function setPool(ids, players, since = {}, extra = null) {
   for (const raw of players) BY_ID[raw.id] = prepare(raw);
   SINCE = since;
   IDS = [...ids].filter((id) => BY_ID[id]).sort();
   PLAYERS = IDS.map((id) => BY_ID[id]);
-  LAST = {};
-  for (const p of PLAYERS) {
-    const parts = norm(p.name).split(' ');
-    if (parts.length < 2) continue;
-    const last = parts.slice(1).join(' ');
-    LAST[last] = LAST[last] === undefined ? p.id : false;
+  if (extra) {
+    const inPool = new Set(IDS);
+    EXTRA = extra.filter((raw) => !inPool.has(raw.id)).map((raw) => (BY_ID[raw.id] = prepare(raw)));
   }
+  // nom de famille seul : les joueurs qui peuvent tomber passent d'abord (« Mbappé » = Kylian)
+  const lastNames = (list) => {
+    const out = {};
+    for (const p of list) {
+      const parts = norm(p.name).split(' ');
+      if (parts.length < 2) continue;
+      const last = parts.slice(1).join(' ');
+      out[last] = out[last] === undefined ? p.id : false;
+    }
+    return out;
+  };
+  LAST = { ...lastNames(EXTRA), ...lastNames(PLAYERS) };
   buildClues();
   picks.length = 0;
 }
@@ -126,7 +136,9 @@ function buildIndex() {
     for (const c of CITY_EXTRA[n] || []) addCity(c, id);
   }
   FUZZY = [];
+  const seen = new Set(PLAYERS.flatMap((p) => p.keys));
   for (const p of PLAYERS) for (const k of p.keys) FUZZY.push([k, 'p:' + p.id]);
+  for (const p of EXTRA) for (const k of p.keys) if (!seen.has(k)) FUZZY.push([k, 'p:' + p.id]);
   for (const [last, id] of Object.entries(LAST)) if (id) FUZZY.push([last, 'p:' + id]);
   for (const c of CLUES) for (const t of c.terms) FUZZY.push([t, 'c:' + c.id]);
   for (const t of Object.keys(CITY)) FUZZY.push([t, 'v:' + t]);
@@ -160,7 +172,7 @@ function pickClub(ids, word) {
 }
 
 function exact(n) {
-  const p = PLAYERS.find((x) => x.keys.includes(n)) || (LAST[n] ? BY_ID[LAST[n]] : null);
+  const p = PLAYERS.find((x) => x.keys.includes(n)) || EXTRA.find((x) => x.keys.includes(n)) || (LAST[n] ? BY_ID[LAST[n]] : null);
   if (p) return { type: 'player', player: p };
   if (LAST[n] === false) return { error: `Plusieurs joueurs s'appellent « ${n} ». Ajoute le prénom.` };
   const cs = CLUES.filter((x) => x.terms.includes(n));
@@ -416,7 +428,7 @@ function card(p) {
 
 function catalog() {
   return {
-    players: PLAYERS.map((p) => ({ id: p.id, name: p.name, keys: p.keys, sub: p.sub })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    players: [...PLAYERS, ...EXTRA].map((p) => ({ id: p.id, name: p.name, keys: p.keys, sub: p.sub })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     clues: CLUES.map((c) => ({ id: c.id, label: c.label, kind: c.kind, terms: c.terms })),
   };
 }
