@@ -49,13 +49,18 @@ function setPool(ids, players, since = {}, extra = null) {
     EXTRA = extra.filter((raw) => !inPool.has(raw.id)).map((raw) => (BY_ID[raw.id] = prepare(raw)));
   }
   // nom de famille seul : les joueurs qui peuvent tomber passent d'abord (« Mbappé » = Kylian)
+  // plusieurs joueurs du même nom : on prend le plus connu s'il l'est nettement (« Saliba » = William)
   const lastNames = (list) => {
-    const out = {};
+    const by = {};
     for (const p of list) {
       const parts = norm(p.name).split(' ');
       if (parts.length < 2) continue;
-      const last = parts.slice(1).join(' ');
-      out[last] = out[last] === undefined ? p.id : false;
+      (by[parts.slice(1).join(' ')] ||= []).push(p);
+    }
+    const out = {};
+    for (const [last, ps] of Object.entries(by)) {
+      ps.sort((a, b) => (b.links || 0) - (a.links || 0));
+      out[last] = ps.length === 1 || (ps[0].links || 0) >= 1.8 * (ps[1].links || 0) ? ps[0].id : false;
     }
     return out;
   };
