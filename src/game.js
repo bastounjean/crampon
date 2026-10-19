@@ -21,6 +21,7 @@ for (const [name, adj] of Object.values(COUNTRIES)) ADJ[norm(name)] = adj;
 // Les fiches sont rafraîchies depuis Wikidata par le serveur.
 let IDS = [];
 let PLAYERS = [];
+let SINCE = {}; // joueurs ajoutés après coup : ils ne peuvent tomber qu'à partir de cette date
 const BY_ID = {}; // toutes les fiches déjà vues, même si elles sortent de la liste
 let CLUES = [], CLUE_BY_ID = {}, LAST = {}, CLUB_NAMES = {};
 
@@ -37,8 +38,9 @@ function prepare(raw) {
   return p;
 }
 
-function setPool(ids, players) {
+function setPool(ids, players, since = {}) {
   for (const raw of players) BY_ID[raw.id] = prepare(raw);
+  SINCE = since;
   IDS = [...ids].filter((id) => BY_ID[id]).sort();
   PLAYERS = IDS.map((id) => BY_ID[id]);
   LAST = {};
@@ -282,13 +284,15 @@ const drawScore = (day, id) => crypto.createHmac('sha256', SECRET).update(day + 
 const picks = [];
 function playerOfDay(day) {
   const target = Math.max(0, dayIndex(day));
-  const windowSize = Math.max(1, Math.floor(IDS.length * 0.9));
   while (picks.length <= target) {
     const i = picks.length;
     const d = dayFromIndex(i);
+    // un joueur ajouté plus tard ne change pas les tirages des jours d'avant
+    const ids = IDS.filter((id) => !SINCE[id] || SINCE[id] <= d);
+    const windowSize = Math.max(1, Math.floor(ids.length * 0.9));
     const recent = new Set(picks.slice(Math.max(0, i - windowSize)));
     let best = null, bestScore = Infinity;
-    for (const id of IDS) {
+    for (const id of ids) {
       if (recent.has(id)) continue;
       const s = drawScore(d, id);
       if (s < bestScore) { bestScore = s; best = id; }

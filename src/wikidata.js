@@ -32,7 +32,7 @@ async function sparql(query, tries = 3) {
 
 // Les joueurs les plus connus passés par un club des 5 grands championnats,
 // classés par nombre d'articles Wikipédia (toutes langues) qui leur sont consacrés.
-async function fetchPoolIds(size = 600) {
+async function fetchPoolIds(size = 600, { bornFrom } = {}) {
   const rows = await sparql(`
 SELECT ?p (MAX(?sl) AS ?links) WHERE {
   VALUES ?lg { ${LEAGUE_VALUES} }
@@ -40,7 +40,8 @@ SELECT ?p (MAX(?sl) AS ?links) WHERE {
   ?p p:P54/ps:P54 ?club .
   ?p wikibase:sitelinks ?sl .
   FILTER(?sl >= 25)
-  ?p wdt:P21 wd:Q6581097 .
+  ?p wdt:P21 wd:Q6581097 .${bornFrom ? `
+  ?p wdt:P569 ?born . FILTER(YEAR(?born) >= ${+bornFrom})` : ''}
   ?fr schema:about ?p ; schema:isPartOf <https://fr.wikipedia.org/> .
 } GROUP BY ?p ORDER BY DESC(?links) LIMIT ${Math.round(size * 1.25)}`);
   return rows.map((r) => ({ id: qid(r.p), links: +r.links }));

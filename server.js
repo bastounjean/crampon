@@ -12,13 +12,13 @@ const I18N = require('./src/i18n');
 
 // ——— Joueurs : liste figée dans le dépôt, fiches rafraîchies chaque jour depuis Wikidata ———
 const POOL = require('./src/data/pool.json');
-G.setPool(POOL.ids, POOL.players);
+G.setPool(POOL.ids, POOL.players, POOL.since);
 async function refreshPlayers() {
   try {
     const fresh = await WD.fetchPlayers(POOL.ids);
     if (fresh.length < POOL.ids.length * 0.8) throw new Error(`seulement ${fresh.length} fiches reçues`);
     const got = new Set(fresh.map((p) => p.id));
-    G.setPool(POOL.ids, [...fresh, ...POOL.players.filter((p) => !got.has(p.id))]);
+    G.setPool(POOL.ids, [...fresh, ...POOL.players.filter((p) => !got.has(p.id))], POOL.since);
     console.log(`Fiches mises à jour depuis Wikidata (${fresh.length}).`);
   } catch (e) {
     console.warn('Wikidata injoignable, on garde les fiches enregistrées :', e.message);
