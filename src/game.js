@@ -140,6 +140,9 @@ function buildIndex() {
     if (words.length > 1) addCity(words.join(' '), id); // « saint etienne », « bayer leverkusen »
     for (const c of CITY_EXTRA[n] || []) addCity(c, id);
   }
+  // un surnom qui est aussi un indice (« attaquant » ajouté par erreur sur Wikidata) ne désigne pas le joueur
+  const clueTerms = new Set(CLUES.flatMap((c) => c.terms));
+  for (const p of [...PLAYERS, ...EXTRA]) p.keys = p.keys.filter((k) => k === norm(p.name) || !clueTerms.has(k));
   FUZZY = [];
   const seen = new Set(PLAYERS.flatMap((p) => p.keys));
   for (const p of PLAYERS) for (const k of p.keys) FUZZY.push([k, 'p:' + p.id]);
