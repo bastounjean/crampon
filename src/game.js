@@ -67,6 +67,7 @@ function setPool(ids, players, since = {}, extra = null) {
   LAST = { ...lastNames(EXTRA), ...lastNames(PLAYERS) };
   buildClues();
   picks.length = 0;
+  DECK = null;
 }
 
 // « Real Madrid CF » → « Real Madrid », « AS Monaco FC » → « Monaco »
@@ -434,6 +435,69 @@ function card(p) {
   };
 }
 
+// ——— Collection : un pack par jour, 5 cartes. Plus un joueur est connu, plus sa carte est rare ———
+// Notoriété = nombre de pages Wikipédia. Le haut du classement donne les cartes légende (1 %), or (6 %),
+// argent (23 %), le reste est en bronze. Chaque carte tire d'abord sa rareté, puis un joueur de cette rareté.
+const TIERS = [
+  { id: 'legend', share: 0.01, weight: 1 },
+  { id: 'gold', share: 0.06, weight: 6 },
+  { id: 'silver', share: 0.23, weight: 23 },
+  { id: 'bronze', share: 0.70, weight: 70 },
+];
+let DECK = null;
+function deck() {
+  if (DECK) return DECK;
+  const list = [...PLAYERS, ...EXTRA].sort((a, b) => (b.links || 0) - (a.links || 0) || (a.id < b.id ? -1 : 1));
+  const tierOf = {}, rating = {}, byTier = {};
+  let from = 0;
+  TIERS.forEach((t, k) => {
+    const to = k === TIERS.length - 1 ? list.length : from + Math.round(list.length * t.share);
+    byTier[t.id] = list.slice(from, to).map((p) => p.id);
+    from = to;
+  });
+  list.forEach((p, i) => {
+    rating[p.id] = Math.round(97 - 34 * (i / Math.max(1, list.length - 1)) ** 0.55);
+  });
+  for (const [t, ids] of Object.entries(byTier)) for (const id of ids) tierOf[id] = t;
+  DECK = { tierOf, rating, byTier, size: list.length };
+  return DECK;
+}
+function collectCard(p) {
+  const d = deck();
+  const clubs = p.clubs.filter((c) => !c.loan);
+  const last = clubs[clubs.length - 1] || p.clubs[p.clubs.length - 1];
+  return {
+    id: p.id, name: p.name, pos: POSITIONS[p.pos] ? POSITIONS[p.pos].short : '', iso: p.nat[0].iso, nat: p.nat[0].name,
+    img: p.img ? p.img.replace(/^http:/, 'https:') + '?width=300' : null,
+    club: last ? last.club : null, active: p.active, tier: d.tierOf[p.id] || 'bronze', rating: d.rating[p.id] || 60,
+  };
+}
+// rand(n) → entier de 0 à n-1. La 5e carte est au moins argent ; les cartes sortent de la moins rare à la plus rare.
+function drawPack(rand, size = 5) {
+  const d = deck();
+  const roll = (tiers) => {
+    const total = tiers.reduce((n, t) => n + t.weight, 0);
+    let r = rand(total);
+    for (const t of tiers) if ((r -= t.weight) < 0) return t.id;
+    return tiers[tiers.length - 1].id;
+  };
+  const got = new Set();
+  const out = [];
+  for (let k = 0; k < size; k++) {
+    const tier = roll(k === size - 1 ? TIERS.filter((t) => t.id !== 'bronze') : TIERS);
+    let id;
+    do id = d.byTier[tier][rand(d.byTier[tier].length)]; while (got.has(id));
+    got.add(id);
+    out.push(id);
+  }
+  const order = TIERS.map((t) => t.id).reverse();
+  return out.sort((a, b) => order.indexOf(d.tierOf[a]) - order.indexOf(d.tierOf[b]) || d.rating[a] - d.rating[b]);
+}
+function deckTotals() {
+  const d = deck();
+  return Object.fromEntries(TIERS.map((t) => [t.id, d.byTier[t.id].length]));
+}
+
 function catalog() {
   return {
     players: [...PLAYERS, ...EXTRA].map((p) => ({ id: p.id, name: p.name, keys: p.keys, sub: p.sub })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
@@ -444,4 +508,5 @@ function catalog() {
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
   setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
+  collectCard, drawPack, deckTotals,
 };

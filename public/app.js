@@ -62,7 +62,7 @@ function refresh(path) {
   return e.p;
 }
 // charge d'avance ce qu'affiche un onglet, dès qu'on le survole ou qu'on pose le doigt dessus
-const PREFETCH = { '/': ['today'], '/album': ['album'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'], '/regles': ['me'], '/compte': ['me'] };
+const PREFETCH = { '/': ['today'], '/album': ['album'], '/collection': ['collection'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'], '/regles': ['me'], '/compte': ['me'] };
 function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p, null, true).catch(() => {})); }
 ['mouseover', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
   const a = e.target.closest && e.target.closest('a[data-link]');
@@ -147,7 +147,7 @@ window.addEventListener('popstate', () => route());
 // nouvelles données arrivées en fond pour la page affichée : on la redessine sans bouger
 // (sauf le jeu, qui se met à jour par ses propres actions, et si on est en train d'écrire)
 window.addEventListener('fresh', (e) => {
-  if (!USED.has(e.detail) || location.pathname === '/' || location.pathname.startsWith('/jour/') || location.pathname === '/compte') return;
+  if (!USED.has(e.detail) || PACKING || location.pathname === '/' || location.pathname.startsWith('/jour/') || location.pathname === '/compte') return;
   if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
   route({ quiet: true });
 });
@@ -185,6 +185,7 @@ async function route({ quiet = false } = {}) {
     const jd = p.match(/^\/jour\/(\d{4}-\d{2}-\d{2})$/);
     if (jd) return await pageGame(jd[1]);
     if (p === '/album') return await pageAlbum();
+    if (p === '/collection') return await pageCollection();
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
     if (p === '/regles') return pageRules();
@@ -651,7 +652,7 @@ async function pageAlbum() {
   const past = a.days.filter((d) => !d.today).length;
   app.innerHTML = `
     <div class="pagehead">
-      <div><div class="kicker">${L('Ta collection', 'Your collection')}</div><h1>${L('Mon album', 'My album')}</h1>
+      <div><div class="kicker">${L('Les joueurs du jour', 'Daily players')}</div><h1>${L('Mon album', 'My album')}</h1>
       <p>${L('Un joueur par jour. Ceux que tu n’as pas trouvés restent cachés : tu peux encore les chercher, sans points.', "One player a day. The ones you haven't found stay hidden: you can still look for them, with no points.")}</p></div>
       <div class="counters">
         <div><b>${won}</b><span>${L('trouvés', 'found')}</span></div>
@@ -683,6 +684,189 @@ function slot(d) {
     <div class="pic">${d.player.img ? `<img src="${esc(d.player.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
     <div class="face"><div><div class="nm">${esc(d.player.name)}</div><div class="sub">${esc(d.player.pos)} · ${esc(d.player.nat)}</div></div></div>
     <div class="bot">${bot}</div></a>`;
+}
+
+// ——— Page : collection (un pack par jour, à part du jeu de devinette) ———
+let PACKING = false; // pack en cours d'ouverture : pas de rafraîchissement de page pendant l'animation
+let COL_FILTER = 'all';
+const TIERS = ['legend', 'gold', 'silver', 'bronze'];
+const TIER_NAME = { legend: L('Légende', 'Legend'), gold: L('Or', 'Gold'), silver: L('Argent', 'Silver'), bronze: 'Bronze' };
+const ODDS = { bronze: 70, silver: 23, gold: 6, legend: 1 };
+const POS_EN = { GB: 'GK', DEF: 'DEF', MIL: 'MID', ATT: 'FWD' };
+const PARTICLE = /^(de|da|di|del|della|van|von|der|den|dos|das|du|le|la|el|al|ter|ten|mac)$/i;
+// nom court comme sur une vraie carte : « Kevin De Bruyne » → « De Bruyne »
+function cardName(n) {
+  if (n.length <= 13) return n;
+  const w = n.split(' ');
+  if (w.length < 2) return n;
+  let k = w.length - 1;
+  while (k > 1 && PARTICLE.test(w[k - 1])) k--;
+  return w.slice(k).join(' ');
+}
+function colCard(c) {
+  const flag = c.iso ? `<img src="https://flagcdn.com/w80/${esc(c.iso)}.png" alt="${esc(c.iso.toUpperCase())}" title="${esc(c.nat)}" onerror="this.replaceWith(this.alt)">` : '';
+  return `<div class="cc t-${c.tier}" title="${esc(c.name)}"><div class="cc-in">
+    <div class="cc-side"><b>${c.rating}</b><span>${esc(EN ? POS_EN[c.pos] || c.pos : c.pos)}</span><i>${flag}</i></div>
+    <div class="cc-pic">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
+    <div class="cc-name">${esc(cardName(c.name))}</div>
+    <div class="cc-club">${esc(shortClub(c.club) || '')}</div>
+    <div class="cc-tier">${TIER_NAME[c.tier]}</div>
+  </div></div>`;
+}
+const CARD_BACK = '<div class="cc back"><div class="cc-in"><span>FoO</span></div></div>';
+const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }), { day: 'numeric', month: 'short' });
+
+async function pageCollection() {
+  const c = await api('collection');
+  renderWho(c.user);
+  drawCollection(c);
+}
+function drawCollection(c) {
+  const total = Object.values(c.totals).reduce((a, b) => a + b, 0);
+  const have = (t) => c.cards.filter((x) => x.tier === t).length;
+  app.innerHTML = `
+    <div class="pagehead">
+      <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Collection</h1>
+      <p>${L('Chaque jour, un pack de 5 cartes à ouvrir. Plus un joueur est connu, plus sa carte est rare. Rien à voir avec ton album : ici, c’est la chance qui décide.', 'A pack of 5 cards to open every day. The more famous the player, the rarer the card. Separate from your album: here, luck decides.')}</p></div>
+      <div class="counters">
+        <div><b>${c.cards.length}</b><span>/ ${total}</span></div>
+        ${TIERS.slice(0, 3).map((t) => `<div><b>${have(t)}</b><span>${TIER_NAME[t]}</span></div>`).join('')}
+      </div>
+    </div>
+    ${c.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ta collection ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour la garder.', 'Without an account, your collection only lives on this device. <a href="/compte" data-link>Create an account</a> to keep it.')}</p>`}
+    <section class="packzone" id="packzone">${c.opened ? openedBox(c) : packBox()}</section>
+    <section>
+      <div class="colbar"><h2>${L('Mes cartes', 'My cards')}</h2>
+        <div class="chips">${['all', ...TIERS].map((t) => `<button type="button" class="chip ${COL_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : TIER_NAME[t]} <span>${t === 'all' ? c.cards.length : have(t)}/${t === 'all' ? total : c.totals[t]}</span></button>`).join('')}</div>
+      </div>
+      <div class="cgrid" id="cgrid"></div>
+    </section>
+    ${adSlot('wide')}`;
+  const grid = () => {
+    const list = c.cards.filter((x) => COL_FILTER === 'all' || x.tier === COL_FILTER).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
+    $('#cgrid').innerHTML = list.length
+      ? list.map((x) => `<div class="cslot">${colCard(x)}${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}</div>`).join('')
+      : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier pack pour commencer ta collection.', 'Open your first pack to start your collection.')}</p>`;
+  };
+  grid();
+  app.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+    COL_FILTER = b.dataset.t;
+    app.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
+    grid();
+  }));
+  if (c.opened) tick();
+  else packDrag();
+}
+function oddsLine() {
+  return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span class="o-${t}">${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
+}
+function packBox() {
+  return `<div class="pack-stage">
+    <div class="pack" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le pack du jour', "Open today's pack")}">
+      <div class="pack-body">
+        <div class="pack-kick">${L('Pack du jour', "Today's pack")}</div>
+        <div class="pack-logo">FoOotix</div>
+        <div class="pack-n">5 ${L('cartes', 'cards')}</div>
+        <div class="pack-foot"><span>foootix.com</span><span>${esc(packDate())}</span></div>
+      </div>
+      <div class="pack-top"><span>FoOotix</span></div>
+    </div>
+    <p class="pack-hint">${L('Glisse le pack sur le côté pour le déchirer', 'Swipe the pack sideways to tear it open')}</p>
+    <button type="button" class="linkbtn" id="packbtn">${L('ou ouvre-le d’un clic', 'or open it with a click')}</button>
+    ${oddsLine()}
+  </div>`;
+}
+function openedBox(c) {
+  return `<div class="pack-done"><div class="kicker">${L('Pack du jour ouvert', "Today's pack is open")}</div>
+    <p>${L('Prochain pack dans', 'Next pack in')} <b id="cd"></b></p></div>
+    ${revealRow(c.pack, true)}
+    ${oddsLine()}`;
+}
+function revealRow(pack, up) {
+  return `<div class="reveal ${up ? 'static' : ''}" id="reveal">${pack.map((c, i) => `<div class="flip ${up ? 'up' : ''} r-${c.tier}" style="--i:${i}">
+    <div class="flip-in"><div class="flip-back">${CARD_BACK}</div><div class="flip-front">${colCard(c)}</div></div>
+    <span class="tag ${c.isNew ? 'new' : ''}">${c.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span></div>`).join('')}</div>`;
+}
+// glisser le pack : le haut suit le doigt, et se déchire au-delà de 60 % de la largeur
+function packDrag() {
+  const pack = $('#pack');
+  const top = $('.pack-top', pack);
+  let x0 = null, done = false;
+  pack.addEventListener('pointerdown', (e) => {
+    if (done) return;
+    x0 = e.clientX;
+    pack.classList.add('drag', 'touched');
+    pack.setPointerCapture(e.pointerId);
+  });
+  pack.addEventListener('pointermove', (e) => {
+    if (x0 == null) return;
+    const dx = e.clientX - x0, w = pack.offsetWidth;
+    const k = Math.min(1, Math.abs(dx) / (w * 0.6));
+    top.style.transform = `translateX(${dx}px) rotate(${(dx / w) * 12}deg)`;
+    pack.style.setProperty('--k', k);
+    if (k >= 1) open(Math.sign(dx));
+  });
+  const back = () => {
+    if (x0 == null || done) return;
+    x0 = null;
+    pack.classList.remove('drag');
+    top.style.transform = '';
+    pack.style.setProperty('--k', 0);
+  };
+  pack.addEventListener('pointerup', back);
+  pack.addEventListener('pointercancel', back);
+  pack.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(1); } });
+  $('#packbtn').addEventListener('click', () => open(1));
+  async function open(dir) {
+    if (done) return;
+    done = true;
+    x0 = null;
+    PACKING = true;
+    pack.classList.remove('drag');
+    pack.classList.add('torn', 'touched');
+    top.style.transform = `translate(${dir * pack.offsetWidth * 1.3}px, -60px) rotate(${dir * 30}deg)`;
+    $('.pack-hint').style.visibility = 'hidden';
+    $('#packbtn').style.visibility = 'hidden';
+    let j;
+    try {
+      [j] = await Promise.all([api('pack', {}), new Promise((r) => setTimeout(r, 700))]);
+    } catch (e) {
+      PACKING = false;
+      $('#packzone').innerHTML = `<p class="msg">${esc(e.message)}</p>`;
+      return;
+    }
+    CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
+    await reveal(j);
+  }
+}
+// les cartes arrivent face cachée puis se retournent une à une, la plus rare en dernier
+async function reveal(j) {
+  const zone = $('#packzone');
+  const best = j.pack[j.pack.length - 1];
+  zone.innerHTML = `<p class="rev-msg" id="revmsg">${L('Touche pour aller plus vite', 'Tap to speed up')}</p>${revealRow(j.pack, false)}`;
+  let fast = false;
+  $('#reveal').addEventListener('click', () => { fast = true; });
+  const wait = (ms) => new Promise((r) => setTimeout(r, fast ? 60 : ms));
+  const flips = [...zone.querySelectorAll('.flip')];
+  await wait(700);
+  for (const [i, f] of flips.entries()) {
+    const last = i === flips.length - 1;
+    if (last && (best.tier === 'legend' || best.tier === 'gold')) {
+      f.classList.add('charge');
+      $('#revmsg').textContent = best.tier === 'legend' ? L('Attention…', 'Wait for it…') : L('Une carte Or…', 'A Gold card…');
+      await wait(1300);
+    } else await wait(last ? 800 : 420);
+    f.classList.add('up');
+  }
+  $('#revmsg').textContent = best.tier === 'legend' ? L(`Une Légende : ${best.name} !`, `A Legend: ${best.name}!`)
+    : best.tier === 'gold' ? L(`Carte Or : ${best.name}`, `Gold card: ${best.name}`)
+      : L(`Meilleure carte : ${best.name}`, `Best card: ${best.name}`);
+  await wait(1600);
+  PACKING = false;
+  if (location.pathname !== '/collection') return;
+  const y = window.scrollY;
+  drawCollection(j);
+  window.scrollTo(0, y);
 }
 
 // ——— Page : classement ———

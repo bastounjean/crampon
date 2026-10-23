@@ -50,6 +50,23 @@ CREATE TABLE IF NOT EXISTS league_members (
   PRIMARY KEY (league_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS league_members_user ON league_members (user_id);
+CREATE TABLE IF NOT EXISTS packs (
+  id ${id},
+  day TEXT NOT NULL,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  anon TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (day, user_id),
+  UNIQUE (day, anon)
+);
+CREATE INDEX IF NOT EXISTS packs_user ON packs (user_id);
+CREATE INDEX IF NOT EXISTS packs_anon ON packs (anon);
+CREATE TABLE IF NOT EXISTS cards (
+  pack_id INTEGER NOT NULL REFERENCES packs(id) ON DELETE CASCADE,
+  slot INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  PRIMARY KEY (pack_id, slot)
+);
 CREATE TABLE IF NOT EXISTS visits (
   day TEXT NOT NULL,
   vid TEXT NOT NULL,

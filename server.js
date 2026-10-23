@@ -342,6 +342,40 @@ app.get('/api/album', A(async (req, res) => {
   res.json({ days, user, total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
 }));
 
+// ——— Collection : un pack FoOotix par jour, à part du jeu ———
+async function collection(req) {
+  const [col, val] = owner(req);
+  const day = G.today();
+  const rows = await db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE p.${col} = ? ORDER BY p.day, c.slot`, val);
+  const owned = new Map();
+  const pack = [];
+  for (const r of rows) {
+    const pl = G.BY_ID[r.player_id];
+    if (!pl) continue;
+    const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0, first: r.day };
+    o.n++;
+    owned.set(pl.id, o);
+    if (r.day === day) pack.push({ ...G.collectCard(pl), isNew: o.n === 1 && o.first === day });
+  }
+  const opened = !!pack.length || !!(await db.get(`SELECT 1 x FROM packs WHERE day = ? AND ${col} = ?`, day, val));
+  return { day, opened, pack, cards: [...owned.values()], totals: G.deckTotals() };
+}
+app.get('/api/collection', A(async (req, res) => {
+  const [c, user] = await Promise.all([collection(req), publicUser(req)]);
+  res.json({ ...c, user });
+}));
+app.post('/api/pack', A(async (req, res) => {
+  const [col, val] = owner(req);
+  const day = G.today();
+  const r = await db.run(`INSERT INTO packs (day, ${col}, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, day, val, db.now());
+  if (r.rows.length) {
+    const ids = G.drawPack((n) => crypto.randomInt(n));
+    for (let i = 0; i < ids.length; i++) await db.run('INSERT INTO cards (pack_id, slot, player_id) VALUES (?, ?, ?)', r.rows[0].id, i, ids[i]);
+  }
+  const [c, user] = await Promise.all([collection(req), publicUser(req)]);
+  res.json({ ...c, user, already: !r.rows.length });
+}));
+
 // classement : identique pour tout le monde, recalculé au plus toutes les 15 s (ou dès qu'un joueur trouve)
 let LB = null;
 async function board(day) {
@@ -473,6 +507,7 @@ async function openSession(req, res, userId) {
   res.cookie('sid', token, cookieOpts);
   // les parties jouées sans compte sur cet appareil rejoignent le compte
   await db.run('UPDATE games SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM games WHERE user_id = ?)', userId, req.aid, userId);
+  await db.run('UPDATE packs SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM packs WHERE user_id = ?)', userId, req.aid, userId);
 }
 
 const attempts = new Map();
@@ -576,7 +611,7 @@ const indexFor = (lang) => {
 };
 app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
 app.get('/sitemap.xml', (req, res) => {
-  const pages = ['/', '/regles', '/classement', '/album', '/ligues'];
+  const pages = ['/', '/regles', '/classement', '/album', '/collection', '/ligues'];
   for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
 });
@@ -611,7 +646,7 @@ const ASSETS = {
 const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
 
-app.get(['/', '/index.html', '/jour/:day', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
+app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
   sendPacked(req, res, PAGES[I18N.pick(req)]);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
