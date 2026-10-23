@@ -219,7 +219,9 @@ table.wt td.num { text-align: center; }
 .slot.s-missed .bot { color: var(--red); }
 .slot.s-gaveup .bot { color: var(--muted); }
 .slot.today { border-width: 2px; }
-.slot.today .face .q { font-size: 64px; font-weight: 900; font-stretch: 62%; line-height: 1; }
+.slot.today .face .q, .slot.s-open .face .q { font-size: 64px; font-weight: 900; font-stretch: 62%; line-height: 1; }
+.slot.s-open .face .q { color: var(--muted); }
+.slot.s-open .bot { color: var(--muted); }
 a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
 
 /* ——— Classement ——— */
@@ -447,6 +449,9 @@ table.wt td.num { white-space: nowrap; }
 /* ——— Partage et ligues ——— */
 .sharebox { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .end-share { margin-top: 18px; }
+.catchup { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.catchup .kicker { margin-bottom: 6px; }
+.catchup p { margin: 0 0 10px; font-size: 15px; }
 .end-share .kicker { margin-bottom: 8px; }
 .code { font-family: var(--mono); font-weight: 600; letter-spacing: .12em; border: 1px solid var(--hair); padding: 1px 6px; font-size: 12px; color: var(--muted); }
 .code.big { font-size: 18px; color: var(--ink); border-color: var(--ink); }

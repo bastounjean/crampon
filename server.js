@@ -116,6 +116,17 @@ app.use('/api', A(async (req, res, next) => {
   next();
 }));
 
+// Jour joué : aujourd'hui, ou un jour passé à rattraper (sans points ni série)
+function dayOf(req) {
+  const today = G.today();
+  const d = String((req.body && req.body.day) || req.query.day || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return today;
+  const i = G.dayIndex(d);
+  return i >= 0 && i < G.dayIndex(today) && G.dayFromIndex(i) === d ? d : today;
+}
+// une partie finie : trouvé le jour même (won), rattrapé plus tard (late) ou abandonnée
+const DONE = new Set(['won', 'late', 'gaveup']);
+
 const owner = (req) => (req.user ? ['user_id', req.user.id] : ['anon', req.aid]);
 const J = db.jlen;
 
@@ -176,22 +187,46 @@ async function dayStats(day) {
   return v;
 }
 
-async function state(req) {
-  const day = G.today();
+// les jours passés de ce joueur : fini ou pas
+async function myDays(req) {
+  const [col, val] = owner(req);
+  const rows = await db.all(`SELECT day, status FROM games WHERE ${col} = ?`, val);
+  return Object.fromEntries(rows.map((r) => [r.day, r.status]));
+}
+// le jour passé le plus récent qu'il reste à trouver, et combien il en reste
+function catchup(mine, before) {
+  let next = null, left = 0;
+  for (let i = G.dayIndex(before) - 1; i >= 0; i--) {
+    const d = G.dayFromIndex(i);
+    if (DONE.has(mine[d])) continue;
+    left++;
+    if (!next) next = { day: d, number: i + 1 };
+  }
+  return next ? { ...next, left } : null;
+}
+
+async function state(req, day = G.today()) {
+  const today = G.today();
+  const past = day !== today;
   const idx = G.dayIndex(day);
   const target = G.playerOfDay(day);
   const g = (await getGame(req, day, false)) || { status: 'playing', guesses: [], hints: 0 };
   const n = g.guesses.length;
   const over = g.status !== 'playing';
-  const yesterday = idx > 0 ? G.playerOfDay(G.dayFromIndex(idx - 1)) : null;
-  const [rank, stats, yStats, user] = await Promise.all([
+  const yIdx = G.dayIndex(today) - 1;
+  const yesterday = !past && yIdx >= 0 ? G.playerOfDay(G.dayFromIndex(yIdx)) : null;
+  const [rank, stats, yStats, user, mine] = await Promise.all([
     g.status === 'won' ? db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at).then((r) => r.n) : null,
     dayStats(day),
-    yesterday ? dayStats(G.dayFromIndex(idx - 1)) : null,
+    yesterday ? dayStats(G.dayFromIndex(yIdx)) : null,
     publicUser(req),
+    myDays(req),
   ]);
+  // le nom d'hier reste caché tant qu'on peut encore le chercher
+  const yOpen = yesterday && DONE.has(mine[G.dayFromIndex(yIdx)]);
   return {
-    day, number: idx + 1, status: g.status, guesses: g.guesses,
+    day, number: idx + 1, past, late: g.status === 'late',
+    status: g.status === 'late' ? 'won' : g.status, guesses: g.guesses,
     best: g.guesses.reduce((m, x) => Math.max(m, x.temp), 0),
     hints: Array.from({ length: g.hints }, (_, k) => G.hintText(target, k)),
     hintReady: !over && g.hints < G.MAX_HINTS && n >= (g.hints + 1) * G.HINT_EVERY,
@@ -200,7 +235,8 @@ async function state(req) {
     card: G.revealCard(target, g.guesses, g.hints, over),
     rank, stats,
     score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
-    yesterday: yesterday ? { id: yesterday.id, name: yesterday.name, stats: yStats } : null,
+    yesterday: yesterday ? { day: G.dayFromIndex(yIdx), id: yOpen ? yesterday.id : null, name: yOpen ? yesterday.name : null, stats: yStats } : null,
+    catchup: catchup(mine, today),
     user,
   };
 }
@@ -214,20 +250,21 @@ app.get('/api/health', A(async (req, res) => {
 }));
 
 // ——— API jeu ———
-app.get('/api/today', A(async (req, res) => res.json(await state(req))));
+app.get('/api/today', A(async (req, res) => res.json(await state(req, dayOf(req)))));
 
 app.post('/api/guess', A(async (req, res) => {
-  const day = G.today();
+  const day = dayOf(req);
+  const past = day !== G.today();
   const target = G.playerOfDay(day);
   const q = String((req.body || {}).q || '').slice(0, 80);
   const r = G.resolve({ q });
   if (!r) return res.status(400).json({ error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` });
   if (r.error) return res.status(400).json({ error: r.error });
   const g = await getGame(req, day, true);
-  if (g.status !== 'playing') return res.status(400).json({ error: 'La partie du jour est terminée.' });
+  if (g.status !== 'playing') return res.status(400).json({ error: past ? 'Cette partie est terminée.' : 'La partie du jour est terminée.' });
   const key = r.type === 'player' ? r.player.id : r.clue.id;
   const dup = g.guesses.find((x) => x.key === key);
-  if (dup) return res.json({ ...(await state(req)), dup: dup.n });
+  if (dup) return res.json({ ...(await state(req, day)), dup: dup.n });
   let entry;
   if (r.type === 'player') {
     const c = G.compare(target, r.player);
@@ -242,48 +279,46 @@ app.post('/api/guess', A(async (req, res) => {
   entry.temp = good ? Math.max(prev, G.heat(target, [...g.guesses, entry])) : prev;
   g.guesses.push(entry);
   const won = r.type === 'player' && r.player.id === target.id;
-  const pts = won ? G.score(target, g.guesses.length, g.hints).points : null;
+  // un jour passé trouvé après coup rejoint l'album, sans points ni série
+  const pts = won && !past ? G.score(target, g.guesses.length, g.hints).points : null;
   await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
-    JSON.stringify(g.guesses), won ? 'won' : 'playing', pts, won ? db.now() : g.finished_at, g.id);
+    JSON.stringify(g.guesses), won ? (past ? 'late' : 'won') : 'playing', pts, won ? db.now() : g.finished_at, g.id);
   if (won || g.guesses.length === 1) STATS.delete(day);
-  if (won) LB = null;
-  res.json({ ...(await state(req)), last: entry.n });
+  if (won && !past) LB = null;
+  res.json({ ...(await state(req, day)), last: entry.n });
 }));
 
 app.post('/api/hint', A(async (req, res) => {
-  const g = await getGame(req, G.today(), true);
+  const day = dayOf(req);
+  const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'Partie terminée.' });
   if (g.hints >= G.MAX_HINTS || g.guesses.length < (g.hints + 1) * G.HINT_EVERY)
     return res.status(400).json({ error: "Pas encore d'indice disponible." });
   await db.run('UPDATE games SET hints = hints + 1 WHERE id = ?', g.id);
-  res.json(await state(req));
+  res.json(await state(req, day));
 }));
 
 app.post('/api/giveup', A(async (req, res) => {
-  const g = await getGame(req, G.today(), true);
+  const day = dayOf(req);
+  const g = await getGame(req, day, true);
   if (g.status === 'playing') await db.run("UPDATE games SET status = 'gaveup', finished_at = ? WHERE id = ?", db.now(), g.id);
-  res.json(await state(req));
+  res.json(await state(req, day));
 }));
 
 // ——— Fiches joueurs ———
-// Une fiche est visible si le joueur est sorti un jour passé, ou si c'est celui du jour et que ta partie est finie.
+// Une fiche est visible quand ta partie du jour où il est sorti est finie : trouvé, rattrapé ou abandonné.
+// Tant qu'elle ne l'est pas, le joueur reste à chercher, même des jours après.
 app.get('/api/player/:id', A(async (req, res) => {
   const p = G.BY_ID[req.params.id];
-  const day = G.today();
-  const idx = G.dayIndex(day);
-  let ok = false, when = null;
-  if (p) {
-    for (let i = 0; i < idx; i++) if (G.playerOfDay(G.dayFromIndex(i)).id === p.id) { ok = true; when = G.dayFromIndex(i); }
-    if (G.playerOfDay(day).id === p.id) {
-      const g = await getGame(req, day, false);
-      if (g && g.status !== 'playing') { ok = true; when = day; }
-    }
-  }
-  if (!ok) return res.status(404).json({ error: 'Fiche pas encore débloquée.' });
-  let mine = null;
+  const idx = G.dayIndex(G.today());
+  const days = [];
+  if (p) for (let i = 0; i <= idx; i++) if (G.playerOfDay(G.dayFromIndex(i)).id === p.id) days.push(G.dayFromIndex(i));
+  const mine = days.length ? await myDays(req) : {};
+  const when = [...days].reverse().find((d) => DONE.has(mine[d]));
+  if (!when) return res.status(404).json({ error: 'Fiche pas encore débloquée : trouve-le d\'abord.', day: days[days.length - 1] || null });
   const g = await getGame(req, when, false);
-  if (g) mine = { status: g.status, guesses: g.guesses.length };
-  res.json({ ...G.card(p), day: when, number: G.dayIndex(when) + 1, mine, stats: await dayStats(when) });
+  const mineG = g ? { status: g.status === 'late' ? 'won' : g.status, late: g.status === 'late', guesses: g.guesses.length } : null;
+  res.json({ ...G.card(p), day: when, number: G.dayIndex(when) + 1, mine: mineG, stats: await dayStats(when) });
 }));
 
 app.get('/api/album', A(async (req, res) => {
@@ -297,7 +332,7 @@ app.get('/api/album', A(async (req, res) => {
     const d = G.dayFromIndex(i);
     const p = G.playerOfDay(d);
     const m = mine[d];
-    const visible = i < idx || (m && m.status !== 'playing');
+    const visible = m && DONE.has(m.status);
     days.push({
       day: d, number: i + 1, today: i === idx,
       status: m ? m.status : null, guesses: m ? m.n : 0, hints: m ? m.hints : 0,
@@ -576,7 +611,7 @@ const ASSETS = {
 const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
 
-app.get(['/', '/index.html', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
+app.get(['/', '/index.html', '/jour/:day', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
   sendPacked(req, res, PAGES[I18N.pick(req)]);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille

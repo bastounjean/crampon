@@ -32,7 +32,7 @@ function api(path, body, bg) {
     else { CACHE.delete('today'); CACHE.delete('me'); CACHE.forEach((c) => { c.t = 0; }); }
     const r = fetchJSON(path, body);
     // essai, indice, abandon : la réponse est déjà l'état complet du jeu, on le garde pour le retour sur l'onglet
-    if (/^(guess|hint|giveup)$/.test(path)) r.then((j) => CACHE.set('today', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) }), () => {});
+    if (/^(guess|hint|giveup)$/.test(path)) r.then((j) => CACHE.set(j.past ? 'today?day=' + j.day : 'today', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) }), () => {});
     return r;
   }
   if (!bg) USED.add(path);
@@ -147,7 +147,7 @@ window.addEventListener('popstate', () => route());
 // nouvelles données arrivées en fond pour la page affichée : on la redessine sans bouger
 // (sauf le jeu, qui se met à jour par ses propres actions, et si on est en train d'écrire)
 window.addEventListener('fresh', (e) => {
-  if (!USED.has(e.detail) || location.pathname === '/' || location.pathname === '/compte') return;
+  if (!USED.has(e.detail) || location.pathname === '/' || location.pathname.startsWith('/jour/') || location.pathname === '/compte') return;
   if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
   route({ quiet: true });
 });
@@ -177,11 +177,13 @@ async function route({ quiet = false } = {}) {
   // si la page n'est pas prête presque tout de suite, on le montre (sinon on croit que le clic n'a pas marché)
   const wait = setTimeout(() => { if (id === ROUTE) app.classList.add('loading'); }, 120);
   if (!quiet) hit(p);
-  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   try {
     if (p === '/') return await pageGame();
+    const jd = p.match(/^\/jour\/(\d{4}-\d{2}-\d{2})$/);
+    if (jd) return await pageGame(jd[1]);
     if (p === '/album') return await pageAlbum();
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
@@ -207,6 +209,7 @@ async function route({ quiet = false } = {}) {
 // ——— Page : jeu ———
 let ST = null;
 let PLAYING = false;
+let DAY = null; // jour passé en cours de rattrapage, null pour le joueur du jour
 
 // la carte tourne sur elle-même, puis se retourne sur le joueur
 function spinReveal(box, oldHtml) {
@@ -267,8 +270,12 @@ function confetti() {
     if (t - t0 < 3500) requestAnimationFrame(frame); else c.remove();
   })(t0);
 }
-async function pageGame() {
-  const st = await api('today');
+async function pageGame(day = null) {
+  const st = await api(day ? 'today?day=' + day : 'today');
+  // jour pas encore passé ou trop ancien : le serveur renvoie le joueur du jour
+  if (day && !st.past) { history.replaceState({}, '', '/'); day = null; }
+  DAY = day;
+  PLAYING = false;
   ST = st;
   renderWho(st.user);
   renderEdition(st);
@@ -278,9 +285,11 @@ async function pageGame() {
         <div class="hero">
           <div id="banner"></div>
           <div class="intro">
-            <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}</div>
+            <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}${st.past ? ` · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}` : ''}</div>
             <h1>${L('Qui se cache derrière le maillot&nbsp;?', "Who's behind the shirt?")}</h1>
-            <p>${L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'A player, a club, a city, a country, a position, a generation: every discovery fills in his card.')}</p>
+            <p>${st.past
+              ? L(`Rattrapage du ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}&nbsp;: s'il est trouvé, il rejoint ton album, mais sans points ni série. <a href="/" data-link>Retour au joueur du jour</a>`, `Catching up on ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}: find him to add him to your album, but no points or streak. <a href="/" data-link>Back to today's player</a>`)
+              : L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'A player, a club, a city, a country, a position, a generation: every discovery fills in his card.')}</p>
           </div>
           <div class="search" id="search">
             <form autocomplete="off">
@@ -387,15 +396,20 @@ function drawGame(lastN) {
     const n = st.guesses.length;
     const won = st.status === 'won';
     $('#banner').innerHTML = `<div class="end ${won ? '' : 'lost'} ${justEnded && !won ? 'late' : ''}">
-      <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}</div>
-      <h1><span>${L('Le joueur du jour est', "Today's player is")}</span> ${esc(a.name)}</h1>
-      <p>${won
+      <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}${st.past ? ` · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}` : ''}</div>
+      <h1><span>${st.past ? L('Le joueur de ce jour-là était', 'That day\'s player was') : L('Le joueur du jour est', "Today's player is")}</span> ${esc(a.name)}</h1>
+      <p>${st.past
+        ? won
+          ? L(`Rattrapé en ${n} essai${s_(n)}. Il rejoint ton album, sans points ni série pour un jour passé.`, `Caught up in ${n} ${n > 1 ? 'tries' : 'try'}. He joins your album, with no points or streak for a past day.`)
+          : L(`Tu as abandonné : il ne rejoindra pas ton album.`, `You gave up: he won't join your album.`)
+        : won
         ? L(`Trouvé en ${n} essai${s_(n)}${st.hints.length ? ` et ${st.hints.length} indice${s_(st.hints.length)}` : ''}. Tu es ${st.rank === 1 ? 'le premier' : 'le ' + st.rank + '<sup>e</sup>'} à le trouver aujourd'hui.`,
           `Found in ${n} ${n > 1 ? 'tries' : 'try'}${st.hints.length ? ` and ${st.hints.length} hint${s_(st.hints.length)}` : ''}. You are the ${ord(st.rank)} to find him today.`)
         : L(`Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`, `You gave up: he won't join your album, and no points today.`)}</p>
       ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} ${L('essai', st.score.guesses > 1 ? 'trie' : 'try')}${L(s_(st.score.guesses), st.score.guesses > 1 ? 's' : '')}${st.score.hints ? `, ${st.score.hints} ${L('indice', 'hint')}${s_(st.score.hints)}` : ''}<br>${L('rareté', 'rarity')} ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${EN ? st.score.mult : String(st.score.mult).replace('.', ',')})${st.user ? '' : L(' · <a href="/compte" data-link>crée un compte</a> pour les garder', ' · <a href="/compte" data-link>create an account</a> to keep them')}</span></div>` : ''}
       <div class="end-share"><div class="kicker">${L('Défie tes potes', 'Challenge your friends')}</div>${shareBox(resultText(st), location.origin)}</div>
-      <div class="end-act"><a class="btn" href="/ligues" data-link>${L('Mes ligues', 'My leagues')}</a><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a><span class="muted">${L('Prochain joueur dans', 'Next player in')} <span class="countdown" id="cd"></span></span></div>
+      ${catchupBox(st)}
+      <div class="end-act">${st.past ? `<a class="btn" href="/" data-link>${L('Joueur du jour', "Today's player")}</a>` : `<a class="btn" href="/ligues" data-link>${L('Mes ligues', 'My leagues')}</a>`}<a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a>${st.past ? '' : `<span class="muted">${L('Prochain joueur dans', 'Next player in')} <span class="countdown" id="cd"></span></span>`}</div>
     </div>`;
     tick();
     const rv = $('#reveal');
@@ -443,20 +457,34 @@ function drawGame(lastN) {
       : st.nextHintAt ? `<p class="muted" style="font-size:14px;margin:0 0 10px">${L(`Prochain indice après ${st.nextHintAt} essais (encore ${st.nextHintAt - n}).`, `Next hint after ${st.nextHintAt} guesses (${st.nextHintAt - n} to go).`)}</p>` : ''}
     ${over ? '' : `<p style="margin:12px 0 0"><button class="linkbtn muted" id="giveup">${L('Abandonner et voir la réponse', 'Give up and see the answer')}</button></p>`}`;
   const h = $('#hint');
-  if (h) h.onclick = async () => { ST = await api('hint', {}); drawGame(); };
+  if (h) h.onclick = async () => { ST = await api('hint', { day: DAY }); drawGame(); };
   const gu = $('#giveup');
   if (gu) gu.onclick = async () => {
-    if (!confirm(L("Abandonner ? Le joueur du jour ne rejoindra pas ton album et ta série repartira de zéro.", "Give up? Today's player won't join your album and your streak will reset to zero."))) return;
-    ST = await api('giveup', {}); renderWho(ST.user); drawGame();
+    if (!confirm(st.past
+      ? L('Abandonner ? Ce joueur ne rejoindra pas ton album.', "Give up? This player won't join your album.")
+      : L("Abandonner ? Le joueur du jour ne rejoindra pas ton album et ta série repartira de zéro.", "Give up? Today's player won't join your album and your streak will reset to zero."))) return;
+    ST = await api('giveup', { day: DAY }); renderWho(ST.user); drawGame();
   };
 
   // stats du jour
   const s = st.stats;
-  const yname = st.yesterday ? `<a href="/joueur/${st.yesterday.id}" data-link><b style="font-family:inherit">${esc(st.yesterday.name)}</b></a>` : '';
-  $('#daystats').innerHTML = `<h3>${L("Aujourd'hui", 'Today')}</h3>
+  const y = st.yesterday;
+  const yname = y && y.name ? `<a href="/joueur/${y.id}" data-link><b style="font-family:inherit">${esc(y.name)}</b></a>` : '';
+  $('#daystats').innerHTML = `<h3>${st.past ? L('Ce jour-là', 'That day') : L("Aujourd'hui", 'Today')}</h3>
     <p>${L(`<b>${s.found}</b> joueur${s.found > 1 ? 's ont' : ' a'} trouvé${s.avg ? `, en <b>${s.avg}</b> essais en moyenne` : ''}.`,
       `<b>${s.found}</b> player${s_(s.found)} found him${s.avg ? `, in <b>${s.avg}</b> guesses on average` : ''}.`)}</p>
-    ${st.yesterday ? `<p>${L(`Hier, c'était ${yname} (${st.yesterday.stats.found} l'ont trouvé).`, `Yesterday it was ${yname} (${st.yesterday.stats.found} found him).`)}</p>` : ''}`;
+    ${y ? y.name
+      ? `<p>${L(`Hier, c'était ${yname} (${y.stats.found} l'ont trouvé).`, `Yesterday it was ${yname} (${y.stats.found} found him).`)}</p>`
+      : `<p>${L(`Le joueur d'hier, ${y.stats.found} l'ont trouvé. <a href="/jour/${y.day}" data-link>Et toi&nbsp;?</a>`, `Yesterday's player: ${y.stats.found} found him. <a href="/jour/${y.day}" data-link>Can you?</a>`)}</p>` : ''}`;
+}
+
+// une fois la partie finie : le jour passé le plus récent qu'il reste à trouver
+function catchupBox(st) {
+  const c = st.catchup;
+  if (!c) return '';
+  return `<div class="catchup"><div class="kicker">${L('Rattrape les jours d’avant', 'Catch up on past days')}</div>
+    <p>${L(`Il te reste <b>${c.left}</b> joueur${s_(c.left)} à trouver. Sans points, mais ils rejoignent ton album.`, `You still have <b>${c.left}</b> player${s_(c.left)} to find. No points, but they join your album.`)}</p>
+    <a class="btn solid" href="/jour/${c.day}" data-link>${L(`Jouer le n° ${c.number}`, `Play No. ${c.number}`)} · ${esc(fmtDate(c.day, { day: 'numeric', month: 'long' }))}</a></div>`;
 }
 
 function tick() {
@@ -512,7 +540,7 @@ function bindSearch() {
     const q = input.value.trim();
     if (!q) return;
     try {
-      const st = await api('guess', { q });
+      const st = await api('guess', { q, day: DAY });
       ST = st;
       input.value = '';
       msg.textContent = st.dup ? L(`Déjà proposé (essai n° ${st.dup}).`, `Already guessed (guess #${st.dup}).`) : '';
@@ -605,7 +633,7 @@ async function pagePlayer(id) {
   renderWho(me.user, me);
   const s = p.stats;
   const mine = p.mine
-    ? p.mine.status === 'won' ? L(`Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You found him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`)
+    ? p.mine.status === 'won' ? p.mine.late ? L(`Tu l'as rattrapé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You caught up on him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`) : L(`Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You found him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`)
       : p.mine.status === 'gaveup' ? L('Tu as abandonné ce jour-là.', 'You gave up that day.') : L(`Tu ne l'as pas trouvé (${p.mine.guesses} essais).`, `You didn't find him (${p.mine.guesses} guesses).`)
     : L("Tu n'as pas joué ce jour-là.", "You didn't play that day.");
   const when = esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }));
@@ -618,15 +646,16 @@ async function pagePlayer(id) {
 async function pageAlbum() {
   const a = await api('album');
   renderWho(a.user, a.edition);
-  const won = a.days.filter((d) => d.status === 'won').length;
+  const got = (d) => d.status === 'won' || d.status === 'late';
+  const won = a.days.filter(got).length;
   const past = a.days.filter((d) => !d.today).length;
   app.innerHTML = `
     <div class="pagehead">
       <div><div class="kicker">${L('Ta collection', 'Your collection')}</div><h1>${L('Mon album', 'My album')}</h1>
-      <p>${L('Un joueur par jour. Ceux que tu rates restent vides pour toujours.', 'One player a day. The ones you miss stay empty forever.')}</p></div>
+      <p>${L('Un joueur par jour. Ceux que tu n’as pas trouvés restent cachés : tu peux encore les chercher, sans points.', "One player a day. The ones you haven't found stay hidden: you can still look for them, with no points.")}</p></div>
       <div class="counters">
         <div><b>${won}</b><span>${L('trouvés', 'found')}</span></div>
-        <div><b>${past - a.days.filter((d) => !d.today && d.status === 'won').length}</b><span>${L('manqués', 'missed')}</span></div>
+        <div><b>${past - a.days.filter((d) => !d.today && got(d)).length}</b><span>${L('à rattraper', 'to catch up')}</span></div>
         <div><b>${a.user ? a.user.streak : '—'}</b><span>${L('série', 'streak')}</span></div>
         <div><b>${a.user ? a.user.best : '—'}</b><span>record</span></div>
       </div>
@@ -642,8 +671,14 @@ function slot(d) {
       <div class="face"><div><div class="q">?</div><div class="sub">${d.guesses ? L(`${d.guesses} essai${s_(d.guesses)}, continue`, `${d.guesses} guess${d.guesses > 1 ? 'es' : ''}, keep going`) : L('À trouver aujourd’hui', 'To find today')}</div></div></div>
       <div class="bot">${L("Aujourd'hui", 'Today')}</div></a>`;
   }
-  const cls = d.status === 'won' ? 's-won' : d.status === 'gaveup' ? 's-gaveup s-missed' : 's-missed';
-  const bot = d.status === 'won' ? L(`Trouvé · ${d.guesses} essai${s_(d.guesses)}`, `Found · ${d.guesses} ${d.guesses > 1 ? 'tries' : 'try'}`) : d.status === 'gaveup' ? L('Abandonné', 'Gave up') : L('Manqué', 'Missed');
+  if (!d.player) {
+    return `<a class="slot s-open" href="/jour/${d.day}" data-link><div class="top"><span>${L('N°', 'No.')} ${d.number}</span><span>${date}</span></div>
+      <div class="face"><div><div class="q">?</div><div class="sub">${d.guesses ? L(`${d.guesses} essai${s_(d.guesses)}, continue`, `${d.guesses} guess${d.guesses > 1 ? 'es' : ''}, keep going`) : L('Encore à trouver', 'Still to find')}</div></div></div>
+      <div class="bot">${L('Jouer, sans points', 'Play, no points')}</div></a>`;
+  }
+  const cls = d.status === 'won' || d.status === 'late' ? 's-won' : 's-gaveup s-missed';
+  const bot = d.status === 'won' ? L(`Trouvé · ${d.guesses} essai${s_(d.guesses)}`, `Found · ${d.guesses} ${d.guesses > 1 ? 'tries' : 'try'}`)
+    : d.status === 'late' ? L(`Rattrapé · ${d.guesses} essai${s_(d.guesses)}`, `Caught up · ${d.guesses} ${d.guesses > 1 ? 'tries' : 'try'}`) : L('Abandonné', 'Gave up');
   return `<a class="slot ${cls} ${d.today ? 'today' : ''}" href="/joueur/${d.player.id}" data-link><div class="top"><span>${L('N°', 'No.')} ${d.number}</span><span>${date}</span></div>
     <div class="pic">${d.player.img ? `<img src="${esc(d.player.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
     <div class="face"><div><div class="nm">${esc(d.player.name)}</div><div class="sub">${esc(d.player.pos)} · ${esc(d.player.nat)}</div></div></div>
