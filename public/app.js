@@ -62,7 +62,7 @@ function refresh(path) {
   return e.p;
 }
 // charge d'avance ce qu'affiche un onglet, dès qu'on le survole ou qu'on pose le doigt dessus
-const PREFETCH = { '/': ['today'], '/album': ['album'], '/collection': ['collection'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'], '/regles': ['me'], '/compte': ['me'] };
+const PREFETCH = { '/': ['today'], '/album': ['album'], '/collection': ['collection'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'],  '/regles': ['me'], '/compte': ['me'] };
 function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p, null, true).catch(() => {})); }
 ['mouseover', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
   const a = e.target.closest && e.target.closest('a[data-link]');
@@ -147,7 +147,7 @@ window.addEventListener('popstate', () => route());
 // nouvelles données arrivées en fond pour la page affichée : on la redessine sans bouger
 // (sauf le jeu, qui se met à jour par ses propres actions, et si on est en train d'écrire)
 window.addEventListener('fresh', (e) => {
-  if (!USED.has(e.detail) || PACKING || location.pathname === '/' || location.pathname.startsWith('/jour/') || location.pathname === '/compte') return;
+  if (!USED.has(e.detail) || PACKING || location.pathname.startsWith('/duel') || location.pathname === '/' || location.pathname.startsWith('/jour/') || location.pathname === '/compte') return;
   if (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
   route({ quiet: true });
 });
@@ -177,9 +177,10 @@ async function route({ quiet = false } = {}) {
   // si la page n'est pas prête presque tout de suite, on le montre (sinon on croit que le clic n'a pas marché)
   const wait = setTimeout(() => { if (id === ROUTE) app.classList.add('loading'); }, 120);
   if (!quiet) hit(p);
-  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/ligues' && p.startsWith('/ligue/'))));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/classement' && (p === '/ligues' || p.startsWith('/ligue/'))) || (a.getAttribute('href') === '/duel' && p.startsWith('/duel'))));
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
+  stopDuel();
   try {
     if (p === '/') return await pageGame();
     const jd = p.match(/^\/jour\/(\d{4}-\d{2}-\d{2})$/);
@@ -190,6 +191,9 @@ async function route({ quiet = false } = {}) {
     if (p === '/compte') return pageAuth();
     if (p === '/regles') return pageRules();
     if (p === '/ligues') return await pageLeagues();
+    if (p === '/duel') return await pageDuel();
+    const du = p.match(/^\/duel\/([A-Za-z0-9]{5})$/);
+    if (du) return await pageDuel(du[1].toUpperCase());
     const lg = p.match(/^\/ligue\/([A-Za-z0-9]{6})$/);
     if (lg) return await pageLeague(lg[1].toUpperCase());
     if (p === '/confidentialite') return pagePrivacy();
@@ -308,6 +312,7 @@ async function pageGame(day = null) {
             </div>
           </div>
         </div>
+        <div id="packcta"></div>
         <div id="reveal"></div>
         <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
         ${st.user ? '' : `<div class="nudge">${L('Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.', 'You are playing without an account. <a href="/compte" data-link>Create one</a> to keep your streak and fill your album. Today\'s game will be kept.')}</div>`}
@@ -344,10 +349,10 @@ function clubPath(path, over) {
     ${found || over ? '' : `<p class="path-tip">${L('Chaque club trouvé prend sa place, dans l\'ordre de sa carrière.', 'Each club you find takes its place, in career order.')}</p>`}
   </div>`;
 }
-function fifaCard(c, rating, found) {
+function fifaCard(c, rating, found, cls = '') {
   const v = (x, ph = '?') => (x == null || x === '' ? `<span class="ph">${ph}</span>` : esc(x));
   const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '<span class="ph box">?</span>';
-  return `<div class="fut ${found ? 'done' : ''}">
+  return `<div class="fut ${found ? 'done' : ''} ${cls}">
     <div class="fut-in">
       <div class="fut-side">
         <div class="fut-rate">${rating}</div>
@@ -385,6 +390,7 @@ function drawGame(lastN) {
   if (justEnded && st.status === 'gaveup' && prevCard) spinReveal($('#fcard'), prevCard);
   if (justEnded && st.status === 'won') confetti();
   $('#path').innerHTML = clubPath(st.card.path, over);
+  $('#packcta').innerHTML = packCta(st);
   if (justEnded && st.status === 'gaveup') $('#path').firstElementChild?.classList.add('late');
   $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : L('À toi', 'Your turn')}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
@@ -477,6 +483,22 @@ function drawGame(lastN) {
     ${y ? y.name
       ? `<p>${L(`Hier, c'était ${yname} (${y.stats.found} l'ont trouvé).`, `Yesterday it was ${yname} (${y.stats.found} found him).`)}</p>`
       : `<p>${L(`Le joueur d'hier, ${y.stats.found} l'ont trouvé. <a href="/jour/${y.day}" data-link>Et toi&nbsp;?</a>`, `Yesterday's player: ${y.stats.found} found him. <a href="/jour/${y.day}" data-link>Can you?</a>`)}</p>` : ''}`;
+}
+
+// encart « ouvrir un pack » : le pack du jour, et le pack bonus gagné en trouvant le joueur
+function packCta(st) {
+  const p = st.packs;
+  if (!p) return '';
+  const ready = (p.main ? 0 : 1) + (p.bonus === 'ready' ? 1 : 0);
+  if (ready) {
+    const title = ready > 1 ? L('2 packs à ouvrir', '2 packs to open') : p.bonus === 'ready' ? L('Pack bonus gagné !', 'Bonus pack won!') : L('Ton pack du jour t’attend', "Today's pack is waiting");
+    return `<a class="packcta" href="/collection" data-link><span class="mini-pack ${!p.main ? '' : 'bonus'}"><b>FoO</b>${ready > 1 ? '<i>2</i>' : ''}</span>
+      <span class="pc-t"><b>${title}</b><small>${L('5 cartes à collectionner. Plus le joueur est connu, plus sa carte est rare.', '5 cards to collect. The more famous the player, the rarer the card.')}</small></span>
+      <span class="btn solid">${L('Ouvrir un pack', 'Open a pack')}</span></a>`;
+  }
+  if (p.bonus === 'locked' && st.status === 'playing') return `<div class="packcta off"><span class="mini-pack bonus"><b>+1</b></span>
+    <span class="pc-t"><b>${L('Un pack bonus à gagner', 'A bonus pack to win')}</b><small>${L('Trouve le joueur du jour pour ouvrir un 2<sup>e</sup> pack dans ta collection.', 'Find the daily player to open a 2nd pack in your collection.')}</small></span></div>`;
+  return '';
 }
 
 // une fois la partie finie : le jour passé le plus récent qu'il reste à trouver
@@ -692,29 +714,23 @@ let COL_FILTER = 'all';
 const TIERS = ['legend', 'gold', 'silver', 'bronze'];
 const TIER_NAME = { legend: L('Légende', 'Legend'), gold: L('Or', 'Gold'), silver: L('Argent', 'Silver'), bronze: 'Bronze' };
 const ODDS = { bronze: 70, silver: 23, gold: 6, legend: 1 };
-const POS_EN = { GB: 'GK', DEF: 'DEF', MIL: 'MID', ATT: 'FWD' };
 const PARTICLE = /^(de|da|di|del|della|van|von|der|den|dos|das|du|le|la|el|al|ter|ten|mac)$/i;
 // nom court comme sur une vraie carte : « Kevin De Bruyne » → « De Bruyne »
 function cardName(n) {
-  if (n.length <= 13) return n;
+  if (n.length <= 14) return n;
   const w = n.split(' ');
   if (w.length < 2) return n;
   let k = w.length - 1;
   while (k > 1 && PARTICLE.test(w[k - 1])) k--;
   return w.slice(k).join(' ');
 }
-function colCard(c) {
-  const flag = c.iso ? `<img src="https://flagcdn.com/w80/${esc(c.iso)}.png" alt="${esc(c.iso.toUpperCase())}" title="${esc(c.nat)}" onerror="this.replaceWith(this.alt)">` : '';
-  return `<div class="cc t-${c.tier}" title="${esc(c.name)}"><div class="cc-in">
-    <div class="cc-side"><b>${c.rating}</b><span>${esc(EN ? POS_EN[c.pos] || c.pos : c.pos)}</span><i>${flag}</i></div>
-    <div class="cc-pic">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
-    <div class="cc-name">${esc(cardName(c.name))}</div>
-    <div class="cc-club">${esc(shortClub(c.club) || '')}</div>
-    <div class="cc-tier">${TIER_NAME[c.tier]}</div>
-  </div></div>`;
-}
-const CARD_BACK = '<div class="cc back"><div class="cc-in"><span>FoO</span></div></div>';
+// même carte que sur la page Jouer, aux couleurs de sa rareté
+const colCard = (c) => fifaCard({ ...c, name: cardName(c.name) }, c.rating, false, 't-' + c.tier);
+const CARD_BACK = '<div class="fut back"><div class="fut-in"><b>FoO</b><span>FoOotix</span></div></div>';
 const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }), { day: 'numeric', month: 'short' });
+const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'bonus' : null);
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function pageCollection() {
   const c = await api('collection');
@@ -724,17 +740,18 @@ async function pageCollection() {
 function drawCollection(c) {
   const total = Object.values(c.totals).reduce((a, b) => a + b, 0);
   const have = (t) => c.cards.filter((x) => x.tier === t).length;
+  const nx = nextPack(c);
   app.innerHTML = `
     <div class="pagehead">
       <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Collection</h1>
-      <p>${L('Chaque jour, un pack de 5 cartes à ouvrir. Plus un joueur est connu, plus sa carte est rare. Rien à voir avec ton album : ici, c’est la chance qui décide.', 'A pack of 5 cards to open every day. The more famous the player, the rarer the card. Separate from your album: here, luck decides.')}</p></div>
+      <p>${L('Chaque jour, un pack de 5 cartes à ouvrir, et un pack bonus si tu trouves le joueur du jour. Plus un joueur est connu, plus sa carte est rare.', 'A pack of 5 cards to open every day, plus a bonus pack if you find the daily player. The more famous the player, the rarer the card.')}</p></div>
       <div class="counters">
         <div><b>${c.cards.length}</b><span>/ ${total}</span></div>
         ${TIERS.slice(0, 3).map((t) => `<div><b>${have(t)}</b><span>${TIER_NAME[t]}</span></div>`).join('')}
       </div>
     </div>
     ${c.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ta collection ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour la garder.', 'Without an account, your collection only lives on this device. <a href="/compte" data-link>Create an account</a> to keep it.')}</p>`}
-    <section class="packzone" id="packzone">${c.opened ? openedBox(c) : packBox()}</section>
+    <section class="packzone" id="packzone">${nx ? packBox(nx, c) : openedBox(c)}</section>
     <section>
       <div class="colbar"><h2>${L('Mes cartes', 'My cards')}</h2>
         <div class="chips">${['all', ...TIERS].map((t) => `<button type="button" class="chip ${COL_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : TIER_NAME[t]} <span>${t === 'all' ? c.cards.length : have(t)}/${t === 'all' ? total : c.totals[t]}</span></button>`).join('')}</div>
@@ -745,8 +762,9 @@ function drawCollection(c) {
   const grid = () => {
     const list = c.cards.filter((x) => COL_FILTER === 'all' || x.tier === COL_FILTER).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
     $('#cgrid').innerHTML = list.length
-      ? list.map((x) => `<div class="cslot">${colCard(x)}${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}</div>`).join('')
+      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span>${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}</button>`).join('')
       : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier pack pour commencer ta collection.', 'Open your first pack to start your collection.')}</p>`;
+    $('#cgrid').querySelectorAll('.cslot').forEach((b) => b.addEventListener('click', () => zoomCard(c.cards.find((x) => x.id === b.dataset.id))));
   };
   grid();
   app.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
@@ -754,17 +772,31 @@ function drawCollection(c) {
     app.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
     grid();
   }));
-  if (c.opened) tick();
-  else packDrag();
+  if (nx) packDrag(nx);
+  else tick();
+}
+// une carte de la collection en grand, par-dessus la page
+function zoomCard(c) {
+  if (!c) return;
+  const o = document.createElement('div');
+  o.className = 'cardzoom';
+  o.innerHTML = `<div class="cz-in">${colCard(c)}<p><b>${esc(c.name)}</b> · ${TIER_NAME[c.tier]}${c.n > 1 ? ` · ×${c.n}` : ''}</p><button type="button" class="btn">${L('Fermer', 'Close')}</button></div>`;
+  const close = () => { o.remove(); document.removeEventListener('keydown', esc_); };
+  const esc_ = (e) => { if (e.key === 'Escape') close(); };
+  o.addEventListener('click', close);
+  document.addEventListener('keydown', esc_);
+  document.body.appendChild(o);
 }
 function oddsLine() {
-  return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span class="o-${t}">${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
+  return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
 }
-function packBox() {
+function packBox(kind, c) {
+  const two = kind === 'main' && c.packs.bonus === 'ready';
   return `<div class="pack-stage">
-    <div class="pack" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le pack du jour', "Open today's pack")}">
+    ${two ? `<div class="kicker">${L('2 packs à ouvrir aujourd’hui', '2 packs to open today')}</div>` : kind === 'bonus' ? `<div class="kicker">${L('Pack bonus : tu as trouvé le joueur du jour', 'Bonus pack: you found the daily player')}</div>` : ''}
+    <div class="pack ${kind === 'bonus' ? 'bonus' : ''}" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le pack', 'Open the pack')}">
       <div class="pack-body">
-        <div class="pack-kick">${L('Pack du jour', "Today's pack")}</div>
+        <div class="pack-kick">${kind === 'bonus' ? L('Pack bonus', 'Bonus pack') : L('Pack du jour', "Today's pack")}</div>
         <div class="pack-logo">FoOotix</div>
         <div class="pack-n">5 ${L('cartes', 'cards')}</div>
         <div class="pack-foot"><span>foootix.com</span><span>${esc(packDate())}</span></div>
@@ -777,41 +809,44 @@ function packBox() {
   </div>`;
 }
 function openedBox(c) {
-  return `<div class="pack-done"><div class="kicker">${L('Pack du jour ouvert', "Today's pack is open")}</div>
-    <p>${L('Prochain pack dans', 'Next pack in')} <b id="cd"></b></p></div>
-    ${revealRow(c.pack, true)}
-    ${oddsLine()}`;
+  const today = [...c.packs.mainCards, ...c.packs.bonusCards];
+  return `<div class="pack-done"><div class="kicker">${L('Packs du jour ouverts', "Today's packs are open")}</div>
+    <p>${L('Prochain pack dans', 'Next pack in')} <b id="cd"></b></p>
+    ${c.packs.bonus === 'locked' ? `<p class="bonus-tip">${L('Trouve le joueur du jour pour gagner un pack bonus.', 'Find the daily player to win a bonus pack.')} <a href="/" data-link>${L('Jouer', 'Play')}</a></p>` : ''}</div>
+    <div class="today-row">${today.map((x) => `<div class="tr-c"><span class="mini">${colCard(x)}</span><span class="tag ${x.isNew ? 'new' : ''}">${x.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span></div>`).join('')}</div>`;
 }
-function revealRow(pack, up) {
-  return `<div class="reveal ${up ? 'static' : ''}" id="reveal">${pack.map((c, i) => `<div class="flip ${up ? 'up' : ''} r-${c.tier}" style="--i:${i}">
-    <div class="flip-in"><div class="flip-back">${CARD_BACK}</div><div class="flip-front">${colCard(c)}</div></div>
-    <span class="tag ${c.isNew ? 'new' : ''}">${c.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span></div>`).join('')}</div>`;
-}
-// glisser le pack : le haut suit le doigt, et se déchire au-delà de 60 % de la largeur
-function packDrag() {
+
+// glisser le pack : le haut se décolle et suit le doigt, puis se déchire au-delà de la moitié de la largeur
+function packDrag(kind) {
   const pack = $('#pack');
-  const top = $('.pack-top', pack);
-  let x0 = null, done = false;
+  const top = $('.pack-top', pack), body = $('.pack-body', pack);
+  let x0 = null, dx = 0, raf = 0, done = false;
+  const paint = () => {
+    raf = 0;
+    const w = pack.offsetWidth, k = Math.min(1, Math.abs(dx) / (w * 0.5)), dir = Math.sign(dx) || 1;
+    top.style.transformOrigin = dir > 0 ? '0 100%' : '100% 100%';
+    top.style.transform = `translate(${dx * 0.7}px, ${-k * 26}px) rotate(${dir * k * -14}deg)`;
+    body.style.transform = `rotate(${dir * k * 1.5}deg)`;
+    if (k >= 1) open(dir);
+  };
   pack.addEventListener('pointerdown', (e) => {
     if (done) return;
-    x0 = e.clientX;
+    x0 = e.clientX; dx = 0;
     pack.classList.add('drag', 'touched');
     pack.setPointerCapture(e.pointerId);
   });
   pack.addEventListener('pointermove', (e) => {
-    if (x0 == null) return;
-    const dx = e.clientX - x0, w = pack.offsetWidth;
-    const k = Math.min(1, Math.abs(dx) / (w * 0.6));
-    top.style.transform = `translateX(${dx}px) rotate(${(dx / w) * 12}deg)`;
-    pack.style.setProperty('--k', k);
-    if (k >= 1) open(Math.sign(dx));
+    if (x0 == null || done) return;
+    dx = e.clientX - x0;
+    if (!raf) raf = requestAnimationFrame(paint);
   });
   const back = () => {
     if (x0 == null || done) return;
     x0 = null;
     pack.classList.remove('drag');
-    top.style.transform = '';
-    pack.style.setProperty('--k', 0);
+    const from = top.style.transform;
+    top.style.transform = body.style.transform = '';
+    if (from && top.animate) top.animate([{ transform: from }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,1.5,.5,1)' });
   };
   pack.addEventListener('pointerup', back);
   pack.addEventListener('pointercancel', back);
@@ -819,54 +854,352 @@ function packDrag() {
   $('#packbtn').addEventListener('click', () => open(1));
   async function open(dir) {
     if (done) return;
-    done = true;
-    x0 = null;
-    PACKING = true;
+    done = true; x0 = null; PACKING = true;
     pack.classList.remove('drag');
-    pack.classList.add('torn', 'touched');
-    top.style.transform = `translate(${dir * pack.offsetWidth * 1.3}px, -60px) rotate(${dir * 30}deg)`;
-    $('.pack-hint').style.visibility = 'hidden';
-    $('#packbtn').style.visibility = 'hidden';
+    pack.classList.add('touched');
+    $('.pack-hint').style.visibility = $('#packbtn').style.visibility = 'hidden';
+    const req = api('pack', kind === 'bonus' ? { bonus: true } : {});
+    if (top.animate && !reduced()) {
+      const from = top.style.transform || 'none';
+      top.animate([{ transform: from }, { transform: `translate(${dir * 340}px, -140px) rotate(${dir * 50}deg)`, opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.25,.6,.4,1)', fill: 'forwards' });
+      await sleep(250);
+      body.animate([{ transform: 'none' }, { transform: 'translateY(-10px) scale(1.04)', filter: 'brightness(1.4)', offset: 0.35 }, { transform: 'translateY(70px) scale(.92)', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+    }
     let j;
     try {
-      [j] = await Promise.all([api('pack', {}), new Promise((r) => setTimeout(r, 700))]);
+      [j] = await Promise.all([req, sleep(reduced() ? 0 : 600)]);
     } catch (e) {
       PACKING = false;
       $('#packzone').innerHTML = `<p class="msg">${esc(e.message)}</p>`;
       return;
     }
     CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
-    await reveal(j);
+    revealStage(j, kind);
   }
 }
-// les cartes arrivent face cachée puis se retournent une à une, la plus rare en dernier
-async function reveal(j) {
+
+// les cartes une à une : chaque clic retourne la suivante, la plus rare arrive en dernier
+function revealStage(j, kind) {
+  const cards = kind === 'bonus' ? j.packs.bonusCards : j.packs.mainCards;
   const zone = $('#packzone');
-  const best = j.pack[j.pack.length - 1];
-  zone.innerHTML = `<p class="rev-msg" id="revmsg">${L('Touche pour aller plus vite', 'Tap to speed up')}</p>${revealRow(j.pack, false)}`;
-  let fast = false;
-  $('#reveal').addEventListener('click', () => { fast = true; });
-  const wait = (ms) => new Promise((r) => setTimeout(r, fast ? 60 : ms));
-  const flips = [...zone.querySelectorAll('.flip')];
-  await wait(700);
-  for (const [i, f] of flips.entries()) {
-    const last = i === flips.length - 1;
-    if (last && (best.tier === 'legend' || best.tier === 'gold')) {
-      f.classList.add('charge');
-      $('#revmsg').textContent = best.tier === 'legend' ? L('Attention…', 'Wait for it…') : L('Une carte Or…', 'A Gold card…');
-      await wait(1300);
-    } else await wait(last ? 800 : 420);
+  zone.innerHTML = `<div class="stage">
+    <p class="rev-msg" id="revmsg">${L('Touche la carte pour la retourner', 'Tap the card to flip it')}</p>
+    <div class="stage-c" id="stagec"></div>
+    <div class="stage-tag" id="stagetag"></div>
+    <div class="strip" id="strip">${cards.map(() => `<div class="sl"><span class="mini">${CARD_BACK}</span></div>`).join('')}</div>
+    <div class="stage-act" id="stageact"></div>
+  </div>`;
+  const center = $('#stagec'), msg = $('#revmsg'), tagEl = $('#stagetag');
+  let i = -1, flipped = false, busy = false;
+  const tagHtml = (c) => `<span class="tag ${c.isNew ? 'new' : ''}">${c.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span>`;
+  const put = (k) => {
+    center.innerHTML = `<div class="flip r-${cards[k].tier}"><div class="flip-in"><div class="flip-back">${CARD_BACK}</div><div class="flip-front">${colCard(cards[k])}</div></div></div>`;
+    tagEl.innerHTML = '';
+    const f = center.firstElementChild;
+    if (f.animate && !reduced()) f.animate([{ transform: 'translateY(60px) scale(.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    $('#strip').children[k].classList.add('cur');
+    return f;
+  };
+  // la carte retournée part se ranger dans sa case en bas
+  const stash = (k) => {
+    const slot = $('#strip').children[k];
+    const from = center.firstElementChild.getBoundingClientRect();
+    slot.classList.remove('cur');
+    slot.innerHTML = `<span class="mini">${colCard(cards[k])}</span>`;
+    const to = slot.getBoundingClientRect();
+    if (!slot.animate || reduced()) return;
+    const ghost = document.createElement('div');
+    ghost.className = 'ghost';
+    ghost.innerHTML = colCard(cards[k]);
+    Object.assign(ghost.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px' });
+    document.body.appendChild(ghost);
+    slot.style.visibility = 'hidden';
+    ghost.animate([{ transform: 'none' }, { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width})` }], { duration: 380, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' })
+      .onfinish = () => { ghost.remove(); slot.style.visibility = ''; };
+  };
+  const flipNormal = (f) => new Promise((r) => { f.classList.add('up'); setTimeout(r, 520); });
+  // la dernière : elle tremble, puis tourne plusieurs fois sur elle-même avant de se poser
+  const flipFinal = async (f, c) => {
+    const rare = c.tier === 'legend' || c.tier === 'gold';
+    msg.textContent = c.tier === 'legend' ? L('Attention…', 'Wait for it…') : L('Dernière carte…', 'Last card…');
+    center.classList.add('charge', 'ray-' + c.tier);
+    await sleep(reduced() ? 0 : rare ? 1100 : 700);
+    center.classList.remove('charge');
+    center.classList.add('rays');
+    const inner = $('.flip-in', f);
+    if (inner.animate && !reduced()) {
+      inner.style.transition = 'none';
+      await new Promise((r) => {
+        inner.animate([
+          { transform: 'rotateY(0) scale(1)' },
+          { transform: 'rotateY(720deg) scale(1.18) translateY(-16px)', offset: 0.55 },
+          { transform: 'rotateY(1260deg) scale(1)' },
+        ], { duration: rare ? 2000 : 1500, easing: 'cubic-bezier(.35,.05,.2,1)' }).onfinish = r;
+      });
+    }
     f.classList.add('up');
+    if (c.tier === 'legend') confetti();
+  };
+  const step = async () => {
+    if (busy || (i === cards.length - 1 && flipped)) return;
+    busy = true;
+    let f = center.firstElementChild;
+    if (flipped) {
+      stash(i);
+      i++;
+      flipped = false;
+      f = put(i);
+      await sleep(reduced() ? 0 : 200);
+    }
+    const last = i === cards.length - 1;
+    if (last) await flipFinal(f, cards[i]); else await flipNormal(f);
+    flipped = true;
+    tagEl.innerHTML = tagHtml(cards[i]);
+    const c = cards[i];
+    msg.textContent = last
+      ? (c.tier === 'legend' ? L(`Une Légende : ${c.name} !`, `A Legend: ${c.name}!`) : `${c.name} · ${TIER_NAME[c.tier]}`)
+      : `${i + 1}/${cards.length} · ${c.name} · ${TIER_NAME[c.tier]}`;
+    if (last) {
+      PACKING = false;
+      const more = kind === 'main' && j.packs.bonus === 'ready';
+      $('#stageact').innerHTML = `${more ? `<button type="button" class="btn solid" id="nextpack">${L('Ouvrir le pack bonus', 'Open the bonus pack')}</button>` : ''}<button type="button" class="btn ${more ? '' : 'solid'}" id="tocol">${L('Voir ma collection', 'See my collection')}</button>`;
+      const redraw = () => { const y = window.scrollY; drawCollection(j); window.scrollTo(0, y); };
+      $('#tocol').onclick = () => { redraw(); $('#cgrid')?.scrollIntoView({ behavior: 'smooth' }); };
+      if (more) $('#nextpack').onclick = redraw;
+    }
+    busy = false;
+  };
+  zone.querySelector('.stage').addEventListener('click', (e) => { if (!e.target.closest('.stage-act')) step(); });
+  // la première carte sort du pack, face cachée
+  i = 0;
+  put(0);
+  center.firstElementChild.style.cursor = 'pointer';
+}
+
+// ——— Page : duel (1 contre 1, le même joueur à trouver, le premier qui trouve gagne) ———
+const DU = { id: null, poll: 0, clock: 0, phase: null, mode: null, off: 0, v: null, oppTemp: 0 };
+function stopDuel() {
+  clearInterval(DU.poll); clearInterval(DU.clock);
+  DU.poll = DU.clock = 0;
+  // on quitte la file d'attente si on change de page avant d'avoir trouvé un adversaire
+  if (DU.id && DU.phase === 'waiting') fetchJSON(`duel/${DU.id}/leave`, {}).catch(() => {});
+  DU.id = DU.phase = DU.v = null;
+}
+async function pageDuel(code) {
+  if (code) {
+    try { return duelStart(await fetchJSON('duel/join/' + code, {}), 'friend'); } catch (e) {
+      history.replaceState({}, '', '/duel');
+      return duelLobby(e.message);
+    }
   }
-  $('#revmsg').textContent = best.tier === 'legend' ? L(`Une Légende : ${best.name} !`, `A Legend: ${best.name}!`)
-    : best.tier === 'gold' ? L(`Carte Or : ${best.name}`, `Gold card: ${best.name}`)
-      : L(`Meilleure carte : ${best.name}`, `Best card: ${best.name}`);
-  await wait(1600);
-  PACKING = false;
-  if (location.pathname !== '/collection') return;
-  const y = window.scrollY;
-  drawCollection(j);
-  window.scrollTo(0, y);
+  duelLobby();
+}
+function duelLobby(err) {
+  api('me').then((m) => renderWho(m.user, m)).catch(() => {});
+  app.innerHTML = `
+    <div class="duel-lobby">
+      <div class="dl-hero">
+        <div class="dl-l"><span>${L('Toi', 'You')}</span></div>
+        <div class="dl-vs">VS</div>
+        <div class="dl-r"><span>?</span></div>
+      </div>
+      <div class="kicker">${L('1 contre 1 · 90 secondes', '1 vs 1 · 90 seconds')}</div>
+      <h1>Duel</h1>
+      <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Personne au bout de 90 secondes ? Match nul.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. Nobody after 90 seconds? It’s a draw.')}</p>
+      ${err ? `<p class="msg">${esc(err)}</p>` : ''}
+      <div class="dl-act">
+        <button class="btn solid big" id="d-rand">${L('Adversaire au hasard', 'Random opponent')}</button>
+        <button class="btn big" id="d-friend">${L('Défier un pote', 'Challenge a friend')}</button>
+        <button class="btn big" id="d-bot">${L('Contre le robot', 'Against the bot')}</button>
+      </div>
+    </div>`;
+  $('#d-rand').onclick = async () => duelStart(await fetchJSON('duel/queue', {}), 'random');
+  $('#d-friend').onclick = async () => duelStart(await fetchJSON('duel/friend', {}), 'friend');
+  $('#d-bot').onclick = async () => duelStart(await fetchJSON('duel/bot', {}), 'bot');
+}
+function duelStart(v, mode) {
+  stopDuel();
+  DU.id = v.id; DU.mode = mode; DU.oppTemp = 0;
+  duelUpdate(v);
+  DU.poll = setInterval(async () => {
+    if (!location.pathname.startsWith('/duel')) return stopDuel();
+    try { duelUpdate(await fetchJSON('duel/' + DU.id)); } catch (e) { /* réseau : on réessaie à la prochaine seconde */ }
+  }, 1000);
+}
+// le serveur donne l'heure : on s'y cale pour que les deux joueurs voient le même chrono
+const dnow = () => Date.now() + DU.off;
+function duelUpdate(v) {
+  if (!DU.id || v.id !== DU.id) return;
+  DU.off = v.now - Date.now();
+  DU.v = v;
+  // l'intro et la partie démarrent à l'heure prévue, sans attendre la réponse suivante du serveur
+  let phase = v.phase;
+  if (phase === 'intro' && dnow() >= v.startAt) phase = 'playing';
+  if (phase !== DU.phase) {
+    DU.phase = phase;
+    if (phase === 'waiting') duelWaiting(v);
+    if (phase === 'intro') duelIntro(v);
+    if (phase === 'playing') duelPlay(v);
+    if (phase === 'over') duelOverScreen(v);
+  }
+  if (phase === 'playing') duelRefresh(v);
+  if (phase === 'over') { clearInterval(DU.poll); clearInterval(DU.clock); }
+}
+function duelWaiting(v) {
+  if (v.code) {
+    const link = `${location.origin}/duel/${v.code}`;
+    app.innerHTML = `<div class="duel-wait">
+      <div class="kicker">${L('Défie un pote', 'Challenge a friend')}</div>
+      <h1>${L('Envoie-lui ce lien', 'Send them this link')}</h1>
+      <div class="dw-code">${esc(v.code)}</div>
+      <p>${L('Le duel démarre dès qu’il arrive.', 'The duel starts as soon as they join.')}</p>
+      ${shareBox(L('Je te défie en duel sur FoOotix : le premier qui trouve le joueur gagne ⚔️', 'I challenge you to a FoOotix duel: first to find the player wins ⚔️'), link, L('Envoyer le lien', 'Send the link'))}
+      <p class="dw-link">${esc(link)}</p>
+      <div class="dw-dots"><i></i><i></i><i></i></div>
+      <button class="linkbtn" id="d-cancel">${L('Annuler', 'Cancel')}</button>
+    </div>`;
+  } else {
+    app.innerHTML = `<div class="duel-wait">
+      <div class="kicker">${L('Adversaire au hasard', 'Random opponent')}</div>
+      <h1>${L('Recherche d’un adversaire', 'Looking for an opponent')}</h1>
+      <div class="radar"><i></i><i></i><i></i><b>?</b></div>
+      <p id="d-since">${L('En attente…', 'Waiting…')}</p>
+      <div id="d-botoffer" hidden><p>${L('Personne pour l’instant. Tu peux jouer contre le robot en attendant.', 'Nobody right now. You can play the bot meanwhile.')}</p><button class="btn solid" id="d-bot2">${L('Jouer contre le robot', 'Play the bot')}</button></div>
+      <button class="linkbtn" id="d-cancel">${L('Annuler', 'Cancel')}</button>
+    </div>`;
+    const t0 = Date.now();
+    DU.clock = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000);
+      const el = $('#d-since');
+      if (!el) return;
+      el.textContent = L(`En attente depuis ${s} s`, `Waiting for ${s}s`);
+      if (s >= 10) $('#d-botoffer').hidden = false;
+    }, 1000);
+    $('#d-bot2').onclick = async () => duelStart(await fetchJSON('duel/bot', {}), 'bot');
+  }
+  $('#d-cancel').onclick = () => { stopDuel(); duelLobby(); };
+}
+function duelIntro(v) {
+  clearInterval(DU.clock);
+  app.innerHTML = `<div class="vs-screen">
+    <div class="vs-l"><span>${L('Toi', 'You')}</span><b>${esc(v.me.name)}</b></div>
+    <div class="vs-r"><span>${v.opp.bot ? L('Robot', 'Bot') : L('Adversaire', 'Opponent')}</span><b>${esc(v.opp.name)}</b></div>
+    <div class="vs-mid">VS</div>
+    <div class="vs-count" id="vscount"></div>
+  </div>`;
+  let shown = null;
+  DU.clock = setInterval(() => {
+    const left = v.startAt - dnow();
+    if (left <= 0) { clearInterval(DU.clock); duelUpdate({ ...DU.v, phase: 'playing' }); return; }
+    const n = Math.ceil(left / 1000);
+    if (n <= 3 && n !== shown) {
+      shown = n;
+      const el = $('#vscount');
+      if (el) { el.innerHTML = `<b>${n}</b>`; }
+    }
+  }, 50);
+}
+function duelPlay(v) {
+  clearInterval(DU.clock);
+  app.innerHTML = `
+    <div class="duel">
+      <div class="duel-top">
+        <div class="dp me"><span>${L('Toi', 'You')}</span><b>${esc(v.me.name)}</b><div class="dbar"><i id="d-mybar"></i></div><small id="d-myn"></small></div>
+        <div class="dclock"><b id="d-clock">1:30</b><div class="dtime"><i id="d-time"></i></div></div>
+        <div class="dp opp" id="d-opp"><span>${v.opp.bot ? L('Robot', 'Bot') : L('Adversaire', 'Opponent')}</span><b>${esc(v.opp.name)}</b><div class="dbar"><i id="d-oppbar"></i></div><small id="d-oppn"></small></div>
+      </div>
+      <div class="duel-go" id="d-go">GO&nbsp;!</div>
+      <div class="search" id="search">
+        <form autocomplete="off">
+          <input id="q" placeholder="${L('Un joueur, un club, un pays, un poste…', 'A player, a club, a country, a position…')}" aria-label="${L('Ta proposition', 'Your guess')}" spellcheck="false" autocapitalize="off" autocorrect="off">
+          <button>${L('Tenter', 'Guess')}</button>
+        </form>
+        <div class="msg" id="msg"></div>
+      </div>
+      <div class="lastg" id="lastg"></div>
+      <div class="play">
+        <div id="fcard"></div>
+        <div class="play-side"><div id="path"></div><div class="d-toast" id="d-toast"></div></div>
+      </div>
+      <table class="board" id="board"></table>
+    </div>`;
+  const input = $('#q'), msg = $('#msg');
+  $('#search form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || DU.phase !== 'playing') return;
+    try {
+      const r = await fetchJSON(`duel/${DU.id}/guess`, { q });
+      input.value = '';
+      msg.textContent = r.dup ? L(`Déjà proposé (essai n° ${r.dup}).`, `Already guessed (guess #${r.dup}).`) : '';
+      duelUpdate(r);
+      if (DU.phase === 'playing') input.focus();
+    } catch (err) { msg.textContent = err.message; input.select(); }
+  });
+  input.focus();
+  // chrono : la barre fond, et vire au rouge dans les 10 dernières secondes
+  DU.clock = setInterval(() => {
+    const cur = DU.v;
+    const left = Math.max(0, cur.endAt - dnow());
+    const el = $('#d-clock');
+    if (!el) return;
+    const s = Math.ceil(left / 1000);
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    $('#d-time').style.width = (left / cur.duration) * 100 + '%';
+    $('.dclock').classList.toggle('hurry', s <= 10);
+  }, 100);
+}
+function duelRefresh(v) {
+  const g = v.me.guesses;
+  const best = g.reduce((m, x) => Math.max(m, x.temp), 0);
+  $('#fcard').innerHTML = fifaCard(v.card, g.length ? best : '?', false);
+  $('#path').innerHTML = clubPath(v.card.path, false);
+  $('#d-mybar').style.cssText = `width:${best}%;background:${heat(best)}`;
+  $('#d-myn').textContent = `${best}° · ${g.length} ${L('essai', 'guess')}${g.length > 1 ? L('s', 'es') : ''}`;
+  $('#d-oppbar').style.cssText = `width:${v.opp.temp}%;background:${heat(v.opp.temp)}`;
+  $('#d-oppn').textContent = `${v.opp.temp}° · ${v.opp.n} ${L('essai', 'guess')}${v.opp.n > 1 ? L('s', 'es') : ''}`;
+  // l'adversaire se rapproche : on le montre
+  for (const step of [50, 75, 90]) {
+    if (DU.oppTemp < step && v.opp.temp >= step) {
+      const t = $('#d-toast');
+      t.textContent = L(`${v.opp.name} chauffe : ${v.opp.temp}°`, `${v.opp.name} is getting hot: ${v.opp.temp}°`);
+      t.classList.remove('on'); void t.offsetWidth; t.classList.add('on');
+      $('#d-opp').classList.remove('flash'); void $('#d-opp').offsetWidth; $('#d-opp').classList.add('flash');
+      break;
+    }
+  }
+  DU.oppTemp = v.opp.temp;
+  const last = g[g.length - 1];
+  const tags = (x) => x.type === 'clue'
+    ? `<span class="tag ${x.yes ? 'yes' : 'no'}">${x.yes ? L('Oui', 'Yes') : L('Non', 'No')}</span>`
+    : x.tags.map((t) => `<span class="tag ${t.ok ? 'ok' : t.half ? 'half' : ''}">${t.dir === 'up' ? '↑ ' : t.dir === 'down' ? '↓ ' : ''}${esc(t.t)}</span>`).join('');
+  $('#lastg').innerHTML = last ? `<span class="lg-n">${L('Essai', 'Guess')} ${last.n}</span><b>${esc(last.label)}</b><span class="lg-t" style="color:${heat(last.temp)}">${last.temp}°</span>${tags(last)}` : '';
+  $('#board').innerHTML = g.length ? `<tbody>${[...g].sort((a, b) => b.temp - a.temp || b.n - a.n).map((x) => `<tr class="${last && x.n === last.n ? 'last' : ''}"><td class="n">${x.n}</td><td class="lbl">${esc(x.label)}<div class="tags">${tags(x)}</div></td><td class="t" style="color:${heat(x.temp)}">${x.temp}°</td><td class="bar"><div class="minibar"><i style="width:${x.temp}%;background:${heat(x.temp)}"></i></div></td></tr>`).join('')}</tbody>` : '';
+}
+function duelOverScreen(v) {
+  clearInterval(DU.clock);
+  const word = v.result === 'win' ? L('Victoire', 'Victory') : v.result === 'lose' ? L('Défaite', 'Defeat') : L('Temps écoulé', "Time's up");
+  const secs = Math.round((v.endAt - v.startAt) / 1000);
+  const sub = v.result === 'win' ? L(`Trouvé en ${secs} secondes et ${v.me.guesses.length} essais.`, `Found in ${secs} seconds and ${v.me.guesses.length} guesses.`)
+    : v.result === 'lose' ? L(`${v.opp.name} l’a trouvé en ${secs} secondes.`, `${v.opp.name} found him in ${secs} seconds.`)
+      : L('Personne ne l’a trouvé : match nul.', 'Nobody found him: it’s a draw.');
+  app.innerHTML = `<div class="duel-end r-${v.result}">
+    <div class="de-word">${word}</div>
+    <p class="de-sub">${esc(sub)}</p>
+    <div class="de-card" id="decard">${fifaCard(v.card, v.result === 'win' ? 100 : '?', v.result === 'win')}</div>
+    <p class="de-ans">${L('C’était', 'It was')} <b>${esc(v.answer.name)}</b></p>
+    <div class="dl-act">
+      <button class="btn solid big" id="d-again">${DU.mode === 'bot' ? L('Rejouer contre le robot', 'Play the bot again') : DU.mode === 'friend' ? L('Nouveau duel entre potes', 'New duel with a friend') : L('Rejouer', 'Play again')}</button>
+      <button class="btn big" id="d-lobby">${L('Retour', 'Back')}</button>
+    </div>
+  </div>`;
+  if (v.result === 'win') confetti();
+  const box = $('#decard');
+  const el = box.firstElementChild;
+  if (el.animate && !reduced()) el.animate([{ transform: 'rotateY(0) scale(.8)', opacity: 0 }, { transform: 'rotateY(720deg) scale(1.05)', opacity: 1, offset: 0.7 }, { transform: 'rotateY(720deg) scale(1)' }], { duration: 1400, easing: 'cubic-bezier(.3,.1,.2,1)' });
+  const mode = DU.mode;
+  $('#d-again').onclick = async () => duelStart(await fetchJSON(mode === 'bot' ? 'duel/bot' : mode === 'friend' ? 'duel/friend' : 'duel/queue', {}), mode);
+  $('#d-lobby').onclick = () => { stopDuel(); duelLobby(); };
 }
 
 // ——— Page : classement ———
@@ -894,7 +1227,7 @@ async function pageRank() {
   };
   const names = { points: L('Général', 'Overall'), today: L("Aujourd'hui", 'Today'), streaks: L('Séries', 'Streaks') };
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">${L(`${r.players} joueur${s_(r.players)} classé${s_(r.players)}`, `${r.players} ranked player${s_(r.players)}`)}</div><h1>${L('Classement', 'Ranking')}</h1><p>${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L(`${r.players} joueur${s_(r.players)} classé${s_(r.players)}`, `${r.players} ranked player${s_(r.players)}`)}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div id="tab"></div>
     ${adSlot('wide')}`;

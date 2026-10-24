@@ -215,12 +215,13 @@ async function state(req, day = G.today()) {
   const over = g.status !== 'playing';
   const yIdx = G.dayIndex(today) - 1;
   const yesterday = !past && yIdx >= 0 ? G.playerOfDay(G.dayFromIndex(yIdx)) : null;
-  const [rank, stats, yStats, user, mine] = await Promise.all([
+  const [rank, stats, yStats, user, mine, packs] = await Promise.all([
     g.status === 'won' ? db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at).then((r) => r.n) : null,
     dayStats(day),
     yesterday ? dayStats(G.dayFromIndex(yIdx)) : null,
     publicUser(req),
     myDays(req),
+    past ? null : packState(req, day),
   ]);
   // le nom d'hier reste caché tant qu'on peut encore le chercher
   const yOpen = yesterday && DONE.has(mine[G.dayFromIndex(yIdx)]);
@@ -237,6 +238,7 @@ async function state(req, day = G.today()) {
     score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
     yesterday: yesterday ? { day: G.dayFromIndex(yIdx), id: yOpen ? yesterday.id : null, name: yOpen ? yesterday.name : null, stats: yStats } : null,
     catchup: catchup(mine, today),
+    packs,
     user,
   };
 }
@@ -252,33 +254,42 @@ app.get('/api/health', A(async (req, res) => {
 // ——— API jeu ———
 app.get('/api/today', A(async (req, res) => res.json(await state(req, dayOf(req)))));
 
+// une proposition (joueur ou question) face au joueur à trouver : la ligne ajoutée au tableau des essais
+function judge(target, guesses, q) {
+  const r = G.resolve({ q });
+  if (!r) return { error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` };
+  if (r.error) return { error: r.error };
+  const key = r.type === 'player' ? r.player.id : r.clue.id;
+  const dup = guesses.find((x) => x.key === key);
+  if (dup) return { dup: dup.n };
+  let entry;
+  if (r.type === 'player') {
+    const c = G.compare(target, r.player);
+    entry = { n: guesses.length + 1, key, type: 'player', label: r.player.name, temp: c.temp, tags: c.tags };
+  } else {
+    const c = G.askClue(target, r.clue);
+    entry = { n: guesses.length + 1, key, type: 'clue', label: r.clue.label, cat: r.clue.kind, temp: c.temp, yes: c.yes };
+  }
+  // la température ne monte que sur une bonne nouvelle : un « oui », ou un joueur qui partage quelque chose
+  const prev = guesses.length ? guesses[guesses.length - 1].temp : 0;
+  const good = r.type === 'player' ? entry.tags.some((t) => t.ok) : entry.yes;
+  entry.temp = good ? Math.max(prev, G.heat(target, [...guesses, entry])) : prev;
+  return { entry, won: r.type === 'player' && r.player.id === target.id };
+}
+
 app.post('/api/guess', A(async (req, res) => {
   const day = dayOf(req);
   const past = day !== G.today();
   const target = G.playerOfDay(day);
   const q = String((req.body || {}).q || '').slice(0, 80);
-  const r = G.resolve({ q });
-  if (!r) return res.status(400).json({ error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` });
-  if (r.error) return res.status(400).json({ error: r.error });
+  if (!G.resolve({ q })) return res.status(400).json({ error: judge(target, [], q).error });
   const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: past ? 'Cette partie est terminée.' : 'La partie du jour est terminée.' });
-  const key = r.type === 'player' ? r.player.id : r.clue.id;
-  const dup = g.guesses.find((x) => x.key === key);
-  if (dup) return res.json({ ...(await state(req, day)), dup: dup.n });
-  let entry;
-  if (r.type === 'player') {
-    const c = G.compare(target, r.player);
-    entry = { n: g.guesses.length + 1, key, type: 'player', label: r.player.name, temp: c.temp, tags: c.tags };
-  } else {
-    const c = G.askClue(target, r.clue);
-    entry = { n: g.guesses.length + 1, key, type: 'clue', label: r.clue.label, cat: r.clue.kind, temp: c.temp, yes: c.yes };
-  }
-  // la température ne monte que sur une bonne nouvelle : un « oui », ou un joueur qui partage quelque chose
-  const prev = g.guesses.length ? g.guesses[g.guesses.length - 1].temp : 0;
-  const good = r.type === 'player' ? entry.tags.some((t) => t.ok) : entry.yes;
-  entry.temp = good ? Math.max(prev, G.heat(target, [...g.guesses, entry])) : prev;
+  const j = judge(target, g.guesses, q);
+  if (j.error) return res.status(400).json({ error: j.error });
+  if (j.dup) return res.json({ ...(await state(req, day)), dup: j.dup });
+  const { entry, won } = j;
   g.guesses.push(entry);
-  const won = r.type === 'player' && r.player.id === target.id;
   // un jour passé trouvé après coup rejoint l'album, sans points ni série
   const pts = won && !past ? G.score(target, g.guesses.length, g.hints).points : null;
   await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
@@ -343,22 +354,33 @@ app.get('/api/album', A(async (req, res) => {
 }));
 
 // ——— Collection : un pack FoOotix par jour, à part du jeu ———
+// Le pack bonus (gagné en trouvant le joueur du jour) est rangé sous le jour suivi de « #2 ».
+const BONUS = (day) => day + '#2';
+async function packState(req, day = G.today()) {
+  const [col, val] = owner(req);
+  const [rows, g] = await Promise.all([
+    db.all(`SELECT day FROM packs WHERE ${col} = ? AND day IN (?, ?)`, val, day, BONUS(day)),
+    db.get(`SELECT status FROM games WHERE ${col} = ? AND day = ?`, val, day),
+  ]);
+  const has = new Set(rows.map((r) => r.day));
+  return { main: has.has(day), bonus: has.has(BONUS(day)) ? 'opened' : g && g.status === 'won' ? 'ready' : 'locked' };
+}
 async function collection(req) {
   const [col, val] = owner(req);
   const day = G.today();
-  const rows = await db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE p.${col} = ? ORDER BY p.day, c.slot`, val);
+  const rows = await db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE p.${col} = ? ORDER BY p.id, c.slot`, val);
   const owned = new Map();
-  const pack = [];
+  const today = { [day]: [], [BONUS(day)]: [] };
   for (const r of rows) {
     const pl = G.BY_ID[r.player_id];
     if (!pl) continue;
-    const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0, first: r.day };
+    const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0 };
     o.n++;
     owned.set(pl.id, o);
-    if (r.day === day) pack.push({ ...G.collectCard(pl), isNew: o.n === 1 && o.first === day });
+    if (today[r.day]) today[r.day].push({ ...G.collectCard(pl), isNew: o.n === 1 });
   }
-  const opened = !!pack.length || !!(await db.get(`SELECT 1 x FROM packs WHERE day = ? AND ${col} = ?`, day, val));
-  return { day, opened, pack, cards: [...owned.values()], totals: G.deckTotals() };
+  const st = await packState(req, day);
+  return { day, packs: { ...st, mainCards: today[day], bonusCards: today[BONUS(day)] }, cards: [...owned.values()], totals: G.deckTotals() };
 }
 app.get('/api/collection', A(async (req, res) => {
   const [c, user] = await Promise.all([collection(req), publicUser(req)]);
@@ -367,13 +389,152 @@ app.get('/api/collection', A(async (req, res) => {
 app.post('/api/pack', A(async (req, res) => {
   const [col, val] = owner(req);
   const day = G.today();
-  const r = await db.run(`INSERT INTO packs (day, ${col}, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, day, val, db.now());
+  const bonus = !!(req.body || {}).bonus;
+  if (bonus && (await packState(req, day)).bonus === 'locked') return res.status(400).json({ error: 'Trouve le joueur du jour pour gagner le pack bonus.' });
+  const r = await db.run(`INSERT INTO packs (day, ${col}, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, bonus ? BONUS(day) : day, val, db.now());
   if (r.rows.length) {
     const ids = G.drawPack((n) => crypto.randomInt(n));
     for (let i = 0; i < ids.length; i++) await db.run('INSERT INTO cards (pack_id, slot, player_id) VALUES (?, ?, ?)', r.rows[0].id, i, ids[i]);
   }
   const [c, user] = await Promise.all([collection(req), publicUser(req)]);
-  res.json({ ...c, user, already: !r.rows.length });
+  res.json({ ...c, user, opened: bonus ? 'bonus' : 'main', already: !r.rows.length });
+}));
+
+// ——— Duel : deux joueurs, le même footballeur à trouver, le premier qui trouve gagne ———
+// Tout vit en mémoire (une seule machine) : un duel dure 90 s et disparaît 10 min après.
+const DUEL_MS = 90 * 1000;
+const DUEL_INTRO = 5000; // présentation « VS » puis 3, 2, 1
+const DUELS = new Map();
+let QUEUE = null; // joueur qui attend un adversaire au hasard : { key, name, t, duel }
+const ROOMS = new Map(); // code d'invitation → duel en attente du pote
+const meKey = (req) => (req.user ? 'u' + req.user.id : 'a' + req.aid);
+const meName = (req) => (req.user ? req.user.username : 'Invité ' + parseInt(req.aid.slice(0, 4), 16) % 1000);
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, d] of DUELS) if (now - d.created > 10 * 60 * 1000) DUELS.delete(id);
+  for (const [c, id] of ROOMS) if (!DUELS.has(id)) ROOMS.delete(c);
+  if (QUEUE && now - QUEUE.t > 30000) QUEUE = null;
+}, 60000).unref();
+
+function newDuel(a, code) {
+  const id = crypto.randomBytes(8).toString('hex');
+  const d = { id, code, created: Date.now(), target: G.duelPick((n) => crypto.randomInt(n)), players: [{ ...a, guesses: [] }], startAt: null, endAt: null, winner: null };
+  DUELS.set(id, d);
+  return d;
+}
+function startDuel(d, b) {
+  d.players.push({ ...b, guesses: [] });
+  d.startAt = Date.now() + DUEL_INTRO;
+  d.endAt = d.startAt + DUEL_MS;
+  if (b.bot) d.bot = botPlan();
+}
+// le robot : quelques essais qui chauffent peu à peu, et il trouve (ou pas) au bout d'un moment
+function botPlan() {
+  const findAt = crypto.randomInt(100) < 60 ? 30000 + crypto.randomInt(55000) : null;
+  const steps = [];
+  let t = 0, temp = 0;
+  const end = findAt || DUEL_MS;
+  while ((t += 5000 + crypto.randomInt(6000)) < end) {
+    if (crypto.randomInt(100) < 55) temp = Math.min(92, temp + 6 + crypto.randomInt(18));
+    steps.push({ t, temp });
+  }
+  return { findAt, steps };
+}
+function duelOver(d, now = Date.now()) {
+  if (d.winner) return true;
+  if (d.bot && d.bot.findAt && now >= d.startAt + d.bot.findAt) { d.winner = 'bot'; d.wonAt = d.startAt + d.bot.findAt; return true; }
+  return d.endAt && now >= d.endAt;
+}
+function duelView(d, key) {
+  const now = Date.now();
+  const over = d.startAt ? duelOver(d, now) : false;
+  const me = d.players.find((p) => p.key === key);
+  const opp = d.players.find((p) => p.key !== key);
+  let oppInfo = null;
+  if (opp && opp.bot) {
+    const done = d.bot.steps.filter((x) => now >= d.startAt + x.t);
+    oppInfo = { name: opp.name, bot: true, n: done.length + (d.winner === 'bot' ? 1 : 0), temp: d.winner === 'bot' ? 100 : (done[done.length - 1] || { temp: 0 }).temp };
+  } else if (opp) {
+    oppInfo = { name: opp.name, n: opp.guesses.length, temp: opp.guesses.reduce((m, g) => Math.max(m, g.temp), 0) };
+  }
+  const result = !over ? null : !d.winner ? 'draw' : d.winner === key ? 'win' : 'lose';
+  return {
+    id: d.id, code: d.code, now, startAt: d.startAt, endAt: d.winner ? d.wonAt : d.endAt, duration: DUEL_MS,
+    phase: !d.startAt ? 'waiting' : now < d.startAt ? 'intro' : over ? 'over' : 'playing',
+    me: me ? { name: me.name, guesses: me.guesses } : null,
+    opp: oppInfo, result,
+    card: G.revealCard(d.target, me ? me.guesses : [], 0, over),
+    answer: over ? G.card(d.target) : null,
+  };
+}
+const myDuel = (req) => {
+  const d = DUELS.get(String(req.params.id || ''));
+  return d && d.players.some((p) => p.key === meKey(req)) ? d : null;
+};
+// adversaire au hasard : on rejoint celui qui attend, sinon on attend
+app.post('/api/duel/queue', A(async (req, res) => {
+  const me = { key: meKey(req), name: meName(req) };
+  if (QUEUE && QUEUE.key !== me.key && Date.now() - QUEUE.t < 5000 && DUELS.has(QUEUE.duel)) {
+    const d = DUELS.get(QUEUE.duel);
+    QUEUE = null;
+    startDuel(d, me);
+    return res.json(duelView(d, me.key));
+  }
+  if (QUEUE && QUEUE.key === me.key && DUELS.has(QUEUE.duel)) { QUEUE.t = Date.now(); return res.json(duelView(DUELS.get(QUEUE.duel), me.key)); }
+  const d = newDuel(me);
+  QUEUE = { ...me, t: Date.now(), duel: d.id };
+  res.json(duelView(d, me.key));
+}));
+app.post('/api/duel/bot', A(async (req, res) => {
+  const me = { key: meKey(req), name: meName(req) };
+  if (QUEUE && QUEUE.key === me.key) { DUELS.delete(QUEUE.duel); QUEUE = null; }
+  const d = newDuel(me);
+  startDuel(d, { key: 'bot', name: 'Robot FoOotix', bot: true });
+  res.json(duelView(d, me.key));
+}));
+// défier un pote : un code à partager, le duel démarre quand il arrive
+app.post('/api/duel/friend', A(async (req, res) => {
+  const me = { key: meKey(req), name: meName(req) };
+  let code;
+  do code = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[crypto.randomInt(32)]).join(''); while (ROOMS.has(code));
+  const d = newDuel(me, code);
+  ROOMS.set(code, d.id);
+  res.json(duelView(d, me.key));
+}));
+app.post('/api/duel/join/:code', A(async (req, res) => {
+  const d = DUELS.get(ROOMS.get(String(req.params.code).toUpperCase()));
+  const me = { key: meKey(req), name: meName(req) };
+  if (!d) return res.status(404).json({ error: 'Ce duel n’existe plus. Demande à ton pote de t’envoyer un nouveau lien.' });
+  if (d.players.some((p) => p.key === me.key)) return res.json(duelView(d, me.key));
+  if (d.players.length > 1) return res.status(400).json({ error: 'Ce duel a déjà commencé.' });
+  startDuel(d, me);
+  res.json(duelView(d, me.key));
+}));
+app.post('/api/duel/:id/leave', A(async (req, res) => {
+  const d = myDuel(req);
+  if (d && !d.startAt) { DUELS.delete(d.id); if (QUEUE && QUEUE.duel === d.id) QUEUE = null; if (d.code) ROOMS.delete(d.code); }
+  res.json({ ok: true });
+}));
+app.get('/api/duel/:id', A(async (req, res) => {
+  const d = myDuel(req);
+  if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
+  if (QUEUE && QUEUE.duel === d.id) QUEUE.t = Date.now(); // toujours là
+  res.set('Cache-Control', 'no-store');
+  res.json(duelView(d, meKey(req)));
+}));
+app.post('/api/duel/:id/guess', A(async (req, res) => {
+  const d = myDuel(req);
+  if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
+  const now = Date.now();
+  if (!d.startAt || now < d.startAt) return res.status(400).json({ error: 'Le duel n’a pas encore commencé.' });
+  if (duelOver(d, now)) return res.json(duelView(d, meKey(req)));
+  const me = d.players.find((p) => p.key === meKey(req));
+  const j = judge(d.target, me.guesses, String((req.body || {}).q || '').slice(0, 80));
+  if (j.error) return res.status(400).json({ error: j.error });
+  if (j.dup) return res.json({ ...duelView(d, me.key), dup: j.dup });
+  me.guesses.push(j.entry);
+  if (j.won) { d.winner = me.key; d.wonAt = now; }
+  res.json({ ...duelView(d, me.key), last: j.entry.n });
 }));
 
 // classement : identique pour tout le monde, recalculé au plus toutes les 15 s (ou dès qu'un joueur trouve)
@@ -600,7 +761,7 @@ const indexFor = (lang) => {
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.', 'A footballer to guess every day: legends and current players from the Premier League, LaLiga, Serie A, Bundesliga and Ligue 1.'],
       ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'A footballer to guess every day. Find him in fewer tries than your friends.'],
-      ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Ligues</span>', '<span>Leagues</span>'], ['<span>Règles</span>', '<span>Rules</span>'],
+      ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'], ['<span>Règles</span>', '<span>Rules</span>'],
       ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
       ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
       ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
@@ -646,7 +807,7 @@ const ASSETS = {
 const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
 
-app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/joueur/:id'], (req, res) => {
+app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id'], (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
   sendPacked(req, res, PAGES[I18N.pick(req)]);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille

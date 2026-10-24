@@ -462,14 +462,23 @@ function deck() {
   DECK = { tierOf, rating, byTier, size: list.length };
   return DECK;
 }
+// carte de collection : mêmes infos que la carte du jeu une fois le joueur trouvé
 function collectCard(p) {
   const d = deck();
   const clubs = p.clubs.filter((c) => !c.loan);
   const last = clubs[clubs.length - 1] || p.clubs[p.clubs.length - 1];
   return {
-    id: p.id, name: p.name, pos: POSITIONS[p.pos] ? POSITIONS[p.pos].short : '', iso: p.nat[0].iso, nat: p.nat[0].name,
-    img: p.img ? p.img.replace(/^http:/, 'https:') + '?width=300' : null,
-    club: last ? last.club : null, active: p.active, tier: d.tierOf[p.id] || 'bronze', rating: d.rating[p.id] || 60,
+    id: p.id, name: p.name,
+    photo: p.img ? p.img.replace(/^http:/, 'https:') + '?width=400' : null,
+    pos: POSITIONS[p.pos] ? POSITIONS[p.pos].short : null,
+    nat: { name: p.nat[0].name, iso: p.nat[0].iso },
+    cont: p.nat[0].cont || p.continents[0] || null,
+    club: last ? last.club : null,
+    leagues: p.leagues.map((l) => LEAGUES[l].short),
+    born: p.bornYear,
+    status: p.active ? 'Actif' : 'Retraité',
+    bo: !!p.bo,
+    tier: d.tierOf[p.id] || 'bronze', rating: d.rating[p.id] || 60,
   };
 }
 // rand(n) → entier de 0 à n-1. La 5e carte est au moins argent ; les cartes sortent de la moins rare à la plus rare.
@@ -493,6 +502,11 @@ function drawPack(rand, size = 5) {
   const order = TIERS.map((t) => t.id).reverse();
   return out.sort((a, b) => order.indexOf(d.tierOf[a]) - order.indexOf(d.tierOf[b]) || d.rating[a] - d.rating[b]);
 }
+// joueur à deviner en duel : un des 400 plus connus parmi ceux qui peuvent tomber (fiches complètes)
+function duelPick(rand) {
+  const top = [...PLAYERS].sort((a, b) => (b.links || 0) - (a.links || 0)).slice(0, 400);
+  return top[rand(top.length)];
+}
 function deckTotals() {
   const d = deck();
   return Object.fromEntries(TIERS.map((t) => [t.id, d.byTier[t.id].length]));
@@ -508,5 +522,5 @@ function catalog() {
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
   setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
-  collectCard, drawPack, deckTotals,
+  collectCard, drawPack, deckTotals, duelPick,
 };
