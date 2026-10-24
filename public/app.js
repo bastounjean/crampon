@@ -320,6 +320,7 @@ async function pageGame(day = null) {
         <div id="reveal"></div>
         <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
         ${st.user ? '' : `<div class="nudge">${L('Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.', 'You are playing without an account. <a href="/compte" data-link>Create one</a> to keep your streak and fill your album. Today\'s game will be kept.')}</div>`}
+        ${adSlot('wide')}
       </div>
       <aside>
         <section id="facts"></section>
@@ -675,7 +676,7 @@ async function pagePlayer(id) {
     : L("Tu n'as pas joué ce jour-là.", "You didn't play that day.");
   const when = esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }));
   const head = `<div class="wa-crampon">${L(`Joueur mystère n° ${p.number} du ${when}.`, `Mystery player #${p.number}, ${when}.`)} ${mine} ${L(`${s.found} joueur${s_(s.found)} l'${s.found > 1 ? 'ont' : 'a'} trouvé.`, `${s.found} player${s_(s.found)} found him.`)}</div>`;
-  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/" data-link>${L('Jouer', 'Play')}</a></p>`;
+  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/" data-link>${L('Jouer', 'Play')}</a></p>${adSlot('wide')}`;
   await showWiki($('#wp'), p, head);
 }
 
@@ -1026,7 +1027,8 @@ function duelLobby(err) {
         <button class="btn big" id="d-friend">${L('Défier un pote', 'Challenge a friend')}</button>
         <button class="btn big" id="d-bot">${L('Contre le robot', 'Against the bot')}</button>
       </div>
-    </div>`;
+    </div>
+    ${adSlot('wide')}`;
   $('#d-rand').onclick = async () => duelStart(await fetchJSON('duel/queue', {}), 'random');
   $('#d-friend').onclick = async () => duelStart(await fetchJSON('duel/friend', {}), 'friend');
   $('#d-bot').onclick = async () => duelStart(await fetchJSON('duel/bot', {}), 'bot');
@@ -1305,13 +1307,13 @@ async function pageAuth() {
 const TITLE = L('FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer');
 async function pageSsr(p) {
   api('me').then((m) => renderWho(m.user, m), () => {});
-  if (p === SSR0.path && SSR0.html.trim()) { app.innerHTML = SSR0.html; document.title = SSR0.title; return true; }
+  if (p === SSR0.path && SSR0.html.trim()) { app.innerHTML = SSR0.html + adSlot('wide'); document.title = SSR0.title; return true; }
   const r = await fetch(p, { headers: { Accept: 'text/html' } }).catch(() => null);
   if (!r || !r.ok) return false;
   const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
   const m = doc.querySelector('#app');
   if (!m || !m.innerHTML.trim() || p !== location.pathname) return false;
-  app.innerHTML = m.innerHTML;
+  app.innerHTML = m.innerHTML + adSlot('wide');
   document.title = doc.title;
   return true;
 }
