@@ -560,6 +560,54 @@ function resultText(st) {
   return `FoOotix.com ${L('n°', '#')}${st.number} ⚽\n${head}\n${rows.join('\n')}\n${L('Et toi, tu le trouves en combien ?', 'How many tries will you need?')}`;
 }
 
+// suggestions sous la barre, à partir de 3 lettres. Un choix dans la liste remplit la barre et l'envoie.
+const SUGG = new Map();
+function attachSuggest(input) {
+  const form = input.form;
+  const list = document.createElement('ul');
+  list.className = 'sugg'; list.hidden = true;
+  form.appendChild(list);
+  let items = [], sel = -1, seq = 0, timer;
+  const draw = () => {
+    list.hidden = !items.length;
+    list.innerHTML = items.map((it, i) => `<li class="${i === sel ? 'on' : ''}" data-i="${i}"><span>${esc(it.name || it.label)}</span><span class="k">${esc(it.kind || '')}</span></li>`).join('');
+  };
+  const pick = (it) => {
+    input.value = it.name || it.label;
+    input.dataset.pick = it.id; input.dataset.pickFor = input.value;
+    items = []; draw();
+    form.requestSubmit();
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (norm(q).length < 3) { items = []; draw(); return; }
+    const n = ++seq;
+    timer = setTimeout(async () => {
+      const k = norm(q);
+      if (!SUGG.has(k)) SUGG.set(k, fetchJSON('suggest?q=' + encodeURIComponent(q)).catch(() => []));
+      const r = await SUGG.get(k);
+      if (n !== seq || document.activeElement !== input) return;
+      items = r; sel = -1; draw();
+    }, 90);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === 'Escape') { items = []; draw(); }
+    else if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); pick(items[sel]); }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li');
+    if (li) { e.preventDefault(); pick(items[+li.dataset.i]); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { items = []; draw(); }, 120));
+  form.addEventListener('submit', () => { seq++; clearTimeout(timer); items = []; draw(); });
+}
+// l'identifiant de la suggestion choisie, si la barre contient toujours ce qu'elle a rempli
+const pickOf = (input, q) => (input.dataset.pickFor === q ? input.dataset.pick : undefined);
+
 function bindSearch() {
   const input = $('#q'), msg = $('#msg');
   input.addEventListener('input', () => { msg.textContent = ''; });
@@ -572,7 +620,7 @@ function bindSearch() {
     $('#search').classList.add('busy');
     $('#lastg').innerHTML = `<span class="lg-n">${L('Essai', 'Guess')} ${ST.guesses.length + 1}</span><b>${esc(q)}</b><span class="lg-wait"><i></i><i></i><i></i></span>`;
     try {
-      const st = await api('guess', { q, day: DAY });
+      const st = await api('guess', { q, id: pickOf(input, q), day: DAY });
       ST = st;
       input.value = '';
       msg.textContent = st.dup ? L(`Déjà proposé (essai n° ${st.dup}).`, `Already guessed (guess #${st.dup}).`) : '';
@@ -588,6 +636,7 @@ function bindSearch() {
       $('#search')?.classList.remove('busy');
     }
   });
+  attachSuggest(input);
   input.focus();
 }
 
@@ -1145,13 +1194,14 @@ function duelPlay(v) {
     const q = input.value.trim();
     if (!q || DU.phase !== 'playing') return;
     try {
-      const r = await fetchJSON(`duel/${DU.id}/guess`, { q });
+      const r = await fetchJSON(`duel/${DU.id}/guess`, { q, id: pickOf(input, q) });
       input.value = '';
       msg.textContent = r.dup ? L(`Déjà proposé (essai n° ${r.dup}).`, `Already guessed (guess #${r.dup}).`) : '';
       duelUpdate(r);
       if (DU.phase === 'playing') input.focus();
     } catch (err) { msg.textContent = err.message; input.select(); }
   });
+  attachSuggest(input);
   input.focus();
   // chrono : la barre fond, et vire au rouge dans les 10 dernières secondes
   DU.clock = setInterval(() => {

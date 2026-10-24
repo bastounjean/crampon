@@ -191,7 +191,30 @@ function exact(n) {
   return pickClub(clubs, n);
 }
 
-function resolve({ q }) {
+// suggestions sous la barre de recherche, à partir de 3 lettres
+function suggest(q) {
+  const n = norm(q || '').trim();
+  if (n.length < 3) return [];
+  const score = (keys) => {
+    let best = 0;
+    for (const k of keys) {
+      if (k === n) return 4;
+      if (k.startsWith(n)) best = Math.max(best, 3);
+      else if (best < 2 && k.split(' ').some((w) => w.startsWith(n))) best = 2;
+      else if (best < 1 && k.includes(n)) best = 1;
+    }
+    return best;
+  };
+  const out = [];
+  for (const p of [...PLAYERS, ...EXTRA]) { const s = score(p.keys); if (s) out.push({ type: 'player', id: p.id, name: p.name, kind: p.sub, s, w: p.links || 0 }); }
+  for (const c of CLUES) { const s = score(c.terms); if (s) out.push({ type: 'clue', id: c.id, label: c.label, kind: c.kind, s, w: 1e6 }); }
+  return out.sort((a, b) => b.s - a.s || b.w - a.w).slice(0, 8).map(({ s, w, ...x }) => x);
+}
+
+function resolve({ q, id }) {
+  // suggestion choisie dans la liste : on sait exactement de quoi il s'agit
+  if (id && CLUE_BY_ID[id]) return { type: 'clue', clue: CLUE_BY_ID[id] };
+  if (id && BY_ID[id] && (PLAYERS.includes(BY_ID[id]) || EXTRA.includes(BY_ID[id]))) return { type: 'player', player: BY_ID[id] };
   const n = norm(q || '').replace(/^(a |au |en |le |la |l |les |joue a |a joue a |a joue au |passe par |played for |plays for |played at |played in |the )+/, '').trim();
   if (!n) return null;
   const hit = exact(n);
@@ -521,6 +544,6 @@ function catalog() {
 
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
-  setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
+  setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
   collectCard, drawPack, deckTotals, duelPick,
 };

@@ -719,3 +719,4 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 @media (max-width: 600px) { .about { padding: 6px 14px 20px; font-size: 15px; } }
 .foot { padding: 16px 24px 24px; }
 @media (max-width: 600px) { .foot { padding: 14px 14px 20px; } }
+.search form { position: relative; }

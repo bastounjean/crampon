@@ -283,8 +283,8 @@ app.get('/api/health', A(async (req, res) => {
 app.get('/api/today', A(async (req, res) => res.json(await state(req, dayOf(req)))));
 
 // une proposition (joueur ou question) face au joueur à trouver : la ligne ajoutée au tableau des essais
-function judge(target, guesses, q) {
-  const r = G.resolve({ q });
+function judge(target, guesses, q, id) {
+  const r = G.resolve({ q, id });
   if (!r) return { error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` };
   if (r.error) return { error: r.error };
   const key = r.type === 'player' ? r.player.id : r.clue.id;
@@ -305,15 +305,20 @@ function judge(target, guesses, q) {
   return { entry, won: r.type === 'player' && r.player.id === target.id };
 }
 
+app.get('/api/suggest', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json(G.suggest(String(req.query.q || '').slice(0, 40)));
+});
 app.post('/api/guess', A(async (req, res) => {
   const day = dayOf(req);
   const past = day !== G.today();
   const target = G.playerOfDay(day);
   const q = String((req.body || {}).q || '').slice(0, 80);
-  if (!G.resolve({ q })) return res.status(400).json({ error: judge(target, [], q).error });
+  const id = String((req.body || {}).id || '').slice(0, 40);
+  if (!G.resolve({ q, id })) return res.status(400).json({ error: judge(target, [], q).error });
   const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: past ? 'Cette partie est terminée.' : 'La partie du jour est terminée.' });
-  const j = judge(target, g.guesses, q);
+  const j = judge(target, g.guesses, q, id);
   if (j.error) return res.status(400).json({ error: j.error });
   if (j.dup) return res.json({ ...(await state(req, day)), dup: j.dup });
   const { entry, won } = j;
@@ -565,7 +570,7 @@ app.post('/api/duel/:id/guess', A(async (req, res) => {
   if (!d.startAt || now < d.startAt) return res.status(400).json({ error: 'Le duel n’a pas encore commencé.' });
   if (duelOver(d, now)) return res.json(duelView(d, meKey(req)));
   const me = d.players.find((p) => p.key === meKey(req));
-  const j = judge(d.target, me.guesses, String((req.body || {}).q || '').slice(0, 80));
+  const j = judge(d.target, me.guesses, String((req.body || {}).q || '').slice(0, 80), String((req.body || {}).id || '').slice(0, 40));
   if (j.error) return res.status(400).json({ error: j.error });
   if (j.dup) return res.json({ ...duelView(d, me.key), dup: j.dup });
   me.guesses.push(j.entry);
