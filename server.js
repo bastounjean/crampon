@@ -761,10 +761,10 @@ const indexFor = (lang) => {
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.', 'A footballer to guess every day: legends and current players from the Premier League, LaLiga, Serie A, Bundesliga and Ligue 1.'],
       ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'A footballer to guess every day. Find him in fewer tries than your friends.'],
-      ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'], ['<span>Règles</span>', '<span>Rules</span>'],
+      ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'],
       ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
       ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
-      ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
+      ['>Règles du jeu<', '>How to play<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
       ['hreflang="en" lang="en">English version<', 'hreflang="fr" lang="fr">Version française<'],
     ]) h = h.split(fr).join(en);
   }
