@@ -130,16 +130,42 @@ const DONE = new Set(['won', 'late', 'gaveup']);
 const owner = (req) => (req.user ? ['user_id', req.user.id] : ['anon', req.aid]);
 const J = db.jlen;
 
+// Les parties en cours restent en mémoire (une seule machine) : un essai n'attend plus qu'une écriture en base.
+// Les petites infos du joueur (compte, jours joués, packs) aussi, et sont oubliées dès qu'elles changent.
+const GAMES = new Map();
+const SIDE = new Map();
+const ownerKey = (req) => owner(req).join(':');
+function forget(req, aid) {
+  const keys = [ownerKey(req)];
+  if (aid) keys.push('anon:' + aid);
+  for (const m of [GAMES, SIDE]) for (const k of m.keys()) if (keys.some((o) => k.startsWith(o + ':'))) m.delete(k);
+}
+async function side(req, name, fn) {
+  const k = ownerKey(req) + ':' + name;
+  const c = SIDE.get(k);
+  if (c && Date.now() - c.t < 60000) return c.v;
+  const v = await fn();
+  if (SIDE.size > 20000) SIDE.clear();
+  SIDE.set(k, { t: Date.now(), v });
+  return v;
+}
 async function getGame(req, day, create) {
   const [col, val] = owner(req);
+  const key = `${col}:${val}:${day}`;
+  if (GAMES.has(key)) return GAMES.get(key);
   let g = await db.get(`SELECT * FROM games WHERE day = ? AND ${col} = ?`, day, val);
   if (!g && create) {
     await db.run(`INSERT INTO games (day, ${col}) VALUES (?, ?) ON CONFLICT DO NOTHING`, day, val);
     g = await db.get(`SELECT * FROM games WHERE day = ? AND ${col} = ?`, day, val);
   }
-  if (g) g.guesses = JSON.parse(g.guesses);
+  if (!g) return g;
+  g.guesses = JSON.parse(g.guesses);
+  if (GAMES.size > 20000) GAMES.clear();
+  GAMES.set(key, g);
   return g;
 }
+// une écriture qui échoue : on oublie la copie en mémoire pour relire la base la prochaine fois
+const saved = (req, p) => p.catch((e) => { forget(req); throw e; });
 
 // séries calculées en une requête pour toute une liste de joueurs
 async function wonDays(userIds) {
@@ -205,7 +231,9 @@ function catchup(mine, before) {
   return next ? { ...next, left } : null;
 }
 
-async function state(req, day = G.today()) {
+async function state(req, day = G.today(), pending = null) {
+  // ce qui dépend de l'écriture en cours (points, série, pack bonus) se lit une fois qu'elle est faite
+  const after = (f) => (pending ? pending.then(f) : f());
   const today = G.today();
   const past = day !== today;
   const idx = G.dayIndex(day);
@@ -216,12 +244,12 @@ async function state(req, day = G.today()) {
   const yIdx = G.dayIndex(today) - 1;
   const yesterday = !past && yIdx >= 0 ? G.playerOfDay(G.dayFromIndex(yIdx)) : null;
   const [rank, stats, yStats, user, mine, packs] = await Promise.all([
-    g.status === 'won' ? db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at).then((r) => r.n) : null,
+    g.status === 'won' ? (pending || Promise.resolve()).then(() => db.get("SELECT COUNT(*) n FROM games WHERE day = ? AND status = 'won' AND finished_at <= ?", day, g.finished_at)).then((r) => r.n) : null,
     dayStats(day),
     yesterday ? dayStats(G.dayFromIndex(yIdx)) : null,
-    publicUser(req),
-    myDays(req),
-    past ? null : packState(req, day),
+    after(() => side(req, 'user', () => publicUser(req))),
+    after(() => side(req, 'days', () => myDays(req))),
+    past ? null : after(() => side(req, 'packs:' + day, () => packState(req, day))),
   ]);
   // le nom d'hier reste caché tant qu'on peut encore le chercher
   const yOpen = yesterday && DONE.has(mine[G.dayFromIndex(yIdx)]);
@@ -292,11 +320,13 @@ app.post('/api/guess', A(async (req, res) => {
   g.guesses.push(entry);
   // un jour passé trouvé après coup rejoint l'album, sans points ni série
   const pts = won && !past ? G.score(target, g.guesses.length, g.hints).points : null;
-  await db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
-    JSON.stringify(g.guesses), won ? (past ? 'late' : 'won') : 'playing', pts, won ? db.now() : g.finished_at, g.id);
+  if (won) { g.status = past ? 'late' : 'won'; g.points = pts; g.finished_at = db.now(); forget(req); GAMES.set(`${owner(req).join(':')}:${day}`, g); }
+  // l'écriture et la réponse partent en même temps
+  const write = saved(req, db.run('UPDATE games SET guesses = ?, status = ?, points = ?, finished_at = ? WHERE id = ?',
+    JSON.stringify(g.guesses), g.status, g.points ?? null, g.finished_at ?? null, g.id));
   if (won || g.guesses.length === 1) STATS.delete(day);
   if (won && !past) LB = null;
-  res.json({ ...(await state(req, day)), last: entry.n });
+  res.json({ ...(await state(req, day, write)), last: entry.n });
 }));
 
 app.post('/api/hint', A(async (req, res) => {
@@ -305,15 +335,20 @@ app.post('/api/hint', A(async (req, res) => {
   if (g.status !== 'playing') return res.status(400).json({ error: 'Partie terminée.' });
   if (g.hints >= G.MAX_HINTS || g.guesses.length < (g.hints + 1) * G.HINT_EVERY)
     return res.status(400).json({ error: "Pas encore d'indice disponible." });
-  await db.run('UPDATE games SET hints = hints + 1 WHERE id = ?', g.id);
-  res.json(await state(req, day));
+  g.hints++;
+  res.json(await state(req, day, saved(req, db.run('UPDATE games SET hints = ? WHERE id = ?', g.hints, g.id))));
 }));
 
 app.post('/api/giveup', A(async (req, res) => {
   const day = dayOf(req);
   const g = await getGame(req, day, true);
-  if (g.status === 'playing') await db.run("UPDATE games SET status = 'gaveup', finished_at = ? WHERE id = ?", db.now(), g.id);
-  res.json(await state(req, day));
+  let write = null;
+  if (g.status === 'playing') {
+    g.status = 'gaveup'; g.finished_at = db.now();
+    forget(req); GAMES.set(`${owner(req).join(':')}:${day}`, g);
+    write = saved(req, db.run("UPDATE games SET status = 'gaveup', finished_at = ? WHERE id = ?", g.finished_at, g.id));
+  }
+  res.json(await state(req, day, write));
 }));
 
 // ——— Fiches joueurs ———
@@ -390,6 +425,7 @@ app.post('/api/pack', A(async (req, res) => {
   const [col, val] = owner(req);
   const day = G.today();
   const bonus = !!(req.body || {}).bonus;
+  forget(req);
   if (bonus && (await packState(req, day)).bonus === 'locked') return res.status(400).json({ error: 'Trouve le joueur du jour pour gagner le pack bonus.' });
   const r = await db.run(`INSERT INTO packs (day, ${col}, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, bonus ? BONUS(day) : day, val, db.now());
   if (r.rows.length) {
@@ -669,6 +705,7 @@ async function openSession(req, res, userId) {
   // les parties jouées sans compte sur cet appareil rejoignent le compte
   await db.run('UPDATE games SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM games WHERE user_id = ?)', userId, req.aid, userId);
   await db.run('UPDATE packs SET user_id = ?, anon = NULL WHERE anon = ? AND day NOT IN (SELECT day FROM packs WHERE user_id = ?)', userId, req.aid, userId);
+  forget({ user: { id: userId } }, req.aid);
 }
 
 const attempts = new Map();
@@ -713,6 +750,7 @@ app.post('/api/delete-account', slowDown, A(async (req, res) => {
   const u = await db.get('SELECT pass FROM users WHERE id = ?', req.user.id);
   if (!(await check(String((req.body || {}).password || ''), u.pass))) return res.status(400).json({ error: 'Mot de passe incorrect.' });
   await db.run('DELETE FROM users WHERE id = ?', req.user.id);
+  forget(req);
   SESS.clear();
   res.clearCookie('sid');
   res.json({ ok: true });

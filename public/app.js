@@ -561,7 +561,11 @@ function bindSearch() {
   $('#search form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const q = input.value.trim();
-    if (!q) return;
+    if (!q || input.dataset.busy) return;
+    // retour immédiat pendant que le serveur répond : la proposition s'affiche tout de suite
+    input.dataset.busy = 1;
+    $('#search').classList.add('busy');
+    $('#lastg').innerHTML = `<span class="lg-n">${L('Essai', 'Guess')} ${ST.guesses.length + 1}</span><b>${esc(q)}</b><span class="lg-wait"><i></i><i></i><i></i></span>`;
     try {
       const st = await api('guess', { q, day: DAY });
       ST = st;
@@ -572,7 +576,11 @@ function bindSearch() {
       if (st.status === 'playing') input.focus();
     } catch (err) {
       msg.textContent = err.message;
+      drawGame();
       input.select();
+    } finally {
+      delete input.dataset.busy;
+      $('#search')?.classList.remove('busy');
     }
   });
   input.focus();

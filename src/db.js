@@ -93,7 +93,12 @@ if (PG) {
     connectionString: process.env.DATABASE_URL,
     ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false },
     max: 10,
+    // une connexion neuve vers Neon coûte plusieurs allers-retours (TLS, mot de passe) : on les garde ouvertes
+    idleTimeoutMillis: 0,
+    keepAlive: true,
   });
+  // deux connexions prêtes dès le démarrage
+  Promise.all([1, 2].map(() => pool.query('SELECT 1'))).catch(() => {});
   pool.on('error', (e) => console.warn('Postgres :', e.message));
   const conv = (sql) => { let i = 0; return sql.replace(/\?/g, () => '$' + ++i); };
   const q = (sql, params) => pool.query(conv(sql), params);
