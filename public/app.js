@@ -9,6 +9,7 @@ const LOC = EN ? 'en-GB' : 'fr-FR';
 const s_ = (n) => ((EN ? n !== 1 : n > 1) ? 's' : ''); // pluriel : « 0 joueur » mais « 0 players »
 const ord = (n) => EN ? `${n}<sup>${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}</sup>` : `${n}<sup>${n === 1 ? 'er' : 'e'}</sup>`;
 const app = $('#app');
+const SSR0 = { path: location.pathname, html: app.innerHTML, title: document.title };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/[ʼ'’`.\-]/g, ' ').replace(/[^a-z0-9ıİşğøæœß ]/g, '').replace(/\s+/g, ' ').trim()
@@ -181,6 +182,9 @@ async function route({ quiet = false } = {}) {
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   stopDuel();
+  // la présentation sous la page n'appartient qu'à la page reçue au chargement
+  if (p !== SSR0.path) $('#about')?.remove();
+  document.title = p === SSR0.path ? SSR0.title : TITLE;
   try {
     if (p === '/') return await pageGame();
     const jd = p.match(/^\/jour\/(\d{4}-\d{2}-\d{2})$/);
@@ -189,7 +193,7 @@ async function route({ quiet = false } = {}) {
     if (p === '/collection') return await pageCollection();
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
-    if (p === '/regles') return pageRules();
+    if (p === '/regles' || p === '/joueurs') { if (!(await pageSsr(p))) throw new Error(L('Page indisponible, réessaie.', 'Page unavailable, try again.')); return; }
     if (p === '/ligues') return await pageLeagues();
     if (p === '/duel') return await pageDuel();
     const du = p.match(/^\/duel\/([A-Za-z0-9]{5})$/);
@@ -660,8 +664,10 @@ function fallbackCard(p) {
 }
 
 async function pagePlayer(id) {
-  const [p, me] = await Promise.all([api('player/' + id), api('me')]);
-  renderWho(me.user, me);
+  // fiche pas encore débloquée pour ce joueur : la fiche écrite par le serveur
+  const [p, me] = await Promise.all([api('player/' + id).catch(async (e) => { if (await pageSsr(location.pathname)) return null; throw e; }), api('me').catch(() => null)]);
+  if (!p) return;
+  if (me) renderWho(me.user, me);
   const s = p.stats;
   const mine = p.mine
     ? p.mine.status === 'won' ? p.mine.late ? L(`Tu l'as rattrapé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You caught up on him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`) : L(`Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You found him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`)
@@ -1295,45 +1301,19 @@ async function pageAuth() {
 }
 
 // ——— Page : règles ———
-function pageRules() {
-  api('me').then((m) => renderWho(m.user, m));
-  app.innerHTML = EN ? `
-    <div class="pagehead"><div><div class="kicker">How it works</div><h1>Rules</h1></div></div>
-    <div class="prose">
-      <p>Every day at midnight (Paris time), one footballer is drawn from 600 internationals, legends and current players, who all spent at least three seasons in the Premier League, LaLiga, Serie A, Bundesliga or Ligue 1. The draw is the same for everyone, and a player doesn't come back until almost all the others have been drawn.</p>
-      <h2>Points</h2>
-      <p>Finding the player earns points: 100 if you get him on the first try, then a little less with each guess (never below 10). Each hint you ask for costs 10%. Rarity multiplies the total: a star like Zidane counts ×1, a little-known player up to ×2. Giving up earns nothing. Points add up day after day in the overall ranking.</p>
-      <h2>The card</h2>
-      <p>At first, the mystery player's card is empty: a silhouette and question marks. Everything you discover goes on it: nationality, position, year or decade of birth, a club, his leagues, whether he still plays, whether he won the Ballon d'Or. The number in the top left corner is your temperature.</p>
-      <h2>Two ways to search</h2>
-      <p><b>Guess a player.</b> You see what your player has in common with the mystery one: same nationality, same or nearby position, teammates at a club, shared clubs or leagues. An arrow tells you whether the mystery player is older or younger.</p>
-      <p><b>Ask a question.</b> Type a league, a club, a country, a continent, a position, a birth decade, “Ballon d'Or” or “retired”. You get a yes or no, stored under “What you know”.</p>
-      <h2>Temperature</h2>
-      <p>It measures everything you know about the mystery player. At the start, 600 players are possible: you're at 0°. Every yes, every no, every common point with a guessed player rules some out. When about ten are left, you're around 65°; at 99°, only one is left, you just have to name him. 100° means you won.</p>
-      <h2>Hints</h2>
-      <p>Every 8 guesses, you can reveal a hint: position, generation, continent, nationality, a club, then his initials.</p>
-      <h2>Your album and your streak</h2>
-      <p>Every player you find joins your album, and his Wikipedia page shows up right away. Missed days stay as empty slots, you can't replay a past date. Your streak counts the days in a row you found the player. Giving up resets it.</p>
-      <p class="muted" style="font-size:14px">Players and their careers come from Wikidata, updated daily. Pages come from Wikipedia (CC BY-SA).</p>
-    </div>` : `
-    <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
-    <div class="prose">
-      <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort parmi 600 internationaux, légendes ou joueurs actuels, qui ont tous passé au moins trois saisons en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et un joueur ne revient pas avant que presque tous les autres soient passés.</p>
-      <h2>Les points</h2>
-      <p>Trouver le joueur rapporte des points&nbsp;: 100 si tu le trouves du premier coup, puis un peu moins à chaque essai (jamais moins de 10). Chaque indice demandé retire 10&nbsp;%. Enfin, la rareté multiplie le tout&nbsp;: une star comme Zidane compte ×1, un joueur méconnu jusqu'à ×2. Abandonner ne rapporte rien. Les points s'additionnent jour après jour dans le classement général.</p>
-      <h2>La carte</h2>
-      <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta température.</p>
-      <h2>Deux façons de chercher</h2>
-      <p><b>Propose un joueur.</b> Tu vois ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste ou poste voisin, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
-      <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, « Ballon d'or » ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ».</p>
-      <h2>La température</h2>
-      <p>Elle mesure tout ce que tu sais sur le mystère. Au départ, 600 joueurs sont possibles&nbsp;: tu es à 0°. Chaque oui, chaque non, chaque point commun avec un joueur proposé en élimine. Quand il n'en reste qu'une dizaine, tu es vers 65°&nbsp;; à 99°, il n'en reste qu'un, à toi de trouver son nom. 100°, c'est gagné.</p>
-      <h2>Indices</h2>
-      <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
-      <h2>Ton album et ta série</h2>
-      <p>Chaque joueur trouvé rejoint ton album, et sa page Wikipédia s'affiche aussitôt. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
-      <p class="muted" style="font-size:14px">Les joueurs et leurs carrières viennent de Wikidata, mis à jour chaque jour. Les pages viennent de Wikipédia (CC BY-SA).</p>
-    </div>`;
+// règles, archives, fiches : pages écrites par le serveur. On garde celle reçue au chargement, sinon on la redemande.
+const TITLE = L('FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer');
+async function pageSsr(p) {
+  api('me').then((m) => renderWho(m.user, m), () => {});
+  if (p === SSR0.path && SSR0.html.trim()) { app.innerHTML = SSR0.html; document.title = SSR0.title; return true; }
+  const r = await fetch(p, { headers: { Accept: 'text/html' } }).catch(() => null);
+  if (!r || !r.ok) return false;
+  const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+  const m = doc.querySelector('#app');
+  if (!m || !m.innerHTML.trim() || p !== location.pathname) return false;
+  app.innerHTML = m.innerHTML;
+  document.title = doc.title;
+  return true;
 }
 
 // ——— Pages : mentions légales et confidentialité ———

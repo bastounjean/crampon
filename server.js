@@ -802,7 +802,7 @@ const indexFor = (lang) => {
       ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'],
       ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
       ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
-      ['>Règles du jeu<', '>How to play<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
+      ['>Règles du jeu<', '>How to play<'], ['>Archives<', '>Archive<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
       ['hreflang="en" lang="en">English version<', 'hreflang="fr" lang="fr">Version française<'],
     ]) h = h.split(fr).join(en);
   }
@@ -810,7 +810,7 @@ const indexFor = (lang) => {
 };
 app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
 app.get('/sitemap.xml', (req, res) => {
-  const pages = ['/', '/regles', '/classement', '/album', '/collection', '/ligues'];
+  const pages = ['/', '/regles', '/joueurs', '/classement', '/collection', '/duel'];
   for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
 });
@@ -822,11 +822,11 @@ require('./src/stats')({ app, db, G, A, slowDown, DOMAIN });
 
 // Fichiers du site compressés une fois pour toutes au démarrage (au lieu de l'être à chaque visite)
 const zlib = require('zlib');
-function packed(body, type, cache) {
+function packed(body, type, cache, quality = 11) {
   const raw = Buffer.from(body);
   return {
     type, cache, raw,
-    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }),
+    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: quality } }),
     gz: zlib.gzipSync(raw, { level: 9 }),
   };
 }
@@ -842,17 +842,41 @@ const ASSETS = {
   '/app.js': packed(fs.readFileSync(path.join(PUB, 'app.js')), 'application/javascript; charset=utf-8', ASSET_CACHE),
   '/style.css': packed(fs.readFileSync(path.join(PUB, 'style.css')), 'text/css; charset=utf-8', ASSET_CACHE),
 };
-const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
+const BASE = { fr: indexFor('fr'), en: indexFor('en') };
+const render = require('./src/pages')({ G, dayStats });
+// chaque page arrive avec son vrai contenu, son titre et son adresse canonique (gardée 10 min en mémoire)
+const HTML = new Map();
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+async function pageFor(pathName, lang) {
+  const key = `${lang}:${pathName}:${G.today()}`;
+  const c = HTML.get(key);
+  if (c && Date.now() - c.t < 600000) return c.v;
+  const r = await render(pathName, lang);
+  let h = BASE[lang];
+  const url = `https://${DOMAIN}${pathName}`;
+  h = h.replace('<link rel="canonical" href="https://foootix.com/">', `<link rel="canonical" href="${attr(url)}">`)
+    .replace('<meta property="og:url" content="https://foootix.com/">', `<meta property="og:url" content="${attr(url)}">`);
+  if (/^\/(compte|duel\/|ligue\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
+  if (r && r.title) h = h.replace(/<title>[^<]*<\/title>/, `<title>${attr(r.title)}</title>`).replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(r.title)}`);
+  if (r && r.desc) h = h.replace(/(<meta name="description" content=")[^"]*/, `$1${attr(r.desc)}`).replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(r.desc)}`);
+  h = h.replace('<main id="app"></main>', () => `<main id="app">${(r && r.main) || ''}</main>${r && r.about ? `\n<section class="about" id="about">${r.about}</section>` : ''}`);
+  const v = { ...packed(h, 'text/html; charset=utf-8', 'no-cache', 5), missing: !r };
+  if (HTML.size > 3000) HTML.clear();
+  HTML.set(key, { t: Date.now(), v });
+  return v;
+}
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
 
-app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id'], (req, res) => {
+app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
-  sendPacked(req, res, PAGES[I18N.pick(req)]);
+  const page = await pageFor(req.path === '/index.html' ? '/' : req.path, I18N.pick(req));
+  if (page.missing) res.status(404);
+  sendPacked(req, res, page);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
   // pendant que le navigateur charge la page, pour que les premières données arrivent sans attente.
   // Pas pour UptimeRobot et les robots, sinon la base ne dormirait jamais (quota gratuit).
   if (!/bot|crawl|spider|monitor|uptime|preview|curl|wget|headless/i.test(req.get('user-agent') || '')) db.get('SELECT 1 x').catch(() => {});
-});
+}));
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;

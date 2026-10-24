@@ -707,3 +707,15 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .lg-wait i { width: 6px; height: 6px; background: currentColor; animation: dot 0.9s ease-in-out infinite; }
 .lg-wait i:nth-child(2) { animation-delay: .15s; }
 .lg-wait i:nth-child(3) { animation-delay: .3s; }
+
+/* présentation du jeu sous la page, et archives */
+.about { background: var(--paper); border-top: 1px solid var(--hair); padding: 8px 24px 24px; font-family: var(--serif); font-size: 16px; line-height: 1.55; }
+.about > * { max-width: 68ch; }
+.about h2 { font-family: var(--cond); font-size: 21px; font-weight: 800; font-stretch: 75%; text-transform: uppercase; margin: 20px 0 6px; }
+.about p { margin: 0 0 10px; }
+.about a, .prose a { text-decoration: underline; text-underline-offset: 2px; }
+.prose table.arch { display: block; overflow-x: auto; max-width: 100%; }
+.prose table.arch td:first-child { font-family: var(--mono); }
+@media (max-width: 600px) { .about { padding: 6px 14px 20px; font-size: 15px; } }
+.foot { padding: 16px 24px 24px; }
+@media (max-width: 600px) { .foot { padding: 14px 14px 20px; } }
