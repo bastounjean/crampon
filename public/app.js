@@ -743,7 +743,7 @@ function drawCollection(c) {
   const nx = nextPack(c);
   app.innerHTML = `
     <div class="pagehead">
-      <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Collection</h1>
+      <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Pack Opening</h1>
       <p>${L('Chaque jour, un pack de 5 cartes à ouvrir, et un pack bonus si tu trouves le joueur du jour. Plus un joueur est connu, plus sa carte est rare.', 'A pack of 5 cards to open every day, plus a bonus pack if you find the daily player. The more famous the player, the rarer the card.')}</p></div>
       <div class="counters">
         <div><b>${c.cards.length}</b><span>/ ${total}</span></div>
