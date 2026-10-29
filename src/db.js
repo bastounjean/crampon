@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS visits (
   mobile INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, vid)
 );
+CREATE TABLE IF NOT EXISTS draws (
+  day TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS page_views (
   day TEXT NOT NULL,
   path TEXT NOT NULL,
@@ -82,6 +86,11 @@ CREATE TABLE IF NOT EXISTS page_views (
   PRIMARY KEY (day, path)
 );
 `;
+
+// colonnes ajoutées après la création des tables
+const MIGRATIONS = [
+  'ALTER TABLE games ADD COLUMN hint_list TEXT', // indices donnés, dans l'ordre (JSON) ; sinon les « hints » premiers de la liste
+];
 
 let api;
 
@@ -104,7 +113,9 @@ if (PG) {
   const q = (sql, params) => pool.query(conv(sql), params);
   api = {
     kind: 'postgres',
-    ready: pool.query(schema('SERIAL PRIMARY KEY')).then(() => console.log('Base Postgres prête.')),
+    ready: pool.query(schema('SERIAL PRIMARY KEY'))
+      .then(() => pool.query(MIGRATIONS.map((m) => m.replace('ADD COLUMN', 'ADD COLUMN IF NOT EXISTS')).join(';\n')))
+      .then(() => console.log('Base Postgres prête.')),
     get: async (sql, ...p) => (await q(sql, p)).rows[0],
     all: async (sql, ...p) => (await q(sql, p)).rows,
     run: async (sql, ...p) => { const r = await q(sql, p); return { changes: r.rowCount, rows: r.rows }; },
@@ -125,6 +136,7 @@ if (PG) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(schema('INTEGER PRIMARY KEY'));
+  for (const m of MIGRATIONS) try { db.exec(m); } catch { /* déjà fait */ }
   console.log('Base SQLite locale :', file, '(effacée à chaque déploiement sur Render, mets DATABASE_URL pour la garder)');
   api = {
     kind: 'sqlite',

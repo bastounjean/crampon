@@ -367,9 +367,10 @@ function fifaCard(c, rating, found, cls = '') {
       <div class="fut-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
       <div class="fut-name">${c.name ? esc(c.name) : '<span class="ph">• • • • • •</span>'}</div>
       <dl class="fut-stats">
-        <div><dt>NAT</dt><dd>${v(c.nat?.name)}</dd></div>
+        <div title="${L('Nationalité (passeport)', 'Nationality (passport)')}"><dt>NAT</dt><dd>${v(c.cit)}</dd></div>
+        <div title="${L('Sélection nationale (équipe pour laquelle il joue)', 'National team he plays for')}"><dt>${L('SÉL', 'TEAM')}</dt><dd>${v(c.nat?.name)}</dd></div>
         <div><dt>${L('NÉ', 'BORN')}</dt><dd>${v(c.born)}</dd></div>
-        <div><dt>CLUB</dt><dd title="${esc(c.club || '')}">${v(shortClub(c.club))}</dd></div>
+        <div><dt>CLUB</dt><dd>${v(c.club)}</dd></div>
         <div><dt>${L('CHAMP', 'LEAGUE')}</dt><dd>${v(c.leagues.join(' '))}</dd></div>
         <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
         <div><dt>${L('STATUT', 'STATUS')}</dt><dd>${v(c.status)}</dd></div>
@@ -1067,9 +1068,9 @@ function duelLobby(err) {
         <div class="dl-vs">VS</div>
         <div class="dl-r"><span>?</span></div>
       </div>
-      <div class="kicker">${L('1 contre 1 · 90 secondes', '1 vs 1 · 90 seconds')}</div>
+      <div class="kicker">${L('1 contre 1 · sans chrono', '1 vs 1 · no timer')}</div>
       <h1>Duel</h1>
-      <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Personne au bout de 90 secondes ? Match nul.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. Nobody after 90 seconds? It’s a draw.')}</p>
+      <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Pas de chrono, mais celui qui abandonne perd.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. No timer, but whoever gives up loses.')}</p>
       ${err ? `<p class="msg">${esc(err)}</p>` : ''}
       <div class="dl-act">
         <button class="btn solid big" id="d-rand">${L('Adversaire au hasard', 'Random opponent')}</button>
@@ -1170,7 +1171,7 @@ function duelPlay(v) {
     <div class="duel">
       <div class="duel-top">
         <div class="dp me"><span>${L('Toi', 'You')}</span><b>${esc(v.me.name)}</b><div class="dbar"><i id="d-mybar"></i></div><small id="d-myn"></small></div>
-        <div class="dclock"><b id="d-clock">1:30</b><div class="dtime"><i id="d-time"></i></div></div>
+        <div class="dclock"><b>VS</b><button class="linkbtn" id="d-quit" type="button">${L('Abandonner', 'Give up')}</button></div>
         <div class="dp opp" id="d-opp"><span>${v.opp.bot ? L('Robot', 'Bot') : L('Adversaire', 'Opponent')}</span><b>${esc(v.opp.name)}</b><div class="dbar"><i id="d-oppbar"></i></div><small id="d-oppn"></small></div>
       </div>
       <div class="duel-go" id="d-go">GO&nbsp;!</div>
@@ -1203,17 +1204,10 @@ function duelPlay(v) {
   });
   attachSuggest(input);
   input.focus();
-  // chrono : la barre fond, et vire au rouge dans les 10 dernières secondes
-  DU.clock = setInterval(() => {
-    const cur = DU.v;
-    const left = Math.max(0, cur.endAt - dnow());
-    const el = $('#d-clock');
-    if (!el) return;
-    const s = Math.ceil(left / 1000);
-    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    $('#d-time').style.width = (left / cur.duration) * 100 + '%';
-    $('.dclock').classList.toggle('hurry', s <= 10);
-  }, 100);
+  $('#d-quit').onclick = async () => {
+    if (!confirm(L('Abandonner le duel ? Ton adversaire gagnera.', 'Give up the duel? Your opponent will win.'))) return;
+    try { duelUpdate(await fetchJSON(`duel/${DU.id}/giveup`, {})); } catch (err) { msg.textContent = err.message; }
+  };
 }
 function duelRefresh(v) {
   const g = v.me.guesses;
@@ -1244,11 +1238,14 @@ function duelRefresh(v) {
 }
 function duelOverScreen(v) {
   clearInterval(DU.clock);
-  const word = v.result === 'win' ? L('Victoire', 'Victory') : v.result === 'lose' ? L('Défaite', 'Defeat') : L('Temps écoulé', "Time's up");
-  const secs = Math.round((v.endAt - v.startAt) / 1000);
-  const sub = v.result === 'win' ? L(`Trouvé en ${secs} secondes et ${v.me.guesses.length} essais.`, `Found in ${secs} seconds and ${v.me.guesses.length} guesses.`)
-    : v.result === 'lose' ? L(`${v.opp.name} l’a trouvé en ${secs} secondes.`, `${v.opp.name} found him in ${secs} seconds.`)
-      : L('Personne ne l’a trouvé : match nul.', 'Nobody found him: it’s a draw.');
+  const word = v.result === 'win' ? L('Victoire', 'Victory') : L('Défaite', 'Defeat');
+  const secs = Math.max(1, Math.round((v.endAt - v.startAt) / 1000));
+  const time = secs < 60 ? L(`${secs} secondes`, `${secs} seconds`) : L(`${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, '0')}`, `${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, '0')}`);
+  const n = v.me.guesses.length;
+  const sub = v.quit === 'opp' ? L(`${v.opp.name} a abandonné.`, `${v.opp.name} gave up.`)
+    : v.quit === 'me' ? L('Tu as abandonné.', 'You gave up.')
+      : v.result === 'win' ? L(`Trouvé en ${time} et ${n} essai${s_(n)}.`, `Found in ${time} and ${n} ${n > 1 ? 'guesses' : 'guess'}.`)
+        : L(`${v.opp.name} l’a trouvé en ${time}.`, `${v.opp.name} found him in ${time}.`);
   app.innerHTML = `<div class="duel-end r-${v.result}">
     <div class="de-word">${word}</div>
     <p class="de-sub">${esc(sub)}</p>
@@ -1273,27 +1270,23 @@ let RANK_TAB = 'points';
 async function pageRank() {
   const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
   renderWho(me.user, me);
-  const empty = (cols) => `<tr><td colspan="${cols}" class="muted">${L("Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.", "Nobody yet. Find today's player with an account to get things started.")}</td></tr>`;
-  const row = (x, cells) => `<tr class="${x.me ? 'me' : ''} ${x.gap ? 'gap' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ` <span class="muted">${L('(toi)', '(you)')}</span>` : ''}</td>${cells}</tr>`;
-  const podium = (list, val) => list.length ? `<div class="podium">${list.slice(0, 3).map((x, i) => `<div class="p${i + 1}"><div class="pl">${ord(i + 1)}</div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : '';
+  const empty = `<p class="muted">${L("Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.", "Nobody yet. Find today's player with an account to get things started.")}</p>`;
+  // le podium seulement ; pour les autres, juste leur rang (sans dire combien de joueurs sont classés)
+  const podium = (b, val) => b.top.length ? `<div class="podium">${b.top.map((x, i) => `<div class="p${i + 1} ${x.me ? 'me' : ''}"><div class="pl">${ord(i + 1)}</div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : empty;
+  const mine = (b, val, none) => !me.user ? `<p class="myrank">${L('<a href="/compte" data-link>Crée un compte</a> pour être classé.', '<a href="/compte" data-link>Create an account</a> to be ranked.')}</p>`
+    : b.mine ? (b.mine.rank <= 3 ? `<p class="myrank">${L(`Tu es sur le podium : <b>${ord(b.mine.rank)}</b>.`, `You're on the podium: <b>${ord(b.mine.rank)}</b>.`)}</p>` : `<p class="myrank">${L(`Tu es <b>${ord(b.mine.rank)}</b>`, `You are <b>${ord(b.mine.rank)}</b>`)} · ${val(b.mine)}</p>`)
+      : `<p class="myrank">${none}</p>`;
   const tabs = {
-    points: () => `${podium(r.points, (x) => `${x.total} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r opt">${L("Aujourd'hui", 'Today')}</th><th class="r opt">${L('Trouvés', 'Found')}</th><th class="r opt">${L('Série', 'Streak')}</th></tr></thead><tbody>
-      ${r.points.length ? r.points.map((x) => row(x, `<td class="r big">${x.total}</td><td class="r opt">${x.today ? '+' + x.today : '–'}</td><td class="r opt">${x.found}</td><td class="r opt">${x.streak}</td>`)).join('') : empty(6)}</tbody></table>
+    points: () => `${podium(r.points, (x) => `${x.total} pts`)}${mine(r.points, (x) => `${x.total} pts`, L('Trouve un joueur du jour pour entrer au classement.', 'Find a daily player to enter the ranking.'))}
       <p class="rank-note">${L("Les points s'additionnent jour après jour. Moins tu poses de questions, plus tu marques, et un joueur peu connu rapporte jusqu'à deux fois plus qu'une star. Chaque indice retire 10 %.", 'Points add up day after day. The fewer questions you ask, the more you score, and a little-known player is worth up to twice as much as a star. Each hint costs 10%.')}</p>`,
-    today: () => `${podium(r.today, (x) => `${x.pts} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r">${L('Essais', 'Guesses')}</th></tr></thead><tbody>
-      ${r.today.length ? r.today.map((x) => row(x, `<td class="r big">${x.pts}</td><td class="r">${x.n}</td>`)).join('') : empty(4)}</tbody></table>`,
-    streaks: () => `${podium(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`)}
-      <div class="rank-wrap"><table class="rank"><caption>${L('Séries en cours', 'Current streaks')}</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
-      ${r.streaks.length ? r.streaks.map((x) => row(x, `<td class="r big">${x.streak}</td>`)).join('') : empty(3)}</tbody></table>
-      <table class="rank"><caption>Records</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
-      ${r.records.length ? r.records.map((x) => row(x, `<td class="r">${x.best}</td>`)).join('') : empty(3)}</tbody></table></div>
+    today: () => `${podium(r.today, (x) => `${x.pts} pts · ${x.n} ${L('essai', 'guess')}${x.n > 1 ? L('s', 'es') : ''}`)}${mine(r.today, (x) => `${x.pts} pts`, L("Tu n'as pas encore trouvé le joueur du jour.", "You haven't found today's player yet."))}`,
+    streaks: () => `<h3 class="rank-h">${L('Séries en cours', 'Current streaks')}</h3>${podium(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`)}${mine(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`, L("Pas de série en cours.", 'No current streak.'))}
+      <h3 class="rank-h">Records</h3>${podium(r.records, (x) => `${x.best} ${L('jour', 'day')}${s_(x.best)}`)}${mine(r.records, (x) => `${x.best} ${L('jour', 'day')}${s_(x.best)}`, L('Pas encore de record.', 'No record yet.'))}
       <p class="rank-note">${L("Une série, c'est le nombre de jours d'affilée où tu as trouvé le joueur. Un jour sans, ou un abandon, et elle repart de zéro.", 'A streak is the number of days in a row you found the player. Miss a day, or give up, and it resets to zero.')}</p>`,
   };
   const names = { points: L('Général', 'Overall'), today: L("Aujourd'hui", 'Today'), streaks: L('Séries', 'Streaks') };
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">${L(`${r.players} joueur${s_(r.players)} classé${s_(r.players)}`, `${r.players} ranked player${s_(r.players)}`)}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L('Les meilleurs FoOotix', 'The best FoOotix players')}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div id="tab"></div>
     ${adSlot('wide')}`;

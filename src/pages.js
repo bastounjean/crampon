@@ -32,7 +32,7 @@ module.exports = function pages({ G, dayStats }) {
 <h2>How to find him</h2>
 <p>Start by guessing any player: the game shows what he has in common with the mystery footballer (nationality, position, clubs, leagues, teammates, age). You can also ask direct questions such as “Serie A”, “Real Madrid”, “Africa”, “goalkeeper”, “born in the 1990s” or “Ballon d'Or”. Every answer fills in the mystery card and raises your temperature, from 0° to 100°.</p>
 <h2>More than one player a day</h2>
-<p>Each player you find joins your <a href="/album">album</a>. Every day you can also open a free pack of five cards in <a href="/collection">Pack Opening</a>, and a second one if you found the daily player. Challenge a friend or a stranger in a timed <a href="/duel">Duel</a>, and compare your points in the <a href="/classement">ranking</a>.</p>
+<p>Each player you find joins your <a href="/album">album</a>. Every day you can also open a free pack of five cards in <a href="/collection">Pack Opening</a>, and a second one if you found the daily player. Challenge a friend or a stranger in a <a href="/duel">Duel</a>, and compare your points in the <a href="/classement">ranking</a>.</p>
 ${recent.length ? `<h2>Missed a day?</h2><p>Past players can still be caught up, with no points: ${recent.map((d) => `<a href="/jour/${d.day}">#${d.number} (${fmt(d.day, true)})</a>`).join(', ')}. The full list, with each player's profile, is in the <a href="/joueurs">archive</a>.</p>` : ''}
 <p><a href="/regles">Read the full rules</a></p>` : `
 <h2>FoOotix, c'est quoi&nbsp;?</h2>
@@ -40,7 +40,7 @@ ${recent.length ? `<h2>Missed a day?</h2><p>Past players can still be caught up,
 <h2>Comment le trouver</h2>
 <p>Commence par proposer un joueur au hasard&nbsp;: le jeu te montre ce qu'il a en commun avec le mystère (nationalité, poste, clubs, championnats, coéquipiers, âge). Tu peux aussi poser des questions directes comme «&nbsp;Serie A&nbsp;», «&nbsp;Real Madrid&nbsp;», «&nbsp;Afrique&nbsp;», «&nbsp;gardien&nbsp;», «&nbsp;années 1990&nbsp;» ou «&nbsp;Ballon d'or&nbsp;». Chaque réponse remplit la carte du joueur mystère et fait monter ta température, de 0° à 100°.</p>
 <h2>Plus qu'un joueur par jour</h2>
-<p>Chaque joueur trouvé rejoint ton <a href="/album">album</a>. Tous les jours, tu peux aussi ouvrir un pack gratuit de cinq cartes dans <a href="/collection">Pack Opening</a>, et un deuxième si tu as trouvé le joueur du jour. Affronte un ami ou un inconnu dans un <a href="/duel">duel</a> chronométré, et compare tes points au <a href="/classement">classement</a>.</p>
+<p>Chaque joueur trouvé rejoint ton <a href="/album">album</a>. Tous les jours, tu peux aussi ouvrir un pack gratuit de cinq cartes dans <a href="/collection">Pack Opening</a>, et un deuxième si tu as trouvé le joueur du jour. Affronte un ami ou un inconnu dans un <a href="/duel">duel</a>, et compare tes points au <a href="/classement">classement</a>.</p>
 ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peuvent encore être rattrapés, sans points&nbsp;: ${recent.map((d) => `<a href="/jour/${d.day}">n°&nbsp;${d.number} (${fmt(d.day)})</a>`).join(', ')}. La liste complète, avec la fiche de chaque joueur, est dans les <a href="/joueurs">archives</a>.</p>` : ''}
 <p><a href="/regles">Lire les règles complètes</a></p>`;
   }
@@ -50,7 +50,7 @@ ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peu
     '/album': ['Ton album rassemble tous les joueurs mystères que tu as trouvés, jour après jour, avec ta série et ton record. Les jours ratés restent des cases vides que tu peux encore rattraper.', 'Your album gathers every mystery player you found, day after day, with your streak and your record. Missed days stay as empty slots you can still catch up on.'],
     '/collection': ["Pack Opening : chaque jour, un pack gratuit de cinq cartes de footballeurs, de la carte bronze à la carte légende. Plus un joueur est célèbre, plus sa carte est rare. Trouve le joueur du jour pour gagner un deuxième pack.", 'Pack Opening: every day, a free pack of five footballer cards, from bronze to legend. The more famous the player, the rarer his card. Find the daily player to earn a second pack.'],
     '/classement': ["Le classement général additionne les points de chaque jour : plus tu trouves vite, et plus le joueur est méconnu, plus tu marques. Crée une ligue pour te mesurer à tes amis.", 'The overall ranking adds up the points of each day: the faster you find him, and the less known the player, the more you score. Create a league to compete with your friends.'],
-    '/duel': ['Le duel : deux joueurs, le même footballeur mystère et 90 secondes. Le premier qui trouve gagne. Joue contre un inconnu, contre un ami avec un code, ou contre le robot.', 'Duel: two players, the same mystery footballer and 90 seconds. The first to find him wins. Play a stranger, a friend with a code, or the bot.'],
+    '/duel': ['Le duel : deux joueurs, le même footballeur mystère, sans chrono. Le premier qui trouve gagne, celui qui abandonne perd. Joue contre un inconnu, contre un ami avec un code, ou contre le robot.', 'Duel: two players, the same mystery footballer, no timer. The first to find him wins, whoever gives up loses. Play a stranger, a friend with a code, or the bot.'],
   };
 
   // ——— règles ———
@@ -75,7 +75,7 @@ ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peu
   <h2>Pack Opening</h2>
   <p>Every day you can open a free pack of five cards. Each card has a rarity, bronze, silver, gold or legend, set by how famous the player is: about one card in a hundred is a legend. The fifth card is always silver or better. Finding the daily player unlocks a second pack.</p>
   <h2>Duel</h2>
-  <p>In a duel, two players get the same mystery footballer, drawn outside the daily game, and 90 seconds. The rules are the same, and the first to find him wins. You can play a stranger, invite a friend with a five-letter code, or play the bot.</p>
+  <p>In a duel, two players get the same mystery footballer, drawn outside the daily game, with no timer. The rules are the same: the first to find him wins, and whoever gives up loses. You can play a stranger, invite a friend with a five-letter code, or play the bot.</p>
   <p class="muted" style="font-size:14px">Players and their careers come from Wikidata, updated daily. Photos and articles come from Wikipedia (CC BY-SA). Past players are listed in the <a href="/joueurs">archive</a>.</p>
 </div>` : `
 <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
@@ -97,7 +97,7 @@ ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peu
   <h2>Pack Opening</h2>
   <p>Chaque jour, tu peux ouvrir un pack gratuit de cinq cartes. Chaque carte a une rareté, bronze, argent, or ou légende, qui dépend de la célébrité du joueur&nbsp;: environ une carte sur cent est une légende. La cinquième carte est toujours argent ou mieux. Trouver le joueur du jour débloque un deuxième pack.</p>
   <h2>Le duel</h2>
-  <p>En duel, deux joueurs ont le même footballeur mystère, tiré hors du jeu du jour, et 90 secondes. Les règles sont les mêmes, et le premier qui trouve gagne. Tu peux affronter un inconnu, inviter un ami avec un code de cinq lettres, ou jouer contre le robot.</p>
+  <p>En duel, deux joueurs ont le même footballeur mystère, tiré hors du jeu du jour, sans chrono. Les règles sont les mêmes : le premier qui trouve gagne, et celui qui abandonne perd. Tu peux affronter un inconnu, inviter un ami avec un code de cinq lettres, ou jouer contre le robot.</p>
   <p class="muted" style="font-size:14px">Les joueurs et leurs carrières viennent de Wikidata, mis à jour chaque jour. Les photos et les articles viennent de Wikipédia (CC BY-SA). Les joueurs passés sont listés dans les <a href="/joueurs">archives</a>.</p>
 </div>`;
   }
