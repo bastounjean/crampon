@@ -130,7 +130,8 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
         <div><b>${t.v || 0}</b><span>pages vues aujourd'hui</span></div>
         <div><b>${tg.n}</b><span>parties lancées, ${tg.w} trouvées</span></div>
         <div><b>${tot.w}</b><span>visiteurs sur 7 jours, ${loyal.n} revenus au moins 2 jours</span></div>
-        <div><b>${tot.u}</b><span>comptes, ${tot.l} ligue${tot.l > 1 ? 's' : ''}</span></div>
+        <div><b>${U.get(today) || 0}</b><span>nouveaux comptes aujourd'hui <em>(hier ${U.get(days[1]) || 0}, 7 jours ${days.slice(0, 7).reduce((n, d) => n + (U.get(d) || 0), 0)})</em></span></div>
+        <div><b>${tot.u}</b><span>comptes au total, ${tot.l} ligue${tot.l > 1 ? 's' : ''}</span></div>
       </div>
       <h2>30 derniers jours</h2>
       <table><thead><tr><th>Jour</th><th class="r">Visiteurs</th><th class="opt"></th><th class="r opt">Pages vues</th><th class="r opt">Mobile</th><th class="r">Parties</th><th class="r">Trouvées</th><th class="r">Comptes</th></tr></thead><tbody>
