@@ -45,11 +45,18 @@ Au reveal, la page Wikipédia du joueur est chargée directement depuis fr.wikip
 
 ## Structure
 
-- `server.js` : API (partie du jour, essais, indices, comptes, album, classement)
+- `server.js` : démarrage, protections, identité du visiteur, branchement des routes
+- `src/core.js` : ce que les routes partagent (parties en mémoire, séries, stats du jour, classement, jugement d'un essai)
+- `src/routes/game.js` : partie du jour, essais, indices, fiches joueurs, album, packs
+- `src/routes/duel.js` : duels (adversaire au hasard, pote, robot)
+- `src/routes/social.js` : classement et ligues
+- `src/routes/accounts.js` : comptes et connexion
+- `src/front.js` : pages HTML, fichiers du site, robots.txt, sitemap
 - `src/game.js` : tirage du jour, calcul de la température, carte, indices
 - `src/wikidata.js` : récupération des joueurs sur Wikidata
 - `scripts/build-pool.js` : construction de la liste des 600 joueurs
 - `public/` : le site (HTML, CSS, JS sans framework)
+- `test/` : tests du jeu, à lancer avec `npm test` (ils tournent aussi sur GitHub à chaque envoi)
 
 ## Publicité et mentions légales
 
