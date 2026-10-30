@@ -1,13 +1,16 @@
 // ——— Duel : deux joueurs, le même footballeur à trouver ———
 const crypto = require('crypto');
+const db = require('../db');
 const G = require('../game');
 const C = require('../core');
 const { A, judge } = C;
 
 module.exports = function routes({ app }) {
   // ——— Duel : deux joueurs, le même footballeur à trouver, le premier qui trouve gagne ———
-  // Tout vit en mémoire (une seule machine). Pas de chrono : le duel dure jusqu'à ce que l'un trouve,
-  // ou qu'un joueur abandonne. Un duel sans nouvelle depuis 30 min disparaît.
+  // Les duels sont gardés en mémoire pour répondre vite, et recopiés en base à chaque changement :
+  // un redémarrage ou une mise à jour du site ne coupe plus les duels en cours.
+  // Pas de chrono : le duel dure jusqu'à ce que l'un trouve, ou qu'un joueur abandonne.
+  // Un duel sans nouvelle depuis 30 min disparaît de la mémoire, et de la base au bout de 2 h sans changement.
   const DUEL_INTRO = 5000; // présentation « VS » puis 3, 2, 1
   const DUELS = new Map();
   let QUEUE = null; // joueur qui attend un adversaire au hasard : { key, name, t, duel }
@@ -19,18 +22,38 @@ module.exports = function routes({ app }) {
     for (const [id, d] of DUELS) if (now - (d.seen || d.created) > 30 * 60 * 1000) DUELS.delete(id);
     for (const [c, id] of ROOMS) if (!DUELS.has(id)) ROOMS.delete(c);
     if (QUEUE && now - QUEUE.t > 30000) QUEUE = null;
+    db.run('DELETE FROM duels WHERE updated_at < ?', new Date(now - 2 * 3600 * 1000).toISOString()).catch((e) => console.warn('Duels :', e.message));
   }, 60000).unref();
 
-  function newDuel(a, code) {
+  // en base, le joueur à trouver est rangé par son identifiant
+  const save = (d) => db.run(`INSERT INTO duels (id, code, data, updated_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+  d.id, d.code || null, JSON.stringify({ ...d, target: d.target.id }), db.now());
+  const revive = (row) => {
+    if (!row) return null;
+    const d = JSON.parse(row.data);
+    if (DUELS.has(d.id)) return DUELS.get(d.id); // relu deux fois en même temps : un seul exemplaire
+    d.target = G.BY_ID[d.target];
+    if (!d.target) return null;
+    DUELS.set(d.id, d);
+    if (d.code && !d.startAt) ROOMS.set(d.code, d.id);
+    return d;
+  };
+  const getDuel = async (id) => DUELS.get(id) || revive(await db.get('SELECT data FROM duels WHERE id = ?', id));
+  const byCode = async (code) => (ROOMS.has(code) ? getDuel(ROOMS.get(code)) : revive(await db.get('SELECT data FROM duels WHERE code = ? ORDER BY updated_at DESC LIMIT 1', code)));
+
+  async function newDuel(a, code) {
     const id = crypto.randomBytes(8).toString('hex');
     const d = { id, code, created: Date.now(), target: G.duelPick((n) => crypto.randomInt(n)), players: [{ ...a, guesses: [] }], startAt: null, winner: null };
     DUELS.set(id, d);
+    await save(d);
     return d;
   }
-  function startDuel(d, b) {
+  async function startDuel(d, b) {
     d.players.push({ ...b, guesses: [] });
     d.startAt = Date.now() + DUEL_INTRO;
     if (b.bot) d.bot = botPlan();
+    await save(d);
   }
   // le robot : quelques essais qui chauffent peu à peu, et il finit par trouver (entre 40 s et 3 min)
   function botPlan() {
@@ -71,8 +94,8 @@ module.exports = function routes({ app }) {
       answer: over ? G.card(d.target) : null,
     };
   }
-  const myDuel = (req) => {
-    const d = DUELS.get(String(req.params.id || ''));
+  const myDuel = async (req) => {
+    const d = await getDuel(String(req.params.id || '').slice(0, 32));
     return d && d.players.some((p) => p.key === meKey(req)) ? d : null;
   };
   // adversaire au hasard : on rejoint celui qui attend, sinon on attend
@@ -81,19 +104,19 @@ module.exports = function routes({ app }) {
     if (QUEUE && QUEUE.key !== me.key && Date.now() - QUEUE.t < 5000 && DUELS.has(QUEUE.duel)) {
       const d = DUELS.get(QUEUE.duel);
       QUEUE = null;
-      startDuel(d, me);
+      await startDuel(d, me);
       return res.json(duelView(d, me.key));
     }
     if (QUEUE && QUEUE.key === me.key && DUELS.has(QUEUE.duel)) { QUEUE.t = Date.now(); return res.json(duelView(DUELS.get(QUEUE.duel), me.key)); }
-    const d = newDuel(me);
+    const d = await newDuel(me);
     QUEUE = { ...me, t: Date.now(), duel: d.id };
     res.json(duelView(d, me.key));
   }));
   app.post('/api/duel/bot', A(async (req, res) => {
     const me = { key: meKey(req), name: meName(req) };
     if (QUEUE && QUEUE.key === me.key) { DUELS.delete(QUEUE.duel); QUEUE = null; }
-    const d = newDuel(me);
-    startDuel(d, { key: 'bot', name: 'Robot FoOotix', bot: true });
+    const d = await newDuel(me);
+    await startDuel(d, { key: 'bot', name: 'Robot FoOotix', bot: true });
     res.json(duelView(d, me.key));
   }));
   // défier un pote : un code à partager, le duel démarre quand il arrive
@@ -101,27 +124,30 @@ module.exports = function routes({ app }) {
     const me = { key: meKey(req), name: meName(req) };
     let code;
     do code = Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[crypto.randomInt(32)]).join(''); while (ROOMS.has(code));
-    const d = newDuel(me, code);
+    const d = await newDuel(me, code);
     ROOMS.set(code, d.id);
     res.json(duelView(d, me.key));
   }));
   app.post('/api/duel/join/:code', A(async (req, res) => {
-    const d = DUELS.get(ROOMS.get(String(req.params.code).toUpperCase()));
+    const d = await byCode(String(req.params.code).toUpperCase().slice(0, 5));
     const me = { key: meKey(req), name: meName(req) };
     if (!d) return res.status(404).json({ error: 'Aucun duel avec ce code, ou il a expiré. Vérifie les lettres ou demande un nouveau code à ton pote.' });
     if (d.players.some((p) => p.key === me.key)) return res.json(duelView(d, me.key));
     if (d.players.length > 1) return res.status(400).json({ error: 'Ce duel a déjà commencé.' });
-    startDuel(d, me);
+    await startDuel(d, me);
     res.json(duelView(d, me.key));
   }));
   app.post('/api/duel/:id/leave', A(async (req, res) => {
-    const d = myDuel(req);
-    if (d && !d.startAt) { DUELS.delete(d.id); if (QUEUE && QUEUE.duel === d.id) QUEUE = null; if (d.code) ROOMS.delete(d.code); }
+    const d = await myDuel(req);
+    if (d && !d.startAt) {
+      DUELS.delete(d.id); if (QUEUE && QUEUE.duel === d.id) QUEUE = null; if (d.code) ROOMS.delete(d.code);
+      await db.run('DELETE FROM duels WHERE id = ?', d.id);
+    }
     res.json({ ok: true });
   }));
   // abandonner : l'adversaire gagne
   app.post('/api/duel/:id/giveup', A(async (req, res) => {
-    const d = myDuel(req);
+    const d = await myDuel(req);
     if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
     const key = meKey(req);
     if (d.startAt && !duelOver(d)) {
@@ -129,11 +155,12 @@ module.exports = function routes({ app }) {
       d.winner = opp ? opp.key : null;
       d.wonAt = Date.now();
       d.quit = key;
+      await save(d);
     }
     res.json(duelView(d, key));
   }));
   app.get('/api/duel/:id', A(async (req, res) => {
-    const d = myDuel(req);
+    const d = await myDuel(req);
     if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
     if (QUEUE && QUEUE.duel === d.id) QUEUE.t = Date.now(); // toujours là
     d.seen = Date.now();
@@ -141,7 +168,7 @@ module.exports = function routes({ app }) {
     res.json(duelView(d, meKey(req)));
   }));
   app.post('/api/duel/:id/guess', A(async (req, res) => {
-    const d = myDuel(req);
+    const d = await myDuel(req);
     if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
     const now = Date.now();
     if (!d.startAt || now < d.startAt) return res.status(400).json({ error: 'Le duel n’a pas encore commencé.' });
@@ -152,6 +179,7 @@ module.exports = function routes({ app }) {
     if (j.dup) return res.json({ ...duelView(d, me.key), dup: j.dup });
     me.guesses.push(j.entry);
     if (j.won) { d.winner = me.key; d.wonAt = now; }
+    await save(d);
     res.json({ ...duelView(d, me.key), last: j.entry.n });
   }));
 };
