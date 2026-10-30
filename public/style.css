@@ -616,6 +616,11 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 @keyframes inL { from { transform: translateX(-100%); } }
 @keyframes inR { from { transform: translateX(100%); } }
 @keyframes stamp { from { transform: scale(3); opacity: 0; } }
+.dl-join { margin: 26px auto 0; max-width: 340px; }
+.dl-join label { display: block; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.dl-join-row { display: flex; gap: 8px; }
+.dl-join input { flex: 1; min-width: 0; border: 2px solid var(--ink); background: transparent; padding: 8px 10px; font-size: 20px; text-align: center; outline: none; }
+.dl-join input:focus { border-color: var(--green); }
 .dw-code { font-family: var(--mono); font-size: 46px; font-weight: 600; letter-spacing: .25em; border: 2px solid var(--ink); display: inline-block; padding: 6px 10px 6px 22px; margin: 6px 0 10px; }
 .dw-link { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
 .dw-dots { display: flex; gap: 8px; justify-content: center; margin: 18px 0; }

@@ -1080,17 +1080,28 @@ function duelLobby(err) {
       <div class="kicker">${L('1 contre 1 · sans chrono', '1 vs 1 · no timer')}</div>
       <h1>Duel</h1>
       <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Pas de chrono, mais celui qui abandonne perd.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. No timer, but whoever gives up loses.')}</p>
-      ${err ? `<p class="msg">${esc(err)}</p>` : ''}
       <div class="dl-act">
         <button class="btn solid big" id="d-rand">${L('Adversaire au hasard', 'Random opponent')}</button>
         <button class="btn big" id="d-friend">${L('Défier un pote', 'Challenge a friend')}</button>
         <button class="btn big" id="d-bot">${L('Contre le robot', 'Against the bot')}</button>
       </div>
+      <form class="dl-join" id="d-join">
+        <label for="d-code">${L('Un pote t’a donné un code ?', 'Got a code from a friend?')}</label>
+        <div class="dl-join-row"><input id="d-code" class="codein" maxlength="5" required autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC23" aria-label="${L('Code du duel', 'Duel code')}"><button class="btn solid">${L('Rejoindre', 'Join')}</button></div>
+        <p class="msg" id="d-jm">${err ? esc(err) : ''}</p>
+      </form>
     </div>
     ${adSlot('wide')}`;
   $('#d-rand').onclick = async () => duelStart(await fetchJSON('duel/queue', {}), 'random');
   $('#d-friend').onclick = async () => duelStart(await fetchJSON('duel/friend', {}), 'friend');
   $('#d-bot').onclick = async () => duelStart(await fetchJSON('duel/bot', {}), 'bot');
+  $('#d-code').oninput = (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+  $('#d-join').onsubmit = (e) => {
+    e.preventDefault();
+    const code = $('#d-code').value;
+    if (code.length !== 5) { $('#d-jm').textContent = L('Le code fait 5 caractères.', 'The code is 5 characters long.'); return; }
+    go('/duel/' + code);
+  };
 }
 function duelStart(v, mode) {
   stopDuel();
@@ -1125,14 +1136,18 @@ function duelWaiting(v) {
     const link = `${location.origin}/duel/${v.code}`;
     app.innerHTML = `<div class="duel-wait">
       <div class="kicker">${L('Défie un pote', 'Challenge a friend')}</div>
-      <h1>${L('Envoie-lui ce lien', 'Send them this link')}</h1>
+      <h1>${L('Donne-lui ce code', 'Give them this code')}</h1>
       <div class="dw-code">${esc(v.code)}</div>
-      <p>${L('Le duel démarre dès qu’il arrive.', 'The duel starts as soon as they join.')}</p>
-      ${shareBox(L('Je te défie en duel sur FoOotix : le premier qui trouve le joueur gagne ⚔️', 'I challenge you to a FoOotix duel: first to find the player wins ⚔️'), link, L('Envoyer le lien', 'Send the link'))}
+      <p><button class="linkbtn" id="d-copy" type="button">${L('Copier le code', 'Copy the code')}</button></p>
+      <p>${L('Il le tape dans la page Duel, ou ouvre le lien. Le duel démarre dès qu’il arrive.', 'They type it on the Duel page, or open the link. The duel starts as soon as they join.')}</p>
+      ${shareBox(L(`Je te défie en duel sur FoOotix : le premier qui trouve le joueur gagne ⚔️ Code : ${v.code}`, `I challenge you to a FoOotix duel: first to find the player wins ⚔️ Code: ${v.code}`), link, L('Envoyer le lien', 'Send the link'))}
       <p class="dw-link">${esc(link)}</p>
       <div class="dw-dots"><i></i><i></i><i></i></div>
       <button class="linkbtn" id="d-cancel">${L('Annuler', 'Cancel')}</button>
     </div>`;
+    $('#d-copy').onclick = async (e) => {
+      try { await navigator.clipboard.writeText(v.code); e.target.textContent = L('Code copié', 'Code copied'); } catch { prompt(L('Copie ce code :', 'Copy this code:'), v.code); }
+    };
   } else {
     app.innerHTML = `<div class="duel-wait">
       <div class="kicker">${L('Adversaire au hasard', 'Random opponent')}</div>

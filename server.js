@@ -549,7 +549,7 @@ app.post('/api/duel/friend', A(async (req, res) => {
 app.post('/api/duel/join/:code', A(async (req, res) => {
   const d = DUELS.get(ROOMS.get(String(req.params.code).toUpperCase()));
   const me = { key: meKey(req), name: meName(req) };
-  if (!d) return res.status(404).json({ error: 'Ce duel n’existe plus. Demande à ton pote de t’envoyer un nouveau lien.' });
+  if (!d) return res.status(404).json({ error: 'Aucun duel avec ce code, ou il a expiré. Vérifie les lettres ou demande un nouveau code à ton pote.' });
   if (d.players.some((p) => p.key === me.key)) return res.json(duelView(d, me.key));
   if (d.players.length > 1) return res.status(400).json({ error: 'Ce duel a déjà commencé.' });
   startDuel(d, me);
