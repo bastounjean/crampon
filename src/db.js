@@ -79,6 +79,13 @@ CREATE TABLE IF NOT EXISTS draws (
   day TEXT PRIMARY KEY,
   player_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS duels (
+  id TEXT PRIMARY KEY,
+  code TEXT,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS duels_code ON duels (code);
 CREATE TABLE IF NOT EXISTS page_views (
   day TEXT NOT NULL,
   path TEXT NOT NULL,

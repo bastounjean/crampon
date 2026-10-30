@@ -203,6 +203,9 @@ table.wt td.num { text-align: center; }
 .mine { border: 1px solid var(--w-border); background: var(--w-note); padding: 8px 12px; font-size: 14px; margin: 0 0 14px; }
 
 /* ——— Album ——— */
+.subtabs { display: flex; gap: 6px; margin: 0 0 18px; }
+.subtabs a { border: 1px solid var(--ink); padding: 7px 16px; text-decoration: none; font-weight: 700; font-stretch: 85%; text-transform: uppercase; font-size: 13px; letter-spacing: .05em; color: var(--ink); }
+.subtabs a.on { background: var(--ink); color: var(--paper); }
 .pagehead { border-bottom: 1px solid var(--ink); padding-bottom: 12px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
 .pagehead h1 { font-size: 44px; font-weight: 900; font-stretch: 68%; text-transform: uppercase; }
 .pagehead p { margin: 4px 0 0; font-family: var(--serif); }
