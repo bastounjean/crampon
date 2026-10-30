@@ -295,7 +295,7 @@ async function pageGame(day = null) {
           <div id="banner"></div>
           <div class="intro">
             <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}${st.past ? ` · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}` : ''}</div>
-            <h1>${L('Es-tu un vrai FoOotix&nbsp;?', 'Are you a real FoOotix?')}</h1>
+            <h1>${L('Connais-tu vraiment le foot&nbsp;?', 'Do you really know football?')}</h1>
             <p>${st.past
               ? L(`Rattrapage du ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}&nbsp;: s'il est trouvé, il rejoint ton album, mais sans points ni série. <a href="/" data-link>Retour au joueur du jour</a>`, `Catching up on ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}: find him to add him to your album, but no points or streak. <a href="/" data-link>Back to today's player</a>`)
               : L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'A player, a club, a city, a country, a position, a generation: every discovery fills in his card.')}</p>
