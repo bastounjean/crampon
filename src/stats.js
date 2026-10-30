@@ -97,7 +97,7 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
     const from = days[days.length - 1];
     const from7 = days[6];
     const paris = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' });
-    const [vis, games, users, refs, pages, loyal, tot] = await Promise.all([
+    const [vis, games, users, refs, pages, loyal, tot, recent] = await Promise.all([
       db.all('SELECT day, COUNT(*) n, SUM(views) v, SUM(mobile) m FROM visits WHERE day >= ? GROUP BY day', from),
       db.all("SELECT day, COUNT(*) n, SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) w FROM games WHERE day >= ? GROUP BY day", from),
       db.all('SELECT created_at FROM users WHERE created_at >= ?', new Date(Date.now() - 32 * 86400000).toISOString()),
@@ -105,6 +105,7 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
       db.all('SELECT path, SUM(views) n FROM page_views WHERE day >= ? GROUP BY path ORDER BY n DESC', from7),
       db.get('SELECT COUNT(*) n FROM (SELECT vid FROM visits WHERE day >= ? GROUP BY vid HAVING COUNT(*) >= 2) t', from7),
       db.get('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM leagues) l, (SELECT COUNT(DISTINCT vid) FROM visits WHERE day >= ?) w, (SELECT COUNT(*) FROM visits WHERE day >= ? AND ref IS NULL) d, (SELECT COUNT(*) FROM visits WHERE day >= ?) a', from7, from, from),
+      db.all("SELECT u.username, u.created_at, COUNT(g.id) n, SUM(CASE WHEN g.status = 'won' THEN 1 ELSE 0 END) w FROM users u LEFT JOIN games g ON g.user_id = u.id GROUP BY u.id, u.username, u.created_at ORDER BY u.created_at DESC LIMIT 50"),
     ]);
     const V = new Map(vis.map((r) => [r.day, r]));
     const Gm = new Map(games.map((r) => [r.day, r]));
@@ -130,7 +131,8 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
         <div><b>${t.v || 0}</b><span>pages vues aujourd'hui</span></div>
         <div><b>${tg.n}</b><span>parties lancées, ${tg.w} trouvées</span></div>
         <div><b>${tot.w}</b><span>visiteurs sur 7 jours, ${loyal.n} revenus au moins 2 jours</span></div>
-        <div><b>${tot.u}</b><span>comptes, ${tot.l} ligue${tot.l > 1 ? 's' : ''}</span></div>
+        <div><b>${U.get(today) || 0}</b><span>nouveaux comptes aujourd'hui <em>(hier ${U.get(days[1]) || 0}, 7 jours ${days.slice(0, 7).reduce((n, d) => n + (U.get(d) || 0), 0)})</em></span></div>
+        <div><b>${tot.u}</b><span>comptes au total, ${tot.l} ligue${tot.l > 1 ? 's' : ''}</span></div>
       </div>
       <h2>30 derniers jours</h2>
       <table><thead><tr><th>Jour</th><th class="r">Visiteurs</th><th class="opt"></th><th class="r opt">Pages vues</th><th class="r opt">Mobile</th><th class="r">Parties</th><th class="r">Trouvées</th><th class="r">Comptes</th></tr></thead><tbody>
@@ -150,6 +152,10 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
           ${pages.map((r) => `<tr><td>${NAMES[r.path] || esc(r.path)}</td><td class="r">${r.n}</td><td class="r muted">${pct(r.n, totalPv)}</td></tr>`).join('') || '<tr><td class="muted">Rien pour l\'instant</td></tr>'}
           </tbody></table></div>
       </div>
+      <h2>Derniers comptes créés <em>(50 plus récents)</em></h2>
+      <table><thead><tr><th>Pseudo</th><th>Inscrit le</th><th class="r">Parties</th><th class="r">Trouvées</th></tr></thead><tbody>
+      ${recent.map((r) => `<tr><td><b>${esc(r.username)}</b></td><td>${new Date(r.created_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td><td class="r">${r.n}</td><td class="r">${r.w || 0}</td></tr>`).join('') || '<tr><td class="muted">Aucun compte pour l\'instant</td></tr>'}
+      </tbody></table>
       <p class="muted">Un visiteur = un appareil (téléphone, ordinateur) sur une journée. Les robots et UptimeRobot ne sont pas comptés. Les chiffres datent du ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}.</p>
       <form method="post"><button name="out" value="1">Se déconnecter</button></form>`;
   }

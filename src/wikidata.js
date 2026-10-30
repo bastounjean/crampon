@@ -6,7 +6,7 @@ const LEAGUE_Q = { Q13394: 'L1', Q9448: 'PL', Q82595: 'BL', Q324867: 'LL', Q1580
 const LEAGUE_VALUES = Object.keys(LEAGUE_Q).map((q) => 'wd:' + q).join(' ');
 const CONTINENT_Q = { Q15: 'Afrique', Q46: 'Europe', Q48: 'Asie', Q18: 'Amérique du Sud', Q49: 'Amérique du Nord', Q538: 'Océanie', Q55643: 'Océanie' };
 // nations du Royaume-Uni : pas de code ISO à deux lettres
-const HOME_NATIONS = { Q21: 'gb-eng', Q22: 'gb-sct', Q25: 'gb-wls', Q26: 'gb-nir' };
+const HOME_NATIONS = { Q21: 'gb-eng', Q22: 'gb-sct', Q25: 'gb-wls', Q26: 'gb-nir', Q55: 'nl', Q713750: 'de', Q33946: 'cz' };
 
 const qid = (uri) => (uri || '').split('/').pop();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -76,12 +76,13 @@ const values = (ids) => ids.map((i) => 'wd:' + i).join(' ');
 async function fetchDetails(ids) {
   const V = values(ids);
   const base = await sparql(`
-SELECT ?p ?label ?enlabel ?title ?birth ?placeLabel ?img ?sl WHERE {
+SELECT ?p ?label ?enlabel ?title ?birth ?death ?placeLabel ?img ?sl WHERE {
   VALUES ?p { ${V} }
   OPTIONAL { ?p rdfs:label ?label FILTER(lang(?label) = "fr") }
   OPTIONAL { ?p rdfs:label ?enlabel FILTER(lang(?enlabel) = "en") }
   OPTIONAL { ?fr schema:about ?p ; schema:isPartOf <https://fr.wikipedia.org/> ; schema:name ?title }
   OPTIONAL { ?p wdt:P569 ?birth }
+  OPTIONAL { ?p wdt:P570 ?death }
   OPTIONAL { ?p wdt:P19 ?place . ?place rdfs:label ?placeLabel FILTER(lang(?placeLabel) = "fr") }
   OPTIONAL { ?p wdt:P18 ?img }
   OPTIONAL { ?p wikibase:sitelinks ?sl }
@@ -164,6 +165,7 @@ function build({ base, attrs, teams, logos = [] }, links = {}) {
     if (r.enlabel && r.enlabel !== p.name) p.aliases.add(r.enlabel);
     p.title = p.title || r.title;
     p.born = p.born || (r.birth ? r.birth.slice(0, 10) : null);
+    p.died = p.died || (r.death && /^\d{4}/.test(r.death) ? r.death.slice(0, 10) : null);
     p.place = p.place || r.placeLabel || null;
     p.img = p.img || r.img || null;
     p.links = Math.max(p.links || 0, +r.sl || links[id] || 0);
@@ -208,12 +210,22 @@ function build({ base, attrs, teams, logos = [] }, links = {}) {
 
   const out = [];
   for (const p of Object.values(P)) {
+    // nat : nationalité sportive (sa sélection) ; cit : ses nationalités (état civil)
     const natBag = Object.keys(p.sport).length ? p.sport : p.cit;
-    const nat = Object.values(natBag).map((c) => {
+    const asNat = (c) => {
       const conts = [...c.conts];
       const cont = conts.includes('Afrique') ? 'Afrique' : conts.includes('Europe') ? 'Europe' : conts[0] || null;
       return { code: c.code, name: c.name, iso: c.iso, cont };
-    });
+    };
+    let nat = Object.values(natBag).map(asNat);
+    // pas de nationalité sportive renseignée : on la déduit de l'équipe nationale (« équipe d'Espagne de football »)
+    if (!Object.keys(p.sport).length && nat.length > 1 && p.nt) {
+      const n = (x) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const team = n(p.nt.team);
+      const hit = nat.filter((c) => c.name && team.includes(n(c.name)));
+      if (hit.length) nat = hit;
+    }
+    const cit = Object.values(p.cit).map(asNat);
     const clubs = (p.clubs || []).sort((a, b) => (a.from ?? 9999) - (b.from ?? 9999));
     // fin de passage manquante : on prend le début du passage suivant (hors prêts)
     for (let i = 0; i < clubs.length; i++) {
@@ -228,9 +240,9 @@ function build({ base, attrs, teams, logos = [] }, links = {}) {
     out.push({
       id: p.id, name: p.name, title: p.title || p.name, born: p.born, place: p.place, img: p.img, links: p.links,
       aliases: [...p.aliases].filter((a) => a && a !== p.name && a.length < 40).slice(0, 6),
-      nat, pos: p.posList[0], bo: p.bo,
+      nat, cit: cit.length ? cit : nat, pos: p.posList[0], bo: p.bo, died: p.died || null,
       clubs, nt: p.nt || null,
-      active: !!lastOpen && by >= 1984,
+      active: !!lastOpen && by >= 1984 && !p.died,
     });
   }
   return out;

@@ -9,6 +9,7 @@ const LOC = EN ? 'en-GB' : 'fr-FR';
 const s_ = (n) => ((EN ? n !== 1 : n > 1) ? 's' : ''); // pluriel : « 0 joueur » mais « 0 players »
 const ord = (n) => EN ? `${n}<sup>${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] || 'th'}</sup>` : `${n}<sup>${n === 1 ? 'er' : 'e'}</sup>`;
 const app = $('#app');
+const SSR0 = { path: location.pathname, html: app.innerHTML, title: document.title };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   .replace(/[ʼ'’`.\-]/g, ' ').replace(/[^a-z0-9ıİşğøæœß ]/g, '').replace(/\s+/g, ' ').trim()
@@ -81,6 +82,15 @@ function heat(t) {
   for (let i = 0; i < stops.length - 1; i++) if (t >= stops[i][0] && t <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; }
   const k = (t - a[0]) / (b[0] - a[0] || 1);
   return `rgb(${a[1].map((v, i) => Math.round(v + (b[1][i] - v) * k)).join(',')})`;
+}
+// un « non » ne fait pas monter le thermomètre, mais il élimine une piste : on le dit, pour ne pas décourager
+function gaugeTip(st, best) {
+  if (!st.guesses.length) return L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.');
+  const last = st.guesses[st.guesses.length - 1];
+  const nos = st.guesses.filter((g) => g.type === 'clue' && !g.yes).length;
+  if (st.status === 'playing' && last.type === 'clue' && !last.yes)
+    return L(`Non, mais c'est une piste de moins : ${nos} déjà écartée${nos > 1 ? 's' : ''}. Chaque « non » resserre aussi l'étau.`, `No, but that's one less option: ${nos} ruled out so far. Every "no" narrows it down too.`);
+  return best ? L('Elle monte à chaque piste qui resserre l’étau.', 'It rises with every clue that narrows it down.') : L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.');
 }
 function word(t) {
   if (t >= 100) return L('Trouvé', 'Found');
@@ -181,6 +191,9 @@ async function route({ quiet = false } = {}) {
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   stopDuel();
+  // la présentation sous la page n'appartient qu'à la page reçue au chargement
+  if (p !== SSR0.path) $('#about')?.remove();
+  document.title = p === SSR0.path ? SSR0.title : TITLE;
   try {
     if (p === '/') return await pageGame();
     const jd = p.match(/^\/jour\/(\d{4}-\d{2}-\d{2})$/);
@@ -189,7 +202,7 @@ async function route({ quiet = false } = {}) {
     if (p === '/collection') return await pageCollection();
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
-    if (p === '/regles') return pageRules();
+    if (p === '/regles' || p === '/joueurs') { if (!(await pageSsr(p))) throw new Error(L('Page indisponible, réessaie.', 'Page unavailable, try again.')); return; }
     if (p === '/ligues') return await pageLeagues();
     if (p === '/duel') return await pageDuel();
     const du = p.match(/^\/duel\/([A-Za-z0-9]{5})$/);
@@ -291,10 +304,10 @@ async function pageGame(day = null) {
           <div id="banner"></div>
           <div class="intro">
             <div class="kicker">${L('Le joueur mystère n°', 'Mystery player No.')} ${st.number}${st.past ? ` · ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}` : ''}</div>
-            <h1>${L('Es-tu un vrai FoOotix&nbsp;?', 'Are you a real FoOotix?')}</h1>
+            <h1>${L('Connais-tu vraiment le foot&nbsp;?', 'Do you really know football?')}</h1>
             <p>${st.past
               ? L(`Rattrapage du ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}&nbsp;: s'il est trouvé, il rejoint ton album, mais sans points ni série. <a href="/" data-link>Retour au joueur du jour</a>`, `Catching up on ${esc(fmtDate(st.day, { day: 'numeric', month: 'long' }))}: find him to add him to your album, but no points or streak. <a href="/" data-link>Back to today's player</a>`)
-              : L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'A player, a club, a city, a country, a position, a generation: every discovery fills in his card.')}</p>
+              : L('Un joueur, un club, une ville, un pays, un poste, une génération&nbsp;: chaque découverte remplit sa carte.', 'Name a player, a club, a country or a position. Every clue fills in his card.')}</p>
           </div>
           <div class="search" id="search">
             <form autocomplete="off">
@@ -316,6 +329,7 @@ async function pageGame(day = null) {
         <div id="reveal"></div>
         <details class="board-wrap" id="bw" open><summary id="bws" style="display:none"></summary><table class="board" id="board"></table></details>
         ${st.user ? '' : `<div class="nudge">${L('Tu joues sans compte. <a href="/compte" data-link>Crée un compte</a> pour garder ta série et remplir ton album, ta partie du jour sera conservée.', 'You are playing without an account. <a href="/compte" data-link>Create one</a> to keep your streak and fill your album. Today\'s game will be kept.')}</div>`}
+        ${adSlot('wide')}
       </div>
       <aside>
         <section id="facts"></section>
@@ -362,9 +376,10 @@ function fifaCard(c, rating, found, cls = '') {
       <div class="fut-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
       <div class="fut-name">${c.name ? esc(c.name) : '<span class="ph">• • • • • •</span>'}</div>
       <dl class="fut-stats">
-        <div><dt>NAT</dt><dd>${v(c.nat?.name)}</dd></div>
+        <div title="${L('Nationalité (passeport)', 'Nationality (passport)')}"><dt>NAT</dt><dd>${v(c.cit)}</dd></div>
+        <div title="${L('Sélection nationale (équipe pour laquelle il joue)', 'National team he plays for')}"><dt>${L('SÉL', 'TEAM')}</dt><dd>${v(c.nat?.name)}</dd></div>
         <div><dt>${L('NÉ', 'BORN')}</dt><dd>${v(c.born)}</dd></div>
-        <div><dt>CLUB</dt><dd title="${esc(c.club || '')}">${v(shortClub(c.club))}</dd></div>
+        <div><dt>CLUB</dt><dd>${v(c.club)}</dd></div>
         <div><dt>${L('CHAMP', 'LEAGUE')}</dt><dd>${v(c.leagues.join(' '))}</dd></div>
         <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
         <div><dt>${L('STATUT', 'STATUS')}</dt><dd>${v(c.status)}</dd></div>
@@ -395,7 +410,7 @@ function drawGame(lastN) {
   $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : L('À toi', 'Your turn')}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
     <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-    <div class="bestof">${best ? L('Elle monte à chaque piste qui resserre l’étau.', 'It rises with every clue that narrows it down.') : L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.')}</div>`;
+    <div class="bestof">${gaugeTip(st, best)}</div>`;
 
   // bannière de fin + page Wikipédia
   if (over) {
@@ -555,6 +570,54 @@ function resultText(st) {
   return `FoOotix.com ${L('n°', '#')}${st.number} ⚽\n${head}\n${rows.join('\n')}\n${L('Et toi, tu le trouves en combien ?', 'How many tries will you need?')}`;
 }
 
+// suggestions sous la barre, à partir de 3 lettres. Un choix dans la liste remplit la barre et l'envoie.
+const SUGG = new Map();
+function attachSuggest(input) {
+  const form = input.form;
+  const list = document.createElement('ul');
+  list.className = 'sugg'; list.hidden = true;
+  form.appendChild(list);
+  let items = [], sel = -1, seq = 0, timer;
+  const draw = () => {
+    list.hidden = !items.length;
+    list.innerHTML = items.map((it, i) => `<li class="${i === sel ? 'on' : ''}" data-i="${i}"><span>${esc(it.name || it.label)}</span><span class="k">${esc(it.kind || '')}</span></li>`).join('');
+  };
+  const pick = (it) => {
+    input.value = it.name || it.label;
+    input.dataset.pick = it.id; input.dataset.pickFor = input.value;
+    items = []; draw();
+    form.requestSubmit();
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (norm(q).length < 3) { items = []; draw(); return; }
+    const n = ++seq;
+    timer = setTimeout(async () => {
+      const k = norm(q);
+      if (!SUGG.has(k)) SUGG.set(k, fetchJSON('suggest?q=' + encodeURIComponent(q)).catch(() => []));
+      const r = await SUGG.get(k);
+      if (n !== seq || document.activeElement !== input) return;
+      items = r; sel = -1; draw();
+    }, 90);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === 'Escape') { items = []; draw(); }
+    else if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); pick(items[sel]); }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li');
+    if (li) { e.preventDefault(); pick(items[+li.dataset.i]); }
+  });
+  input.addEventListener('blur', () => setTimeout(() => { items = []; draw(); }, 120));
+  form.addEventListener('submit', () => { seq++; clearTimeout(timer); items = []; draw(); });
+}
+// l'identifiant de la suggestion choisie, si la barre contient toujours ce qu'elle a rempli
+const pickOf = (input, q) => (input.dataset.pickFor === q ? input.dataset.pick : undefined);
+
 function bindSearch() {
   const input = $('#q'), msg = $('#msg');
   input.addEventListener('input', () => { msg.textContent = ''; });
@@ -567,7 +630,7 @@ function bindSearch() {
     $('#search').classList.add('busy');
     $('#lastg').innerHTML = `<span class="lg-n">${L('Essai', 'Guess')} ${ST.guesses.length + 1}</span><b>${esc(q)}</b><span class="lg-wait"><i></i><i></i><i></i></span>`;
     try {
-      const st = await api('guess', { q, day: DAY });
+      const st = await api('guess', { q, id: pickOf(input, q), day: DAY });
       ST = st;
       input.value = '';
       msg.textContent = st.dup ? L(`Déjà proposé (essai n° ${st.dup}).`, `Already guessed (guess #${st.dup}).`) : '';
@@ -583,6 +646,7 @@ function bindSearch() {
       $('#search')?.classList.remove('busy');
     }
   });
+  attachSuggest(input);
   input.focus();
 }
 
@@ -660,8 +724,10 @@ function fallbackCard(p) {
 }
 
 async function pagePlayer(id) {
-  const [p, me] = await Promise.all([api('player/' + id), api('me')]);
-  renderWho(me.user, me);
+  // fiche pas encore débloquée pour ce joueur : la fiche écrite par le serveur
+  const [p, me] = await Promise.all([api('player/' + id).catch(async (e) => { if (await pageSsr(location.pathname)) return null; throw e; }), api('me').catch(() => null)]);
+  if (!p) return;
+  if (me) renderWho(me.user, me);
   const s = p.stats;
   const mine = p.mine
     ? p.mine.status === 'won' ? p.mine.late ? L(`Tu l'as rattrapé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You caught up on him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`) : L(`Tu l'as trouvé en <b>${p.mine.guesses}</b> essai${s_(p.mine.guesses)}, il est dans ton album.`, `You found him in <b>${p.mine.guesses}</b> ${p.mine.guesses > 1 ? 'tries' : 'try'}, he's in your album.`)
@@ -669,7 +735,7 @@ async function pagePlayer(id) {
     : L("Tu n'as pas joué ce jour-là.", "You didn't play that day.");
   const when = esc(fmtDate(p.day, { day: 'numeric', month: 'long', year: 'numeric' }));
   const head = `<div class="wa-crampon">${L(`Joueur mystère n° ${p.number} du ${when}.`, `Mystery player #${p.number}, ${when}.`)} ${mine} ${L(`${s.found} joueur${s_(s.found)} l'${s.found > 1 ? 'ont' : 'a'} trouvé.`, `${s.found} player${s_(s.found)} found him.`)}</div>`;
-  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/" data-link>${L('Jouer', 'Play')}</a></p>`;
+  app.innerHTML = `<div id="wp"></div><p style="margin-top:18px"><a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a> <a class="btn" href="/" data-link>${L('Jouer', 'Play')}</a></p>${adSlot('wide')}`;
   await showWiki($('#wp'), p, head);
 }
 
@@ -1011,9 +1077,9 @@ function duelLobby(err) {
         <div class="dl-vs">VS</div>
         <div class="dl-r"><span>?</span></div>
       </div>
-      <div class="kicker">${L('1 contre 1 · 90 secondes', '1 vs 1 · 90 seconds')}</div>
+      <div class="kicker">${L('1 contre 1 · sans chrono', '1 vs 1 · no timer')}</div>
       <h1>Duel</h1>
-      <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Personne au bout de 90 secondes ? Match nul.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. Nobody after 90 seconds? It’s a draw.')}</p>
+      <p class="dl-p">${L('Le même joueur mystère pour vous deux, pas celui du jour. Posez vos questions, proposez des noms : le premier qui le trouve gagne. Pas de chrono, mais celui qui abandonne perd.', 'The same mystery player for both of you, not the daily one. Ask questions, guess names: first to find him wins. No timer, but whoever gives up loses.')}</p>
       <div class="dl-act">
         <button class="btn solid big" id="d-rand">${L('Adversaire au hasard', 'Random opponent')}</button>
         <button class="btn big" id="d-friend">${L('Défier un pote', 'Challenge a friend')}</button>
@@ -1024,7 +1090,8 @@ function duelLobby(err) {
         <div class="dl-join-row"><input id="d-code" class="codein" maxlength="5" required autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABC23" aria-label="${L('Code du duel', 'Duel code')}"><button class="btn solid">${L('Rejoindre', 'Join')}</button></div>
         <p class="msg" id="d-jm">${err ? esc(err) : ''}</p>
       </form>
-    </div>`;
+    </div>
+    ${adSlot('wide')}`;
   $('#d-rand').onclick = async () => duelStart(await fetchJSON('duel/queue', {}), 'random');
   $('#d-friend').onclick = async () => duelStart(await fetchJSON('duel/friend', {}), 'friend');
   $('#d-bot').onclick = async () => duelStart(await fetchJSON('duel/bot', {}), 'bot');
@@ -1128,7 +1195,7 @@ function duelPlay(v) {
     <div class="duel">
       <div class="duel-top">
         <div class="dp me"><span>${L('Toi', 'You')}</span><b>${esc(v.me.name)}</b><div class="dbar"><i id="d-mybar"></i></div><small id="d-myn"></small></div>
-        <div class="dclock"><b id="d-clock">1:30</b><div class="dtime"><i id="d-time"></i></div></div>
+        <div class="dclock"><b>VS</b><button class="linkbtn" id="d-quit" type="button">${L('Abandonner', 'Give up')}</button></div>
         <div class="dp opp" id="d-opp"><span>${v.opp.bot ? L('Robot', 'Bot') : L('Adversaire', 'Opponent')}</span><b>${esc(v.opp.name)}</b><div class="dbar"><i id="d-oppbar"></i></div><small id="d-oppn"></small></div>
       </div>
       <div class="duel-go" id="d-go">GO&nbsp;!</div>
@@ -1152,25 +1219,19 @@ function duelPlay(v) {
     const q = input.value.trim();
     if (!q || DU.phase !== 'playing') return;
     try {
-      const r = await fetchJSON(`duel/${DU.id}/guess`, { q });
+      const r = await fetchJSON(`duel/${DU.id}/guess`, { q, id: pickOf(input, q) });
       input.value = '';
       msg.textContent = r.dup ? L(`Déjà proposé (essai n° ${r.dup}).`, `Already guessed (guess #${r.dup}).`) : '';
       duelUpdate(r);
       if (DU.phase === 'playing') input.focus();
     } catch (err) { msg.textContent = err.message; input.select(); }
   });
+  attachSuggest(input);
   input.focus();
-  // chrono : la barre fond, et vire au rouge dans les 10 dernières secondes
-  DU.clock = setInterval(() => {
-    const cur = DU.v;
-    const left = Math.max(0, cur.endAt - dnow());
-    const el = $('#d-clock');
-    if (!el) return;
-    const s = Math.ceil(left / 1000);
-    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    $('#d-time').style.width = (left / cur.duration) * 100 + '%';
-    $('.dclock').classList.toggle('hurry', s <= 10);
-  }, 100);
+  $('#d-quit').onclick = async () => {
+    if (!confirm(L('Abandonner le duel ? Ton adversaire gagnera.', 'Give up the duel? Your opponent will win.'))) return;
+    try { duelUpdate(await fetchJSON(`duel/${DU.id}/giveup`, {})); } catch (err) { msg.textContent = err.message; }
+  };
 }
 function duelRefresh(v) {
   const g = v.me.guesses;
@@ -1201,11 +1262,14 @@ function duelRefresh(v) {
 }
 function duelOverScreen(v) {
   clearInterval(DU.clock);
-  const word = v.result === 'win' ? L('Victoire', 'Victory') : v.result === 'lose' ? L('Défaite', 'Defeat') : L('Temps écoulé', "Time's up");
-  const secs = Math.round((v.endAt - v.startAt) / 1000);
-  const sub = v.result === 'win' ? L(`Trouvé en ${secs} secondes et ${v.me.guesses.length} essais.`, `Found in ${secs} seconds and ${v.me.guesses.length} guesses.`)
-    : v.result === 'lose' ? L(`${v.opp.name} l’a trouvé en ${secs} secondes.`, `${v.opp.name} found him in ${secs} seconds.`)
-      : L('Personne ne l’a trouvé : match nul.', 'Nobody found him: it’s a draw.');
+  const word = v.result === 'win' ? L('Victoire', 'Victory') : L('Défaite', 'Defeat');
+  const secs = Math.max(1, Math.round((v.endAt - v.startAt) / 1000));
+  const time = secs < 60 ? L(`${secs} secondes`, `${secs} seconds`) : L(`${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, '0')}`, `${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, '0')}`);
+  const n = v.me.guesses.length;
+  const sub = v.quit === 'opp' ? L(`${v.opp.name} a abandonné.`, `${v.opp.name} gave up.`)
+    : v.quit === 'me' ? L('Tu as abandonné.', 'You gave up.')
+      : v.result === 'win' ? L(`Trouvé en ${time} et ${n} essai${s_(n)}.`, `Found in ${time} and ${n} ${n > 1 ? 'guesses' : 'guess'}.`)
+        : L(`${v.opp.name} l’a trouvé en ${time}.`, `${v.opp.name} found him in ${time}.`);
   app.innerHTML = `<div class="duel-end r-${v.result}">
     <div class="de-word">${word}</div>
     <p class="de-sub">${esc(sub)}</p>
@@ -1230,27 +1294,23 @@ let RANK_TAB = 'points';
 async function pageRank() {
   const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
   renderWho(me.user, me);
-  const empty = (cols) => `<tr><td colspan="${cols}" class="muted">${L("Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.", "Nobody yet. Find today's player with an account to get things started.")}</td></tr>`;
-  const row = (x, cells) => `<tr class="${x.me ? 'me' : ''} ${x.gap ? 'gap' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ` <span class="muted">${L('(toi)', '(you)')}</span>` : ''}</td>${cells}</tr>`;
-  const podium = (list, val) => list.length ? `<div class="podium">${list.slice(0, 3).map((x, i) => `<div class="p${i + 1}"><div class="pl">${ord(i + 1)}</div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : '';
+  const empty = `<p class="muted">${L("Personne pour l'instant. Trouve le joueur du jour avec un compte pour ouvrir le bal.", "Nobody yet. Find today's player with an account to get things started.")}</p>`;
+  // le podium seulement ; pour les autres, juste leur rang (sans dire combien de joueurs sont classés)
+  const podium = (b, val) => b.top.length ? `<div class="podium">${b.top.map((x, i) => `<div class="p${i + 1} ${x.me ? 'me' : ''}"><div class="pl">${ord(i + 1)}</div><div class="nm">${esc(x.username)}</div><div class="pt">${val(x)}</div></div>`).join('')}</div>` : empty;
+  const mine = (b, val, none) => !me.user ? `<p class="myrank">${L('<a href="/compte" data-link>Crée un compte</a> pour être classé.', '<a href="/compte" data-link>Create an account</a> to be ranked.')}</p>`
+    : b.mine ? (b.mine.rank <= 3 ? `<p class="myrank">${L(`Tu es sur le podium : <b>${ord(b.mine.rank)}</b>.`, `You're on the podium: <b>${ord(b.mine.rank)}</b>.`)}</p>` : `<p class="myrank">${L(`Tu es <b>${ord(b.mine.rank)}</b>`, `You are <b>${ord(b.mine.rank)}</b>`)} · ${val(b.mine)}</p>`)
+      : `<p class="myrank">${none}</p>`;
   const tabs = {
-    points: () => `${podium(r.points, (x) => `${x.total} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r opt">${L("Aujourd'hui", 'Today')}</th><th class="r opt">${L('Trouvés', 'Found')}</th><th class="r opt">${L('Série', 'Streak')}</th></tr></thead><tbody>
-      ${r.points.length ? r.points.map((x) => row(x, `<td class="r big">${x.total}</td><td class="r opt">${x.today ? '+' + x.today : '–'}</td><td class="r opt">${x.found}</td><td class="r opt">${x.streak}</td>`)).join('') : empty(6)}</tbody></table>
+    points: () => `${podium(r.points, (x) => `${x.total} pts`)}${mine(r.points, (x) => `${x.total} pts`, L('Trouve un joueur du jour pour entrer au classement.', 'Find a daily player to enter the ranking.'))}
       <p class="rank-note">${L("Les points s'additionnent jour après jour. Moins tu poses de questions, plus tu marques, et un joueur peu connu rapporte jusqu'à deux fois plus qu'une star. Chaque indice retire 10 %.", 'Points add up day after day. The fewer questions you ask, the more you score, and a little-known player is worth up to twice as much as a star. Each hint costs 10%.')}</p>`,
-    today: () => `${podium(r.today, (x) => `${x.pts} pts`)}
-      <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r">${L('Essais', 'Guesses')}</th></tr></thead><tbody>
-      ${r.today.length ? r.today.map((x) => row(x, `<td class="r big">${x.pts}</td><td class="r">${x.n}</td>`)).join('') : empty(4)}</tbody></table>`,
-    streaks: () => `${podium(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`)}
-      <div class="rank-wrap"><table class="rank"><caption>${L('Séries en cours', 'Current streaks')}</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
-      ${r.streaks.length ? r.streaks.map((x) => row(x, `<td class="r big">${x.streak}</td>`)).join('') : empty(3)}</tbody></table>
-      <table class="rank"><caption>Records</caption><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">${L('Jours', 'Days')}</th></tr></thead><tbody>
-      ${r.records.length ? r.records.map((x) => row(x, `<td class="r">${x.best}</td>`)).join('') : empty(3)}</tbody></table></div>
+    today: () => `${podium(r.today, (x) => `${x.pts} pts · ${x.n} ${L('essai', 'guess')}${x.n > 1 ? L('s', 'es') : ''}`)}${mine(r.today, (x) => `${x.pts} pts`, L("Tu n'as pas encore trouvé le joueur du jour.", "You haven't found today's player yet."))}`,
+    streaks: () => `<h3 class="rank-h">${L('Séries en cours', 'Current streaks')}</h3>${podium(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`)}${mine(r.streaks, (x) => `${x.streak} ${L('jour', 'day')}${s_(x.streak)}`, L("Pas de série en cours.", 'No current streak.'))}
+      <h3 class="rank-h">Records</h3>${podium(r.records, (x) => `${x.best} ${L('jour', 'day')}${s_(x.best)}`)}${mine(r.records, (x) => `${x.best} ${L('jour', 'day')}${s_(x.best)}`, L('Pas encore de record.', 'No record yet.'))}
       <p class="rank-note">${L("Une série, c'est le nombre de jours d'affilée où tu as trouvé le joueur. Un jour sans, ou un abandon, et elle repart de zéro.", 'A streak is the number of days in a row you found the player. Miss a day, or give up, and it resets to zero.')}</p>`,
   };
   const names = { points: L('Général', 'Overall'), today: L("Aujourd'hui", 'Today'), streaks: L('Séries', 'Streaks') };
   app.innerHTML = `
-    <div class="pagehead"><div><div class="kicker">${L(`${r.players} joueur${s_(r.players)} classé${s_(r.players)}`, `${r.players} ranked player${s_(r.players)}`)}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
+    <div class="pagehead"><div><div class="kicker">${L('Les meilleurs FoOotix', 'The best FoOotix players')}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div id="tab"></div>
     ${adSlot('wide')}`;
@@ -1310,45 +1370,19 @@ async function pageAuth() {
 }
 
 // ——— Page : règles ———
-function pageRules() {
-  api('me').then((m) => renderWho(m.user, m));
-  app.innerHTML = EN ? `
-    <div class="pagehead"><div><div class="kicker">How it works</div><h1>Rules</h1></div></div>
-    <div class="prose">
-      <p>Every day at midnight (Paris time), one footballer is drawn from 600 internationals, legends and current players, who all spent at least three seasons in the Premier League, LaLiga, Serie A, Bundesliga or Ligue 1. The draw is the same for everyone, and a player doesn't come back until almost all the others have been drawn.</p>
-      <h2>Points</h2>
-      <p>Finding the player earns points: 100 if you get him on the first try, then a little less with each guess (never below 10). Each hint you ask for costs 10%. Rarity multiplies the total: a star like Zidane counts ×1, a little-known player up to ×2. Giving up earns nothing. Points add up day after day in the overall ranking.</p>
-      <h2>The card</h2>
-      <p>At first, the mystery player's card is empty: a silhouette and question marks. Everything you discover goes on it: nationality, position, year or decade of birth, a club, his leagues, whether he still plays, whether he won the Ballon d'Or. The number in the top left corner is your temperature.</p>
-      <h2>Two ways to search</h2>
-      <p><b>Guess a player.</b> You see what your player has in common with the mystery one: same nationality, same or nearby position, teammates at a club, shared clubs or leagues. An arrow tells you whether the mystery player is older or younger.</p>
-      <p><b>Ask a question.</b> Type a league, a club, a country, a continent, a position, a birth decade, “Ballon d'Or” or “retired”. You get a yes or no, stored under “What you know”.</p>
-      <h2>Temperature</h2>
-      <p>It measures everything you know about the mystery player. At the start, 600 players are possible: you're at 0°. Every yes, every no, every common point with a guessed player rules some out. When about ten are left, you're around 65°; at 99°, only one is left, you just have to name him. 100° means you won.</p>
-      <h2>Hints</h2>
-      <p>Every 8 guesses, you can reveal a hint: position, generation, continent, nationality, a club, then his initials.</p>
-      <h2>Your album and your streak</h2>
-      <p>Every player you find joins your album, and his Wikipedia page shows up right away. Missed days stay as empty slots, you can't replay a past date. Your streak counts the days in a row you found the player. Giving up resets it.</p>
-      <p class="muted" style="font-size:14px">Players and their careers come from Wikidata, updated daily. Pages come from Wikipedia (CC BY-SA).</p>
-    </div>` : `
-    <div class="pagehead"><div><div class="kicker">Mode d'emploi</div><h1>Règles</h1></div></div>
-    <div class="prose">
-      <p>Chaque jour à minuit (heure de Paris), un footballeur est tiré au sort parmi 600 internationaux, légendes ou joueurs actuels, qui ont tous passé au moins trois saisons en Ligue 1, Premier League, Bundesliga, Liga ou Serie A. Le tirage est le même pour tout le monde, et un joueur ne revient pas avant que presque tous les autres soient passés.</p>
-      <h2>Les points</h2>
-      <p>Trouver le joueur rapporte des points&nbsp;: 100 si tu le trouves du premier coup, puis un peu moins à chaque essai (jamais moins de 10). Chaque indice demandé retire 10&nbsp;%. Enfin, la rareté multiplie le tout&nbsp;: une star comme Zidane compte ×1, un joueur méconnu jusqu'à ×2. Abandonner ne rapporte rien. Les points s'additionnent jour après jour dans le classement général.</p>
-      <h2>La carte</h2>
-      <p>Au départ, la carte du joueur mystère est vide&nbsp;: une silhouette et des points d'interrogation. Chaque chose que tu découvres s'y inscrit&nbsp;: nationalité, poste, année ou décennie de naissance, un club, ses championnats, s'il joue encore, s'il a eu le Ballon d'or. Le chiffre en haut à gauche, c'est ta température.</p>
-      <h2>Deux façons de chercher</h2>
-      <p><b>Propose un joueur.</b> Tu vois ce que ton joueur a en commun avec le mystère&nbsp;: même nationalité, même poste ou poste voisin, coéquipiers dans un club, clubs ou championnats communs. Une flèche te dit si le mystère est plus âgé ou plus jeune.</p>
-      <p><b>Pose une question.</b> Tape un championnat, un club, un pays, un continent, un poste, une décennie de naissance, « Ballon d'or » ou « retraité ». Réponse oui ou non, rangée dans « Ce que tu sais ».</p>
-      <h2>La température</h2>
-      <p>Elle mesure tout ce que tu sais sur le mystère. Au départ, 600 joueurs sont possibles&nbsp;: tu es à 0°. Chaque oui, chaque non, chaque point commun avec un joueur proposé en élimine. Quand il n'en reste qu'une dizaine, tu es vers 65°&nbsp;; à 99°, il n'en reste qu'un, à toi de trouver son nom. 100°, c'est gagné.</p>
-      <h2>Indices</h2>
-      <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
-      <h2>Ton album et ta série</h2>
-      <p>Chaque joueur trouvé rejoint ton album, et sa page Wikipédia s'affiche aussitôt. Les jours ratés restent des cases vides, impossible de rejouer une date passée. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
-      <p class="muted" style="font-size:14px">Les joueurs et leurs carrières viennent de Wikidata, mis à jour chaque jour. Les pages viennent de Wikipédia (CC BY-SA).</p>
-    </div>`;
+// règles, archives, fiches : pages écrites par le serveur. On garde celle reçue au chargement, sinon on la redemande.
+const TITLE = L('FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer');
+async function pageSsr(p) {
+  api('me').then((m) => renderWho(m.user, m), () => {});
+  if (p === SSR0.path && SSR0.html.trim()) { app.innerHTML = SSR0.html + adSlot('wide'); document.title = SSR0.title; return true; }
+  const r = await fetch(p, { headers: { Accept: 'text/html' } }).catch(() => null);
+  if (!r || !r.ok) return false;
+  const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+  const m = doc.querySelector('#app');
+  if (!m || !m.innerHTML.trim() || p !== location.pathname) return false;
+  app.innerHTML = m.innerHTML + adSlot('wide');
+  document.title = doc.title;
+  return true;
 }
 
 // ——— Pages : mentions légales et confidentialité ———

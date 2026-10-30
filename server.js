@@ -160,6 +160,7 @@ async function getGame(req, day, create) {
   }
   if (!g) return g;
   g.guesses = JSON.parse(g.guesses);
+  g.hintList = g.hint_list ? JSON.parse(g.hint_list) : G.hintList(g.hints);
   if (GAMES.size > 20000) GAMES.clear();
   GAMES.set(key, g);
   return g;
@@ -238,7 +239,7 @@ async function state(req, day = G.today(), pending = null) {
   const past = day !== today;
   const idx = G.dayIndex(day);
   const target = G.playerOfDay(day);
-  const g = (await getGame(req, day, false)) || { status: 'playing', guesses: [], hints: 0 };
+  const g = (await getGame(req, day, false)) || { status: 'playing', guesses: [], hints: 0, hintList: [] };
   const n = g.guesses.length;
   const over = g.status !== 'playing';
   const yIdx = G.dayIndex(today) - 1;
@@ -257,11 +258,11 @@ async function state(req, day = G.today(), pending = null) {
     day, number: idx + 1, past, late: g.status === 'late',
     status: g.status === 'late' ? 'won' : g.status, guesses: g.guesses,
     best: g.guesses.reduce((m, x) => Math.max(m, x.temp), 0),
-    hints: Array.from({ length: g.hints }, (_, k) => G.hintText(target, k)),
-    hintReady: !over && g.hints < G.MAX_HINTS && n >= (g.hints + 1) * G.HINT_EVERY,
-    nextHintAt: g.hints < G.MAX_HINTS ? (g.hints + 1) * G.HINT_EVERY : null,
+    hints: g.hintList.map((h) => G.hintText(target, h)),
+    hintReady: !over && g.hints < G.MAX_HINTS && n >= G.hintAt(g.hints),
+    nextHintAt: g.hints < G.MAX_HINTS ? G.hintAt(g.hints) : null,
     answer: over ? G.card(target) : null,
-    card: G.revealCard(target, g.guesses, g.hints, over),
+    card: G.revealCard(target, g.guesses, g.hintList, over),
     rank, stats,
     score: g.status === 'won' ? { ...G.score(target, n, g.hints), points: g.points ?? G.score(target, n, g.hints).points } : null,
     yesterday: yesterday ? { day: G.dayFromIndex(yIdx), id: yOpen ? yesterday.id : null, name: yOpen ? yesterday.name : null, stats: yStats } : null,
@@ -283,8 +284,8 @@ app.get('/api/health', A(async (req, res) => {
 app.get('/api/today', A(async (req, res) => res.json(await state(req, dayOf(req)))));
 
 // une proposition (joueur ou question) face au joueur à trouver : la ligne ajoutée au tableau des essais
-function judge(target, guesses, q) {
-  const r = G.resolve({ q });
+function judge(target, guesses, q, id) {
+  const r = G.resolve({ q, id });
   if (!r) return { error: `Je ne trouve rien pour « ${q.trim()} ». Essaie un joueur, un club, une ville, un pays, un poste, une génération…` };
   if (r.error) return { error: r.error };
   const key = r.type === 'player' ? r.player.id : r.clue.id;
@@ -305,15 +306,20 @@ function judge(target, guesses, q) {
   return { entry, won: r.type === 'player' && r.player.id === target.id };
 }
 
+app.get('/api/suggest', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json(G.suggest(String(req.query.q || '').slice(0, 40)));
+});
 app.post('/api/guess', A(async (req, res) => {
   const day = dayOf(req);
   const past = day !== G.today();
   const target = G.playerOfDay(day);
   const q = String((req.body || {}).q || '').slice(0, 80);
-  if (!G.resolve({ q })) return res.status(400).json({ error: judge(target, [], q).error });
+  const id = String((req.body || {}).id || '').slice(0, 40);
+  if (!G.resolve({ q, id })) return res.status(400).json({ error: judge(target, [], q).error });
   const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: past ? 'Cette partie est terminée.' : 'La partie du jour est terminée.' });
-  const j = judge(target, g.guesses, q);
+  const j = judge(target, g.guesses, q, id);
   if (j.error) return res.status(400).json({ error: j.error });
   if (j.dup) return res.json({ ...(await state(req, day)), dup: j.dup });
   const { entry, won } = j;
@@ -333,10 +339,14 @@ app.post('/api/hint', A(async (req, res) => {
   const day = dayOf(req);
   const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'Partie terminée.' });
-  if (g.hints >= G.MAX_HINTS || g.guesses.length < (g.hints + 1) * G.HINT_EVERY)
+  if (g.hints >= G.MAX_HINTS || g.guesses.length < G.hintAt(g.hints))
     return res.status(400).json({ error: "Pas encore d'indice disponible." });
-  g.hints++;
-  res.json(await state(req, day, saved(req, db.run('UPDATE games SET hints = ? WHERE id = ?', g.hints, g.id))));
+  // indice intelligent : jamais une info que le joueur a déjà trouvée
+  const h = G.nextHint(G.playerOfDay(day), g.guesses, g.hintList);
+  if (!h) return res.status(400).json({ error: 'Tu as déjà trouvé tout ce que les indices pourraient te dire.' });
+  g.hintList = [...g.hintList, h];
+  g.hints = g.hintList.length;
+  res.json(await state(req, day, saved(req, db.run('UPDATE games SET hints = ?, hint_list = ? WHERE id = ?', g.hints, JSON.stringify(g.hintList), g.id))));
 }));
 
 app.post('/api/giveup', A(async (req, res) => {
@@ -437,8 +447,8 @@ app.post('/api/pack', A(async (req, res) => {
 }));
 
 // ——— Duel : deux joueurs, le même footballeur à trouver, le premier qui trouve gagne ———
-// Tout vit en mémoire (une seule machine) : un duel dure 90 s et disparaît 10 min après.
-const DUEL_MS = 90 * 1000;
+// Tout vit en mémoire (une seule machine). Pas de chrono : le duel dure jusqu'à ce que l'un trouve,
+// ou qu'un joueur abandonne. Un duel sans nouvelle depuis 30 min disparaît.
 const DUEL_INTRO = 5000; // présentation « VS » puis 3, 2, 1
 const DUELS = new Map();
 let QUEUE = null; // joueur qui attend un adversaire au hasard : { key, name, t, duel }
@@ -447,29 +457,28 @@ const meKey = (req) => (req.user ? 'u' + req.user.id : 'a' + req.aid);
 const meName = (req) => (req.user ? req.user.username : 'Invité ' + parseInt(req.aid.slice(0, 4), 16) % 1000);
 setInterval(() => {
   const now = Date.now();
-  for (const [id, d] of DUELS) if (now - d.created > 10 * 60 * 1000) DUELS.delete(id);
+  for (const [id, d] of DUELS) if (now - (d.seen || d.created) > 30 * 60 * 1000) DUELS.delete(id);
   for (const [c, id] of ROOMS) if (!DUELS.has(id)) ROOMS.delete(c);
   if (QUEUE && now - QUEUE.t > 30000) QUEUE = null;
 }, 60000).unref();
 
 function newDuel(a, code) {
   const id = crypto.randomBytes(8).toString('hex');
-  const d = { id, code, created: Date.now(), target: G.duelPick((n) => crypto.randomInt(n)), players: [{ ...a, guesses: [] }], startAt: null, endAt: null, winner: null };
+  const d = { id, code, created: Date.now(), target: G.duelPick((n) => crypto.randomInt(n)), players: [{ ...a, guesses: [] }], startAt: null, winner: null };
   DUELS.set(id, d);
   return d;
 }
 function startDuel(d, b) {
   d.players.push({ ...b, guesses: [] });
   d.startAt = Date.now() + DUEL_INTRO;
-  d.endAt = d.startAt + DUEL_MS;
   if (b.bot) d.bot = botPlan();
 }
-// le robot : quelques essais qui chauffent peu à peu, et il trouve (ou pas) au bout d'un moment
+// le robot : quelques essais qui chauffent peu à peu, et il finit par trouver (entre 40 s et 3 min)
 function botPlan() {
-  const findAt = crypto.randomInt(100) < 60 ? 30000 + crypto.randomInt(55000) : null;
+  const findAt = 40000 + crypto.randomInt(140000);
   const steps = [];
   let t = 0, temp = 0;
-  const end = findAt || DUEL_MS;
+  const end = findAt;
   while ((t += 5000 + crypto.randomInt(6000)) < end) {
     if (crypto.randomInt(100) < 55) temp = Math.min(92, temp + 6 + crypto.randomInt(18));
     steps.push({ t, temp });
@@ -478,8 +487,8 @@ function botPlan() {
 }
 function duelOver(d, now = Date.now()) {
   if (d.winner) return true;
-  if (d.bot && d.bot.findAt && now >= d.startAt + d.bot.findAt) { d.winner = 'bot'; d.wonAt = d.startAt + d.bot.findAt; return true; }
-  return d.endAt && now >= d.endAt;
+  if (d.bot && now >= d.startAt + d.bot.findAt) { d.winner = 'bot'; d.wonAt = d.startAt + d.bot.findAt; return true; }
+  return false;
 }
 function duelView(d, key) {
   const now = Date.now();
@@ -493,9 +502,9 @@ function duelView(d, key) {
   } else if (opp) {
     oppInfo = { name: opp.name, n: opp.guesses.length, temp: opp.guesses.reduce((m, g) => Math.max(m, g.temp), 0) };
   }
-  const result = !over ? null : !d.winner ? 'draw' : d.winner === key ? 'win' : 'lose';
+  const result = !over ? null : d.winner === key ? 'win' : 'lose';
   return {
-    id: d.id, code: d.code, now, startAt: d.startAt, endAt: d.winner ? d.wonAt : d.endAt, duration: DUEL_MS,
+    id: d.id, code: d.code, now, startAt: d.startAt, endAt: d.wonAt || null, quit: d.quit ? (d.quit === key ? 'me' : 'opp') : null,
     phase: !d.startAt ? 'waiting' : now < d.startAt ? 'intro' : over ? 'over' : 'playing',
     me: me ? { name: me.name, guesses: me.guesses } : null,
     opp: oppInfo, result,
@@ -551,10 +560,24 @@ app.post('/api/duel/:id/leave', A(async (req, res) => {
   if (d && !d.startAt) { DUELS.delete(d.id); if (QUEUE && QUEUE.duel === d.id) QUEUE = null; if (d.code) ROOMS.delete(d.code); }
   res.json({ ok: true });
 }));
+// abandonner : l'adversaire gagne
+app.post('/api/duel/:id/giveup', A(async (req, res) => {
+  const d = myDuel(req);
+  if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
+  const key = meKey(req);
+  if (d.startAt && !duelOver(d)) {
+    const opp = d.players.find((p) => p.key !== key);
+    d.winner = opp ? opp.key : null;
+    d.wonAt = Date.now();
+    d.quit = key;
+  }
+  res.json(duelView(d, key));
+}));
 app.get('/api/duel/:id', A(async (req, res) => {
   const d = myDuel(req);
   if (!d) return res.status(404).json({ error: 'Duel introuvable.' });
   if (QUEUE && QUEUE.duel === d.id) QUEUE.t = Date.now(); // toujours là
+  d.seen = Date.now();
   res.set('Cache-Control', 'no-store');
   res.json(duelView(d, meKey(req)));
 }));
@@ -565,7 +588,7 @@ app.post('/api/duel/:id/guess', A(async (req, res) => {
   if (!d.startAt || now < d.startAt) return res.status(400).json({ error: 'Le duel n’a pas encore commencé.' });
   if (duelOver(d, now)) return res.json(duelView(d, meKey(req)));
   const me = d.players.find((p) => p.key === meKey(req));
-  const j = judge(d.target, me.guesses, String((req.body || {}).q || '').slice(0, 80));
+  const j = judge(d.target, me.guesses, String((req.body || {}).q || '').slice(0, 80), String((req.body || {}).id || '').slice(0, 40));
   if (j.error) return res.status(400).json({ error: j.error });
   if (j.dup) return res.json({ ...duelView(d, me.key), dup: j.dup });
   me.guesses.push(j.entry);
@@ -595,17 +618,16 @@ app.get('/api/leaderboard', A(async (req, res) => {
   const { rows, today: todayRows } = await board(day);
   const me = req.user ? req.user.id : null;
   const ranked = (list) => list.map((x, i) => ({ ...x, rank: i + 1, me: x.id === me }));
-  const top = (list, n) => {
-    const out = list.slice(0, n);
+  // seulement le podium, et ton propre rang : le nombre de joueurs classés n'est jamais montré
+  const top = (list) => {
     const mine = list.find((x) => x.me);
-    if (mine && mine.rank > n) out.push({ ...mine, gap: true });
-    return out.map(({ id, ...x }) => x);
+    return { top: list.slice(0, 3).map(({ id, ...x }) => x), mine: mine ? (({ id, ...x }) => x)(mine) : null };
   };
   const points = ranked([...rows].sort((a, b) => b.total - a.total || b.found - a.found || a.username.localeCompare(b.username)));
   const streaks = ranked(rows.filter((x) => x.streak > 0).sort((a, b) => b.streak - a.streak || b.total - a.total));
   const records = ranked([...rows].sort((a, b) => b.best - a.best || b.total - a.total));
   const today = ranked(todayRows);
-  res.json({ points: top(points, 50), streaks: top(streaks, 20), records: top(records, 10), today: top(today, 20), players: rows.length });
+  res.json({ points: top(points), streaks: top(streaks), records: top(records), today: top(today) });
 }));
 
 // ——— Ligues entre potes ———
@@ -798,11 +820,12 @@ const indexFor = (lang) => {
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.', 'A footballer to guess every day: legends and current players from the Premier League, LaLiga, Serie A, Bundesliga and Ligue 1.'],
-      ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'A footballer to guess every day. Find him in fewer tries than your friends.'],
+      ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'One mystery footballer a day. Can you guess him in fewer tries than your friends?'],
+      ['content="https://foootix.com/og.png"', 'content="https://foootix.com/og-en.png"'],
       ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'],
       ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
       ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
-      ['>Règles du jeu<', '>How to play<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
+      ['>Règles du jeu<', '>How to play<'], ['>Archives<', '>Archive<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
       ['hreflang="en" lang="en">English version<', 'hreflang="fr" lang="fr">Version française<'],
     ]) h = h.split(fr).join(en);
   }
@@ -810,7 +833,7 @@ const indexFor = (lang) => {
 };
 app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
 app.get('/sitemap.xml', (req, res) => {
-  const pages = ['/', '/regles', '/classement', '/album', '/collection', '/ligues'];
+  const pages = ['/', '/en', '/regles', '/joueurs', '/classement', '/collection', '/duel'];
   for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
 });
@@ -822,11 +845,11 @@ require('./src/stats')({ app, db, G, A, slowDown, DOMAIN });
 
 // Fichiers du site compressés une fois pour toutes au démarrage (au lieu de l'être à chaque visite)
 const zlib = require('zlib');
-function packed(body, type, cache) {
+function packed(body, type, cache, quality = 11) {
   const raw = Buffer.from(body);
   return {
     type, cache, raw,
-    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }),
+    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: quality } }),
     gz: zlib.gzipSync(raw, { level: 9 }),
   };
 }
@@ -842,19 +865,70 @@ const ASSETS = {
   '/app.js': packed(fs.readFileSync(path.join(PUB, 'app.js')), 'application/javascript; charset=utf-8', ASSET_CACHE),
   '/style.css': packed(fs.readFileSync(path.join(PUB, 'style.css')), 'text/css; charset=utf-8', ASSET_CACHE),
 };
-const PAGES = { fr: packed(indexFor('fr'), 'text/html; charset=utf-8', 'no-cache'), en: packed(indexFor('en'), 'text/html; charset=utf-8', 'no-cache') };
+const BASE = { fr: indexFor('fr'), en: indexFor('en') };
+const render = require('./src/pages')({ G, dayStats });
+// chaque page arrive avec son vrai contenu, son titre et son adresse canonique (gardée 10 min en mémoire)
+const HTML = new Map();
+const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+async function pageFor(pathName, lang) {
+  const key = `${lang}:${pathName}:${G.today()}`;
+  const c = HTML.get(key);
+  if (c && Date.now() - c.t < 600000) return c.v;
+  // /en : la page d'accueil en anglais, pour les liens partagés à l'étranger (aperçu et texte en anglais)
+  const r = await render(pathName === '/en' ? '/' : pathName, lang);
+  let h = BASE[lang];
+  const url = `https://${DOMAIN}${pathName}`;
+  h = h.replace('<link rel="canonical" href="https://foootix.com/">', `<link rel="canonical" href="${attr(url)}">`)
+    .replace('<meta property="og:url" content="https://foootix.com/">', `<meta property="og:url" content="${attr(url)}">`);
+  if (pathName === '/en') h = h.replace('</head>', '<script>history.replaceState(null, \'\', \'/\' + location.search);</script>\n</head>');
+  if (/^\/(compte|duel\/|ligue\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
+  if (r && r.title) h = h.replace(/<title>[^<]*<\/title>/, `<title>${attr(r.title)}</title>`).replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(r.title)}`);
+  if (r && r.desc) h = h.replace(/(<meta name="description" content=")[^"]*/, `$1${attr(r.desc)}`).replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(r.desc)}`);
+  h = h.replace('<main id="app"></main>', () => `<main id="app">${(r && r.main) || ''}</main>${r && r.about ? `\n<section class="about" id="about">${r.about}</section>` : ''}`);
+  const v = { ...packed(h, 'text/html; charset=utf-8', 'no-cache', 5), missing: !r };
+  if (HTML.size > 3000) HTML.clear();
+  HTML.set(key, { t: Date.now(), v });
+  return v;
+}
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
+app.get('/en', A(async (req, res) => {
+  res.cookie('lang', 'en', { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax', secure: PROD });
+  res.set('Vary', 'Accept-Encoding');
+  sendPacked(req, res, await pageFor('/en', 'en'));
+}));
 
-app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id'], (req, res) => {
+app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
-  sendPacked(req, res, PAGES[I18N.pick(req)]);
+  const page = await pageFor(req.path === '/index.html' ? '/' : req.path, I18N.pick(req));
+  if (page.missing) res.status(404);
+  sendPacked(req, res, page);
   // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
   // pendant que le navigateur charge la page, pour que les premières données arrivent sans attente.
   // Pas pour UptimeRobot et les robots, sinon la base ne dormirait jamais (quota gratuit).
   if (!/bot|crawl|spider|monitor|uptime|preview|curl|wget|headless/i.test(req.get('user-agent') || '')) db.get('SELECT 1 x').catch(() => {});
-});
+}));
 app.use(express.static(PUB, { maxAge: PROD ? '30d' : 0, index: false }));
 
 const port = process.env.PORT || 3000;
-db.ready.then(() => app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`)))
+// Les tirages sont enregistrés en base dès qu'un jour commence : une mise à jour des fiches
+// (ou de la règle des joueurs décédés) ne peut jamais changer le joueur d'un jour déjà commencé.
+async function lockDraws() {
+  const load = async () => {
+    const rows = await db.all('SELECT day, player_id FROM draws');
+    G.fixDraws(Object.fromEntries(rows.map((r) => [r.day, r.player_id])));
+    return new Set(rows.map((r) => r.day));
+  };
+  const have = await load();
+  let added = 0;
+  for (let i = 0; i <= G.dayIndex(G.today()); i++) {
+    const d = G.dayFromIndex(i);
+    if (have.has(d)) continue;
+    await db.run('INSERT INTO draws (day, player_id) VALUES (?, ?) ON CONFLICT DO NOTHING', d, G.playerOfDay(d).id);
+    added++;
+  }
+  if (added) await load();
+}
+setInterval(() => lockDraws().catch((e) => console.warn('Tirages :', e.message)), 5 * 60 * 1000).unref();
+db.ready.then(() => lockDraws().catch((e) => console.warn('Tirages :', e.message)))
+  .then(() => app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`)))
   .catch((e) => { console.error('Base de données injoignable :', e.message); process.exit(1); });

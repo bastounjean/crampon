@@ -35,7 +35,7 @@ const POS = {
 const POS_SHORT = { GB: 'GK', DEF: 'DEF', MIL: 'MID', ATT: 'FWD' };
 const POS_TERMS = { GB: ['goalkeeper', 'keeper', 'goalie', 'gk'], DEF: ['defender', 'defence', 'centre back', 'center back', 'full back'], MIL: ['midfielder', 'midfield'], ATT: ['forward', 'striker', 'attacker', 'winger'] };
 const LEAGUE_TERMS = { L1: ['french league', 'france league'], PL: ['english league', 'epl'], BL: ['german league'], LL: ['spanish league', 'laliga'], SA: ['italian league'] };
-const KIND = { Championnat: 'League', 'Nationalité': 'Nationality', Continent: 'Continent', Club: 'Club', Poste: 'Position', 'Génération': 'Generation', 'Palmarès': 'Honours', 'Carrière': 'Career' };
+const KIND = { Championnat: 'League', 'Nationalité': 'Nationality', 'Sélection': 'National team', Continent: 'Continent', Club: 'Club', Poste: 'Position', 'Génération': 'Generation', 'Palmarès': 'Honours', 'Carrière': 'Career' };
 
 // noms de clubs et de villes à la française → nom courant en anglais
 const WORDS = [
@@ -61,6 +61,7 @@ const country = (s) => (COUNTRY[s] ? COUNTRY[s][0] : s);
 const PATTERNS = [
   [/^Trouvé !$/, () => 'Got it!'],
   [/^Même nationalité \((.+)\)$/, (m) => `Same nationality (${country(m[1])})`],
+  [/^Même sélection \((.+)\)$/, (m) => `Same national team (${country(m[1])})`],
   [/^Même continent$/, () => 'Same continent'],
   [/^Même poste$/, () => 'Same position'],
   [/^Poste voisin$/, () => 'Nearby position'],
@@ -73,6 +74,7 @@ const PATTERNS = [
   [/^Né dans les années (\d+)$/, (m) => `Born in the ${m[1]}s`],
   [/^Continent : (.+)$/, (m) => `Continent: ${CONT[m[1]] || (m[1] === 'inconnu' ? 'unknown' : m[1])}`],
   [/^Nationalité : (.+)$/, (m) => `Nationality: ${country(m[1])}`],
+  [/^Sélection : (.+)$/, (m) => `National team: ${country(m[1])}`],
   [/^A joué à (.+)$/, (m) => `Played for ${place(m[1])}`],
   [/^Initiales : (.+)$/, (m) => `Initials: ${m[1]}`],
   [/^Anecdote : il a connu (\d+) clubs, dont (.+) en dernier\.$/, (m) => `Fun fact: he played for ${m[1]} clubs, the last one being ${place(m[2])}.`],
@@ -90,6 +92,7 @@ const PATTERNS = [
   [/^La partie du jour est terminée\.$/, () => "Today's game is over."],
   [/^Partie terminée\.$/, () => 'Game over.'],
   [/^Pas encore d'indice disponible\.$/, () => 'No hint available yet.'],
+  [/^Tu as déjà trouvé tout ce que les indices pourraient te dire\.$/, () => 'You already know everything the hints could tell you.'],
   [/^Fiche pas encore débloquée\.$/, () => 'This player is not unlocked yet.'],
   [/^Petit souci de serveur, réessaie dans un instant\.$/, () => 'Small server hiccup, try again in a moment.'],
   [/^Trop de requêtes, attends une minute\.$/, () => 'Too many requests, wait a minute.'],
@@ -147,6 +150,7 @@ function deep(v, key) {
 function extraTerms(clueId, label) {
   const [kind, v] = clueId.split(/:(.+)/);
   if (kind === 'nat') { const c = COUNTRY[label]; return c ? c : []; }
+  if (kind === 'sel') { const c = COUNTRY[label.replace(/^Sélection : /, '')]; return c ? [`${c[0]} national team`, `plays for ${c[0]}`, ...c.slice(1).map((a) => `${a} international`)] : []; }
   if (kind === 'cont') return [CONT[v], ...(CONT_ADJ[v] || [])].filter(Boolean);
   if (kind === 'pos') return POS_TERMS[v] || [];
   if (kind === 'lg') return LEAGUE_TERMS[v] || [];

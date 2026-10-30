@@ -23,17 +23,31 @@ let IDS = [];
 let PLAYERS = [];
 let EXTRA = []; // joueurs qu'on peut proposer mais qui ne tombent jamais (src/data/extra.json)
 let SINCE = {}; // joueurs ajoutés après coup : ils ne peuvent tomber qu'à partir de cette date
+let FIXED = {}; // tirages déjà faits (enregistrés en base) : ils ne changent plus, même si les fiches évoluent
+// Joueurs décédés : ils ne tombent plus comme joueur du jour ni en duel à partir de cette date.
+// La date de décès vient de Wikidata (champ died) ; cette liste couvre ceux qu'on connaît déjà.
+const NO_DEAD_FROM = '2026-10-30';
+const DECEASED = new Set(['Q17163', 'Q4457', 'Q482931', 'Q43744', 'Q164546', 'Q164521', 'Q171583', 'Q178628', 'Q192131', 'Q189587', 'Q192749', 'Q213879',
+  'Q276026', 'Q216140', 'Q191492', 'Q220700', 'Q123118', 'Q233565', 'Q366783', 'Q17515', 'Q19518278', 'Q276399', 'Q159045', 'Q295307']);
+const isDead = (p) => !!p && (DECEASED.has(p.id) || !!p.died);
 const BY_ID = {}; // toutes les fiches déjà vues, même si elles sortent de la liste
 let CLUES = [], CLUE_BY_ID = {}, LAST = {}, CLUB_NAMES = {};
 
+// pays sans code ISO dans Wikidata (le drapeau resterait vide)
+const ISO = { Q55: 'nl', Q713750: 'de', Q33946: 'cz' };
+const withIso = (list) => (list || []).map((n) => (n.iso || !ISO[n.code] ? n : { ...n, iso: ISO[n.code] }));
 function prepare(raw) {
   const p = { ...raw };
+  p.nat = withIso(p.nat);
+  if (p.cit) p.cit = withIso(p.cit);
   p.bornYear = +p.born.slice(0, 4);
   p.leagues = [...new Set(p.clubs.map((c) => c.league).filter(Boolean))];
   const yearsBy = {};
   for (const c of p.clubs) if (c.league && c.from) yearsBy[c.league] = (yearsBy[c.league] || 0) + ((c.to ?? NOW_YEAR) - c.from + 0.5);
   p.mainLeague = Object.entries(yearsBy).sort((a, b) => b[1] - a[1])[0]?.[0] || p.leagues[0] || null;
   p.continents = [...new Set(p.nat.map((n) => n.cont).filter(Boolean))];
+  // nat : nationalité sportive (la sélection). cit : nationalités au sens de l'état civil (Wikidata P27).
+  p.cit = p.cit && p.cit.length ? p.cit : p.nat;
   p.keys = [...new Set([p.name, ...(p.aliases || [])].map(norm).filter(Boolean))];
   p.sub = `${p.nat[0].name} · ${p.bornYear}`;
   return p;
@@ -92,11 +106,18 @@ function buildClues() {
   for (const [code, l] of Object.entries(LEAGUES))
     add('lg:' + code, l.name, 'Championnat', [l.long, code === 'L1' ? 'division 1' : '', code === 'LL' ? 'la liga' : ''].filter(Boolean), (p) => p.leagues.includes(code), 22);
 
-  const nats = {};
-  for (const p of PLAYERS) for (const n of p.nat) nats[n.code] = n;
+  const nats = {}, sels = {};
+  for (const p of PLAYERS) { for (const n of p.cit) nats[n.code] = n; for (const n of p.nat) sels[n.code] = n; }
   for (const n of Object.values(nats)) {
     const adj = ADJ[norm(n.name)];
-    add('nat:' + n.code, n.name, 'Nationalité', adj ? [adj] : [], (p) => p.nat.some((x) => x.code === n.code), 38);
+    add('nat:' + n.code, n.name, 'Nationalité', adj ? [adj, 'nationalite ' + n.name] : ['nationalite ' + n.name], (p) => p.cit.some((x) => x.code === n.code), 34);
+  }
+  // la sélection : l'équipe nationale pour laquelle il joue (« équipe de France », « sélection Brésil »)
+  for (const n of Object.values(sels)) {
+    const adj = ADJ[norm(n.name)];
+    const terms = ['selection ' + n.name, 'selectionne ' + n.name, 'equipe de ' + n.name, 'equipe du ' + n.name, 'equipe d ' + n.name, 'equipe des ' + n.name, 'joue pour ' + n.name];
+    if (adj) terms.push('international ' + adj, 'selection ' + adj, 'equipe ' + adj);
+    add('sel:' + n.code, 'Sélection : ' + n.name, 'Sélection', terms, (p) => p.nat.some((x) => x.code === n.code), 38);
   }
   const contAdj = { Europe: 'europeen', Afrique: 'africain', Asie: 'asiatique', 'Amérique du Sud': 'sud americain', 'Amérique du Nord': 'nord americain', 'Océanie': 'oceanien' };
   for (const [cont, adj] of Object.entries(contAdj))
@@ -191,7 +212,30 @@ function exact(n) {
   return pickClub(clubs, n);
 }
 
-function resolve({ q }) {
+// suggestions sous la barre de recherche, à partir de 3 lettres
+function suggest(q) {
+  const n = norm(q || '').trim();
+  if (n.length < 3) return [];
+  const score = (keys) => {
+    let best = 0;
+    for (const k of keys) {
+      if (k === n) return 4;
+      if (k.startsWith(n)) best = Math.max(best, 3);
+      else if (best < 2 && k.split(' ').some((w) => w.startsWith(n))) best = 2;
+      else if (best < 1 && k.includes(n)) best = 1;
+    }
+    return best;
+  };
+  const out = [];
+  for (const p of [...PLAYERS, ...EXTRA]) { const s = score(p.keys); if (s) out.push({ type: 'player', id: p.id, name: p.name, kind: p.sub, s, w: p.links || 0 }); }
+  for (const c of CLUES) { const s = score(c.terms); if (s) out.push({ type: 'clue', id: c.id, label: c.label, kind: c.kind, s, w: 1e6 }); }
+  return out.sort((a, b) => b.s - a.s || b.w - a.w).slice(0, 8).map(({ s, w, ...x }) => x);
+}
+
+function resolve({ q, id }) {
+  // suggestion choisie dans la liste : on sait exactement de quoi il s'agit
+  if (id && CLUE_BY_ID[id]) return { type: 'clue', clue: CLUE_BY_ID[id] };
+  if (id && BY_ID[id] && (PLAYERS.includes(BY_ID[id]) || EXTRA.includes(BY_ID[id]))) return { type: 'player', player: BY_ID[id] };
   const n = norm(q || '').replace(/^(a |au |en |le |la |l |les |joue a |a joue a |a joue au |passe par |played for |plays for |played at |played in |the )+/, '').trim();
   if (!n) return null;
   const hit = exact(n);
@@ -225,7 +269,13 @@ function compare(target, guess) {
   let s = 0;
   const tags = [];
   const sameNat = target.nat.filter((n) => guess.nat.some((g) => g.code === n.code));
-  if (sameNat.length) { s += 20; tags.push({ t: `Même nationalité (${sameNat[0].name})`, ok: true, reveal: { nat: sameNat[0].code } }); }
+  const sameCit = target.cit.filter((n) => guess.cit.some((g) => g.code === n.code));
+  if (sameNat.length) { s += 20; tags.push({ t: `Même sélection (${sameNat[0].name})`, ok: true, reveal: { nat: sameNat[0].code } }); }
+  if (sameCit.length && !(sameNat.length && sameCit.every((c) => c.code === sameNat[0].code))) {
+    const c = sameCit.find((x) => !sameNat.length || x.code !== sameNat[0].code) || sameCit[0];
+    s += sameNat.length ? 4 : 12; tags.push({ t: `Même nationalité (${c.name})`, ok: true, reveal: { cit: c.code } });
+  }
+  if (sameNat.length) { /* continent déjà dévoilé par la sélection */ }
   else if (target.continents.some((c) => guess.continents.includes(c))) {
     const c = target.continents.find((x) => guess.continents.includes(x));
     s += 5; tags.push({ t: 'Même continent', ok: true, reveal: { cont: c } });
@@ -267,6 +317,7 @@ function askClue(target, clue) {
 // Pour un joueur proposé, on ne garde que ce qu'il dévoile sur la carte (nationalité, poste, clubs…),
 // pas tout ce qu'un joueur très attentif pourrait déduire : sinon un seul essai suffit à tout trancher.
 const fits = (p, r) => (!r.nat || p.nat.some((n) => n.code === r.nat))
+  && (!r.cit || p.cit.some((n) => n.code === r.cit))
   && (!r.cont || p.continents.includes(r.cont))
   && (!r.pos || p.pos === r.pos)
   && (!r.year || p.bornYear === r.year)
@@ -311,7 +362,8 @@ function playerOfDay(day) {
     const i = picks.length;
     const d = dayFromIndex(i);
     // un joueur ajouté plus tard ne change pas les tirages des jours d'avant
-    const ids = IDS.filter((id) => !SINCE[id] || SINCE[id] <= d);
+    if (FIXED[d] && BY_ID[FIXED[d]]) { picks.push(FIXED[d]); continue; }
+    const ids = IDS.filter((id) => (!SINCE[id] || SINCE[id] <= d) && !(d >= NO_DEAD_FROM && isDead(BY_ID[id])));
     const windowSize = Math.max(1, Math.floor(ids.length * 0.9));
     const recent = new Set(picks.slice(Math.max(0, i - windowSize)));
     let best = null, bestScore = Infinity;
@@ -324,25 +376,105 @@ function playerOfDay(day) {
   }
   return BY_ID[picks[target]];
 }
+// tirages enregistrés en base (jour → identifiant)
+function fixDraws(map) {
+  FIXED = { ...map };
+  picks.length = 0;
+}
 
 // ——— Indices débloqués au fil des essais ———
-const HINT_EVERY = 8;
+const HINT_EVERY = 6;
+const FIRST_HINT = 5;
+// essais nécessaires pour débloquer l'indice n° h+1 (le premier arrive vite, pour ne pas laisser les nouveaux bloqués)
+const hintAt = (h) => FIRST_HINT + h * HINT_EVERY;
 const MAX_HINTS = 7;
 function bestClub(p) {
   const len = (c) => ((c.to ?? NOW_YEAR) - (c.from ?? NOW_YEAR));
   return [...p.clubs].filter((c) => c.league && !c.loan).sort((a, b) => len(b) - len(a))[0] || p.clubs[0];
 }
 const initials = (p) => p.name.split(/\s+/).map((w) => w[0].toUpperCase() + '.').join(' ');
-function hintText(p, k) {
-  return [
-    `Poste : ${POSITIONS[p.pos].name.toLowerCase()}`,
-    `Né dans les années ${Math.floor(p.bornYear / 10) * 10}`,
-    `Continent : ${p.continents[0] || 'inconnu'}`,
-    `Nationalité : ${p.nat[0].name}`,
-    `A joué à ${bestClub(p).club}`,
-    `Initiales : ${initials(p)}`,
-    p.fact ? `Anecdote : ${p.fact}` : `Anecdote : il a connu ${new Set(p.clubs.map((c) => c.id)).size} clubs, dont ${p.clubs[p.clubs.length - 1].club} en dernier.`,
-  ][k];
+// Un indice = un type ('pos', 'dec', 'cont', 'nat', 'club:Q…', 'ini', 'fact'). Ancien format : un simple nombre d'indices.
+const HINT_ORDER = ['pos', 'dec', 'cont', 'nat', 'club', 'ini', 'fact'];
+const hintList = (hints) => (Array.isArray(hints) ? hints : HINT_ORDER.slice(0, hints || 0));
+function hintText(p, h) {
+  const [kind, v] = String(typeof h === 'number' ? HINT_ORDER[h] : h).split(/:(.+)/);
+  if (kind === 'pos') return `Poste : ${POSITIONS[p.pos].name.toLowerCase()}`;
+  if (kind === 'dec') return `Né dans les années ${Math.floor(p.bornYear / 10) * 10}`;
+  if (kind === 'cont') return `Continent : ${p.continents[0] || 'inconnu'}`;
+  if (kind === 'nat') return `Sélection : ${p.nat[0].name}`;
+  if (kind === 'club') return `A joué à ${(p.clubs.find((c) => c.id === v) || bestClub(p)).club}`;
+  if (kind === 'ini') return `Initiales : ${initials(p)}`;
+  return p.fact ? `Anecdote : ${p.fact}` : `Anecdote : il a connu ${new Set(p.clubs.map((c) => c.id)).size} clubs, dont ${p.clubs[p.clubs.length - 1].club} en dernier.`;
+}
+// L'indice suivant : le premier type pas encore donné qui apprend vraiment quelque chose.
+// Ce que le joueur a déjà découvert (poste, génération, sélection, club…) n'est jamais redonné.
+function nextHint(target, guesses, hints) {
+  const given = hintList(hints);
+  const k = known(target, guesses, given);
+  const kinds = given.map((h) => h.split(':')[0]);
+  const useful = {
+    pos: !k.pos,
+    dec: !k.decade && !k.year,
+    cont: !k.cont && !k.nat,
+    nat: !k.nat,
+    ini: true,
+    fact: true,
+  };
+  // club : le club principal s'il est encore inconnu, sinon un autre des grands championnats, sinon n'importe lequel
+  const len = (c) => ((c.to ?? NOW_YEAR) - (c.from ?? NOW_YEAR));
+  const unknownClub = [bestClub(target), ...[...target.clubs].sort((a, b) => (!!b.league - !!a.league) || len(b) - len(a))]
+    .find((c) => c && !k.clubs.includes(c.id));
+  for (const kind of HINT_ORDER) {
+    if (kinds.includes(kind)) continue;
+    if (kind === 'club') { if (unknownClub) return 'club:' + unknownClub.id; continue; }
+    if (useful[kind]) return kind;
+  }
+  // le reste est déjà connu : un autre club pas encore trouvé, sinon plus rien à apprendre
+  return unknownClub ? 'club:' + unknownClub.id : null;
+}
+
+// Ce que le joueur sait du mystère, d'après ses essais et ses indices
+function known(target, guesses, hints = []) {
+  const k = { clubs: [], leagues: [] };
+  const addClub = (id) => { if (id && !k.clubs.includes(id)) k.clubs.push(id); };
+  const addLeague = (l) => { if (l && !k.leagues.includes(l)) k.leagues.push(l); };
+  for (const g of guesses) {
+    if (g.type === 'clue' && g.yes) {
+      const [kind, v] = g.key.split(/:(.+)/);
+      if (kind === 'nat') k.cit = v;
+      if (kind === 'sel') k.nat = v;
+      if (kind === 'cont') k.cont = v;
+      if (kind === 'club') addClub(v);
+      if (kind === 'lg') addLeague(v);
+      if (kind === 'pos') k.pos = v;
+      if (kind === 'dec') k.decade = +v;
+      if (kind === 'act') k.active = true;
+      if (kind === 'hon') k.bo = true;
+    }
+    if (g.type === 'clue' && !g.yes && g.key === 'hon:BO') k.bo = false;
+    if (g.type === 'clue' && !g.yes && g.key.startsWith('act:')) k.active = true;
+    for (const t of g.tags || []) {
+      const r = t.reveal;
+      if (!r) continue;
+      if (r.nat) k.nat = r.nat;
+      if (r.cit) k.cit = r.cit;
+      if (r.cont) k.cont = r.cont;
+      if (r.pos) k.pos = r.pos;
+      if (r.year) k.year = r.year;
+      if (r.club) addClub(r.club);
+      if (r.leagues) r.leagues.forEach(addLeague);
+    }
+  }
+  for (const h of hintList(hints)) {
+    const [kind, v] = h.split(/:(.+)/);
+    if (kind === 'pos') k.pos = target.pos;
+    if (kind === 'dec') k.decade = Math.floor(target.bornYear / 10) * 10;
+    if (kind === 'cont') k.cont = target.continents[0];
+    if (kind === 'nat') k.nat = target.nat[0].code;
+    if (kind === 'club') addClub(v || bestClub(target).id);
+    if (kind === 'ini') k.initials = true;
+  }
+  return k;
 }
 
 // ——— Points du jour ———
@@ -362,44 +494,16 @@ function score(p, guesses, hints) {
 
 // ——— La carte du joueur mystère, remplie avec ce que le joueur a découvert ———
 function revealCard(target, guesses, hints, over) {
-  const k = { clubs: [], leagues: [] };
+  const k = known(target, guesses, hints);
   const addClub = (id) => { if (id && !k.clubs.includes(id)) k.clubs.push(id); };
   const addLeague = (l) => { if (l && !k.leagues.includes(l)) k.leagues.push(l); };
-  for (const g of guesses) {
-    if (g.type === 'clue' && g.yes) {
-      const [kind, v] = g.key.split(/:(.+)/);
-      if (kind === 'nat') k.nat = v;
-      if (kind === 'cont') k.cont = v;
-      if (kind === 'club') addClub(v);
-      if (kind === 'lg') addLeague(v);
-      if (kind === 'pos') k.pos = v;
-      if (kind === 'dec') k.decade = +v;
-      if (kind === 'act') k.active = true;
-      if (kind === 'hon') k.bo = true;
-    }
-    if (g.type === 'clue' && !g.yes && g.key === 'hon:BO') k.bo = false;
-    if (g.type === 'clue' && !g.yes && g.key.startsWith('act:')) k.active = true;
-    for (const t of g.tags || []) {
-      const r = t.reveal;
-      if (!r) continue;
-      if (r.nat) k.nat = r.nat;
-      if (r.cont) k.cont = r.cont;
-      if (r.pos) k.pos = r.pos;
-      if (r.year) k.year = r.year;
-      if (r.club) addClub(r.club);
-      if (r.leagues) r.leagues.forEach(addLeague);
-    }
-  }
-  if (hints > 0) k.pos = target.pos;
-  if (hints > 1) k.decade = Math.floor(target.bornYear / 10) * 10;
-  if (hints > 2) k.cont = target.continents[0];
-  if (hints > 3) k.nat = target.nat[0].code;
-  if (hints > 4) addClub(bestClub(target).id);
   if (over) {
-    k.nat = target.nat[0].code; k.pos = target.pos; k.year = target.bornYear; k.active = true; k.bo = target.bo;
+    k.nat = target.nat[0].code; k.cit = target.cit[0].code; k.pos = target.pos; k.year = target.bornYear; k.active = true; k.bo = target.bo;
     addClub(bestClub(target).id); target.leagues.forEach(addLeague);
   }
   const nat = k.nat && target.nat.find((n) => n.code === k.nat);
+  // nationalités : toutes une fois la partie finie, sinon celle qui a été trouvée
+  const cit = over ? target.cit : k.cit ? target.cit.filter((n) => n.code === k.cit) : [];
   // parcours : chaque club dans l'ordre de la carrière, dévoilé quand il est trouvé
   const path = [];
   for (const c of target.clubs) {
@@ -408,10 +512,11 @@ function revealCard(target, guesses, hints, over) {
   }
   const club = k.clubs.length ? target.clubs.find((c) => c.id === k.clubs[k.clubs.length - 1]) : null;
   return {
-    name: over ? target.name : hints > 5 ? initials(target) : null,
+    name: over ? target.name : k.initials ? initials(target) : null,
     photo: over && target.img ? target.img.replace(/^http:/, 'https:') + '?width=400' : null,
     pos: k.pos ? POSITIONS[k.pos].short : null,
     nat: nat ? { name: nat.name, iso: nat.iso } : null,
+    cit: cit.length ? cit.map((n) => n.name).join(' / ') : null,
     cont: k.cont || (nat ? nat.cont : null),
     club: club ? club.club : null,
     clubs: k.clubs.length,
@@ -472,6 +577,7 @@ function collectCard(p) {
     photo: p.img ? p.img.replace(/^http:/, 'https:') + '?width=400' : null,
     pos: POSITIONS[p.pos] ? POSITIONS[p.pos].short : null,
     nat: { name: p.nat[0].name, iso: p.nat[0].iso },
+    cit: (p.cit || p.nat).map((n) => n.name).join(' / '),
     cont: p.nat[0].cont || p.continents[0] || null,
     club: last ? last.club : null,
     leagues: p.leagues.map((l) => LEAGUES[l].short),
@@ -504,7 +610,7 @@ function drawPack(rand, size = 5) {
 }
 // joueur à deviner en duel : un des 400 plus connus parmi ceux qui peuvent tomber (fiches complètes)
 function duelPick(rand) {
-  const top = [...PLAYERS].sort((a, b) => (b.links || 0) - (a.links || 0)).slice(0, 400);
+  const top = PLAYERS.filter((p) => !isDead(p)).sort((a, b) => (b.links || 0) - (a.links || 0)).slice(0, 400);
   return top[rand(top.length)];
 }
 function deckTotals() {
@@ -520,7 +626,7 @@ function catalog() {
 }
 
 module.exports = {
-  get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
-  setPool, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm,
+  get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
+  setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
   collectCard, drawPack, deckTotals, duelPick,
 };
