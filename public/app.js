@@ -429,7 +429,7 @@ function drawGame(lastN) {
           `Found in ${n} ${n > 1 ? 'tries' : 'try'}${st.hints.length ? ` and ${st.hints.length} hint${s_(st.hints.length)}` : ''}. You are the ${ord(st.rank)} to find him today.`)
         : L(`Tu as abandonné : il ne rejoindra pas ton album, et pas de points aujourd'hui.`, `You gave up: he won't join your album, and no points today.`)}</p>
       ${won && st.score ? `<div class="scorebox"><span class="pts">+${st.score.points}</span><span class="det">points · ${st.score.guesses} ${L('essai', st.score.guesses > 1 ? 'trie' : 'try')}${L(s_(st.score.guesses), st.score.guesses > 1 ? 's' : '')}${st.score.hints ? `, ${st.score.hints} ${L('indice', 'hint')}${s_(st.score.hints)}` : ''}<br>${L('rareté', 'rarity')} ${'★'.repeat(st.score.stars)}${'☆'.repeat(5 - st.score.stars)} (×${EN ? st.score.mult : String(st.score.mult).replace('.', ',')})${st.user ? '' : L(' · <a href="/compte" data-link>crée un compte</a> pour les garder', ' · <a href="/compte" data-link>create an account</a> to keep them')}</span></div>` : ''}
-      <div class="end-share"><div class="kicker">${L('Défie tes potes', 'Challenge your friends')}</div>${shareBox(resultText(st), location.origin)}</div>
+      <div class="end-share"><div class="kicker">${L('Défie tes potes', 'Challenge your friends')}</div>${shareBox(resultText(st), shareUrl(st))}</div>
       ${catchupBox(st)}
       <div class="end-act">${st.past ? `<a class="btn" href="/" data-link>${L('Joueur du jour', "Today's player")}</a>` : `<a class="btn" href="/ligues" data-link>${L('Mes ligues', 'My leagues')}</a>`}<a class="btn" href="/album" data-link>${L('Mon album', 'My album')}</a>${st.past ? '' : `<span class="muted">${L('Prochain joueur dans', 'Next player in')} <span class="countdown" id="cd"></span></span>`}</div>
     </div>`;
@@ -557,6 +557,14 @@ function shareBox(text, url, label = L('Partager', 'Share')) {
     };
   });
   return `<div class="sharebox"><button class="btn solid sh" id="${id}" type="button"><svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M6 11H4v10h16V11h-2"/></svg>${label}</button></div>`;
+}
+// le lien partagé porte le score : l'aperçu (WhatsApp, X, Discord…) affiche une image du résultat
+// « ?s=partage » compte à part dans /stats les visiteurs arrivés par un partage
+function shareUrl(st) {
+  const sq = (t) => (t >= 100 ? 4 : t >= 75 ? 3 : t >= 50 ? 2 : t >= 25 ? 1 : 0);
+  const n = Math.min(999, st.guesses.length);
+  const code = `${st.number}-${st.status === 'won' ? 'w' : 'g'}${n}-${Math.min(9, st.hints.length)}-${st.guesses.slice(-18).map((g) => sq(g.temp)).join('')}${EN ? '-en' : ''}`;
+  return `${location.origin}/r/${code}?s=partage`;
 }
 function resultText(st) {
   const sq = (t) => (t >= 100 ? '✅' : t >= 75 ? '🟥' : t >= 50 ? '🟧' : t >= 25 ? '🟨' : '🟦');

@@ -6,6 +6,7 @@ const express = require('express');
 const G = require('./game');
 const I18N = require('./i18n');
 const { A, PROD, dayStats } = require('./core');
+const SHARE = require('./shareimg');
 
 module.exports = function front({ app, db, DOMAIN }) {
   // la page porte l'empreinte des fichiers : après une mise à jour, le navigateur recharge le nouveau code
@@ -95,15 +96,23 @@ module.exports = function front({ app, db, DOMAIN }) {
     const c = HTML.get(key);
     if (c && Date.now() - c.t < 600000) return c.v;
     // /en : la page d'accueil en anglais, pour les liens partagés à l'étranger (aperçu et texte en anglais)
-    const r = await render(pathName === '/en' ? '/' : pathName, lang);
+    // /r/… : un résultat partagé. La page d'accueil, avec un aperçu (titre, image) propre à ce score
+    const shared = pathName.startsWith('/r/') ? SHARE.parse(pathName.slice(3)) : null;
+    const r = await render(pathName === '/en' || shared ? '/' : pathName, lang);
     let h = BASE[lang];
     const url = `https://${DOMAIN}${pathName}`;
     h = h.replace('<link rel="canonical" href="https://foootix.com/">', `<link rel="canonical" href="${attr(url)}">`)
       .replace('<meta property="og:url" content="https://foootix.com/">', `<meta property="og:url" content="${attr(url)}">`);
-    if (pathName === '/en') h = h.replace('</head>', '<script>history.replaceState(null, \'\', \'/\' + location.search);</script>\n</head>');
-    if (/^\/(compte|duel\/|ligue\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
+    if (pathName === '/en' || shared) h = h.replace('</head>', '<script>history.replaceState(null, \'\', \'/\' + location.search);</script>\n</head>');
+    if (/^\/(compte|duel\/|ligue\/|r\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
     if (r && r.title) h = h.replace(/<title>[^<]*<\/title>/, `<title>${attr(r.title)}</title>`).replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(r.title)}`);
     if (r && r.desc) h = h.replace(/(<meta name="description" content=")[^"]*/, `$1${attr(r.desc)}`).replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(r.desc)}`);
+    if (shared) {
+      const w = SHARE.words(shared);
+      h = h.replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(w.title)}`)
+        .replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(w.desc)}`)
+        .replace(/(<meta property="og:image" content=")[^"]*/, `$1https://${DOMAIN}${attr(pathName)}.png`);
+    }
     h = h.replace('<main id="app"></main>', () => `<main id="app">${(r && r.main) || ''}</main>${r && r.about ? `\n<section class="about" id="about">${r.about}</section>` : ''}`);
     const v = { ...packed(h, 'text/html; charset=utf-8', 'no-cache', 5), missing: !r };
     if (HTML.size > 3000) HTML.clear();
@@ -115,6 +124,22 @@ module.exports = function front({ app, db, DOMAIN }) {
     res.cookie('lang', 'en', { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax', secure: PROD });
     res.set('Vary', 'Accept-Encoding');
     sendPacked(req, res, await pageFor('/en', 'en'));
+  }));
+
+  // l'image d'un résultat partagé : calculée une fois, puis gardée en mémoire et chez les réseaux sociaux
+  const IMG = new Map();
+  app.get(/^\/r\/([\w-]+)\.png$/, (req, res) => {
+    const code = req.params[0];
+    const r = SHARE.parse(code);
+    if (!r) return res.status(404).end();
+    let img = IMG.get(code);
+    if (!img) { img = SHARE.render(r); if (IMG.size > 500) IMG.clear(); IMG.set(code, img); }
+    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' }).end(img);
+  });
+  app.get('/r/:code', A(async (req, res, next) => {
+    if (!SHARE.parse(req.params.code)) return next();
+    res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
+    sendPacked(req, res, await pageFor(req.path, I18N.pick(req)));
   }));
 
   app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
