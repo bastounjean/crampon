@@ -383,7 +383,10 @@ function fixDraws(map) {
 }
 
 // ——— Indices débloqués au fil des essais ———
-const HINT_EVERY = 8;
+const HINT_EVERY = 6;
+const FIRST_HINT = 5;
+// essais nécessaires pour débloquer l'indice n° h+1 (le premier arrive vite, pour ne pas laisser les nouveaux bloqués)
+const hintAt = (h) => FIRST_HINT + h * HINT_EVERY;
 const MAX_HINTS = 7;
 function bestClub(p) {
   const len = (c) => ((c.to ?? NOW_YEAR) - (c.from ?? NOW_YEAR));
@@ -623,7 +626,7 @@ function catalog() {
 }
 
 module.exports = {
-  get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS,
+  get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
   setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
   collectCard, drawPack, deckTotals, duelPick,
 };

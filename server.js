@@ -259,8 +259,8 @@ async function state(req, day = G.today(), pending = null) {
     status: g.status === 'late' ? 'won' : g.status, guesses: g.guesses,
     best: g.guesses.reduce((m, x) => Math.max(m, x.temp), 0),
     hints: g.hintList.map((h) => G.hintText(target, h)),
-    hintReady: !over && g.hints < G.MAX_HINTS && n >= (g.hints + 1) * G.HINT_EVERY,
-    nextHintAt: g.hints < G.MAX_HINTS ? (g.hints + 1) * G.HINT_EVERY : null,
+    hintReady: !over && g.hints < G.MAX_HINTS && n >= G.hintAt(g.hints),
+    nextHintAt: g.hints < G.MAX_HINTS ? G.hintAt(g.hints) : null,
     answer: over ? G.card(target) : null,
     card: G.revealCard(target, g.guesses, g.hintList, over),
     rank, stats,
@@ -339,7 +339,7 @@ app.post('/api/hint', A(async (req, res) => {
   const day = dayOf(req);
   const g = await getGame(req, day, true);
   if (g.status !== 'playing') return res.status(400).json({ error: 'Partie terminée.' });
-  if (g.hints >= G.MAX_HINTS || g.guesses.length < (g.hints + 1) * G.HINT_EVERY)
+  if (g.hints >= G.MAX_HINTS || g.guesses.length < G.hintAt(g.hints))
     return res.status(400).json({ error: "Pas encore d'indice disponible." });
   // indice intelligent : jamais une info que le joueur a déjà trouvée
   const h = G.nextHint(G.playerOfDay(day), g.guesses, g.hintList);

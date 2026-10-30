@@ -83,6 +83,15 @@ function heat(t) {
   const k = (t - a[0]) / (b[0] - a[0] || 1);
   return `rgb(${a[1].map((v, i) => Math.round(v + (b[1][i] - v) * k)).join(',')})`;
 }
+// un « non » ne fait pas monter le thermomètre, mais il élimine une piste : on le dit, pour ne pas décourager
+function gaugeTip(st, best) {
+  if (!st.guesses.length) return L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.');
+  const last = st.guesses[st.guesses.length - 1];
+  const nos = st.guesses.filter((g) => g.type === 'clue' && !g.yes).length;
+  if (st.status === 'playing' && last.type === 'clue' && !last.yes)
+    return L(`Non, mais c'est une piste de moins : ${nos} déjà écartée${nos > 1 ? 's' : ''}. Chaque « non » resserre aussi l'étau.`, `No, but that's one less option: ${nos} ruled out so far. Every "no" narrows it down too.`);
+  return best ? L('Elle monte à chaque piste qui resserre l’étau.', 'It rises with every clue that narrows it down.') : L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.');
+}
 function word(t) {
   if (t >= 100) return L('Trouvé', 'Found');
   if (t >= 85) return L('Tout proche', 'So close');
@@ -401,7 +410,7 @@ function drawGame(lastN) {
   $('#gauge').innerHTML = `<div class="big"><span class="deg" style="color:${heat(t)}">${t}°</span><span class="word">${best ? word(t) : L('À toi', 'Your turn')}</span></div>
     <div class="scale"><i style="width:${t}%;background:${heat(t)}"></i></div>
     <div class="scale-legend"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-    <div class="bestof">${best ? L('Elle monte à chaque piste qui resserre l’étau.', 'It rises with every clue that narrows it down.') : L('Fais un premier essai pour la remplir.', 'Make a first guess to fill it.')}</div>`;
+    <div class="bestof">${gaugeTip(st, best)}</div>`;
 
   // bannière de fin + page Wikipédia
   if (over) {

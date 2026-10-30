@@ -69,7 +69,7 @@ ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peu
   <h2>Temperature</h2>
   <p>It measures everything you know about the mystery player. At the start, every player is possible: you're at 0°. Every yes, every no, every common point with a guessed player rules some out. When about ten are left, you're around 65°; at 99°, only one is left, you just have to name him. 100° means you won.</p>
   <h2>Hints</h2>
-  <p>Every 8 guesses, you can reveal a hint: position, generation, continent, nationality, a club, then his initials.</p>
+  <p>After 5 guesses, then every 6, you can reveal a hint: position, generation, continent, nationality, a club, then his initials.</p>
   <h2>Your album and your streak</h2>
   <p>Every player you find joins your album, with his profile and his Wikipedia page. Missed days can be caught up later, with no points. Your streak counts the days in a row you found the player. Giving up resets it.</p>
   <h2>Pack Opening</h2>
@@ -91,7 +91,7 @@ ${recent.length ? `<h2>Tu as raté un jour&nbsp;?</h2><p>Les joueurs passés peu
   <h2>La température</h2>
   <p>Elle mesure tout ce que tu sais sur le mystère. Au départ, tous les joueurs sont possibles&nbsp;: tu es à 0°. Chaque oui, chaque non, chaque point commun avec un joueur proposé en élimine. Quand il n'en reste qu'une dizaine, tu es vers 65°&nbsp;; à 99°, il n'en reste qu'un, à toi de trouver son nom. 100°, c'est gagné.</p>
   <h2>Indices</h2>
-  <p>Tous les 8 essais, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
+  <p>Après 5 essais, puis tous les 6, tu peux révéler un indice&nbsp;: poste, génération, continent, nationalité, un club, puis ses initiales.</p>
   <h2>Ton album et ta série</h2>
   <p>Chaque joueur trouvé rejoint ton album, avec sa fiche et sa page Wikipédia. Les jours ratés peuvent être rattrapés plus tard, sans points. La série compte les jours d'affilée où tu as trouvé. Un abandon la remet à zéro.</p>
   <h2>Pack Opening</h2>
