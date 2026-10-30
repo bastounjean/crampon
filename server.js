@@ -813,6 +813,7 @@ const indexFor = (lang) => {
   let h = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8')
     .replace('href="/style.css"', `href="/style.css?v=${stamp('style.css')}"`)
     .replace('src="/app.js"', `src="/app.js?v=${stamp('app.js')}"`)
+    .replace('href="/favicon.svg"', `href="/favicon.svg?v=${stamp('favicon.svg')}"`)
     .replace('</head>', () => `${adHead}<script>window.FOOTIX = ${JSON.stringify({ ...CONFIG, lang }).replace(/</g, '\\u003c')};</script>\n</head>`);
   if (lang === 'en') {
     for (const [fr, en] of [
