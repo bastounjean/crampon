@@ -820,7 +820,8 @@ const indexFor = (lang) => {
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['FoOotix · le joueur mystère du jour', 'FoOotix · the daily mystery footballer'],
       ['Chaque jour, un footballeur à deviner : légendes et joueurs actuels de Ligue 1, Premier League, Bundesliga, Liga et Serie A.', 'A footballer to guess every day: legends and current players from the Premier League, LaLiga, Serie A, Bundesliga and Ligue 1.'],
-      ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'A footballer to guess every day. Find him in fewer tries than your friends.'],
+      ["Un footballeur à deviner chaque jour. Trouve-le en moins d'essais que tes potes.", 'One mystery footballer a day. Can you guess him in fewer tries than your friends?'],
+      ['content="https://foootix.com/og.png"', 'content="https://foootix.com/og-en.png"'],
       ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'],
       ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
       ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
@@ -832,7 +833,7 @@ const indexFor = (lang) => {
 };
 app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
 app.get('/sitemap.xml', (req, res) => {
-  const pages = ['/', '/regles', '/joueurs', '/classement', '/collection', '/duel'];
+  const pages = ['/', '/en', '/regles', '/joueurs', '/classement', '/collection', '/duel'];
   for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
   res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
 });
@@ -873,11 +874,13 @@ async function pageFor(pathName, lang) {
   const key = `${lang}:${pathName}:${G.today()}`;
   const c = HTML.get(key);
   if (c && Date.now() - c.t < 600000) return c.v;
-  const r = await render(pathName, lang);
+  // /en : la page d'accueil en anglais, pour les liens partagés à l'étranger (aperçu et texte en anglais)
+  const r = await render(pathName === '/en' ? '/' : pathName, lang);
   let h = BASE[lang];
   const url = `https://${DOMAIN}${pathName}`;
   h = h.replace('<link rel="canonical" href="https://foootix.com/">', `<link rel="canonical" href="${attr(url)}">`)
     .replace('<meta property="og:url" content="https://foootix.com/">', `<meta property="og:url" content="${attr(url)}">`);
+  if (pathName === '/en') h = h.replace('</head>', '<script>history.replaceState(null, \'\', \'/\' + location.search);</script>\n</head>');
   if (/^\/(compte|duel\/|ligue\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
   if (r && r.title) h = h.replace(/<title>[^<]*<\/title>/, `<title>${attr(r.title)}</title>`).replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(r.title)}`);
   if (r && r.desc) h = h.replace(/(<meta name="description" content=")[^"]*/, `$1${attr(r.desc)}`).replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(r.desc)}`);
@@ -888,6 +891,11 @@ async function pageFor(pathName, lang) {
   return v;
 }
 app.get(['/app.js', '/style.css'], (req, res) => sendPacked(req, res, ASSETS[req.path]));
+app.get('/en', A(async (req, res) => {
+  res.cookie('lang', 'en', { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax', secure: PROD });
+  res.set('Vary', 'Accept-Encoding');
+  sendPacked(req, res, await pageFor('/en', 'en'));
+}));
 
 app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
   res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
