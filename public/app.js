@@ -187,7 +187,7 @@ async function route({ quiet = false } = {}) {
   // si la page n'est pas prête presque tout de suite, on le montre (sinon on croit que le clic n'a pas marché)
   const wait = setTimeout(() => { if (id === ROUTE) app.classList.add('loading'); }, 120);
   if (!quiet) hit(p);
-  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/classement' && (p === '/ligues' || p.startsWith('/ligue/'))) || (a.getAttribute('href') === '/duel' && p.startsWith('/duel'))));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/classement' && (p === '/ligues' || p.startsWith('/ligue/'))) || (a.getAttribute('href') === '/duel' && p.startsWith('/duel')) || (a.getAttribute('href') === '/collection' && p === '/album')));
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   stopDuel();
@@ -739,6 +739,9 @@ async function pagePlayer(id) {
   await showWiki($('#wp'), p, head);
 }
 
+// ——— Collection : les packs et l'album, sous un seul onglet ———
+const subTabs = (on) => `<nav class="subtabs">${[['/collection', L('Packs', 'Packs')], ['/album', L('Album', 'Album')]].map(([h, t]) => `<a href="${h}" data-link class="${h === on ? 'on' : ''}">${t}</a>`).join('')}</nav>`;
+
 // ——— Page : album ———
 async function pageAlbum() {
   const a = await api('album');
@@ -746,7 +749,7 @@ async function pageAlbum() {
   const got = (d) => d.status === 'won' || d.status === 'late';
   const won = a.days.filter(got).length;
   const past = a.days.filter((d) => !d.today).length;
-  app.innerHTML = `
+  app.innerHTML = `${subTabs('/album')}
     <div class="pagehead">
       <div><div class="kicker">${L('Les joueurs du jour', 'Daily players')}</div><h1>${L('Mon album', 'My album')}</h1>
       <p>${L('Un joueur par jour. Ceux que tu n’as pas trouvés restent cachés : tu peux encore les chercher, sans points.', "One player a day. The ones you haven't found stay hidden: you can still look for them, with no points.")}</p></div>
@@ -815,7 +818,7 @@ function drawCollection(c) {
   const total = Object.values(c.totals).reduce((a, b) => a + b, 0);
   const have = (t) => c.cards.filter((x) => x.tier === t).length;
   const nx = nextPack(c);
-  app.innerHTML = `
+  app.innerHTML = `${subTabs('/collection')}
     <div class="pagehead">
       <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Pack Opening</h1>
       <p>${L('Chaque jour, un pack de 5 cartes à ouvrir, et un pack bonus si tu trouves le joueur du jour. Plus un joueur est connu, plus sa carte est rare.', 'A pack of 5 cards to open every day, plus a bonus pack if you find the daily player. The more famous the player, the rarer the card.')}</p></div>
