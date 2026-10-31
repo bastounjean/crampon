@@ -8,7 +8,7 @@ import { LigueTiktok, dureesLigue } from "./Ligue";
 export const FPS = 30;
 
 // Cale chaque séquence sur la durée de sa voix (voix-N.mp3), sinon durée par défaut.
-const makeMeta = (prefix: string, defaults: number[]): CalculateMetadataFunction<Props> => async () => {
+const makeMeta = (prefix: string, defaults: number[]): CalculateMetadataFunction<Props> => async ({ props }) => {
   const durees: number[] = [];
   const voix: boolean[] = [];
   for (let i = 0; i < defaults.length; i++) {
@@ -30,7 +30,7 @@ const makeMeta = (prefix: string, defaults: number[]): CalculateMetadataFunction
   }
   return {
     durationInFrames: durees.reduce((a, b) => a + b, 0),
-    props: { durees, voix },
+    props: { ...props, durees, voix },
   };
 };
 
@@ -55,6 +55,16 @@ export const RemotionRoot: React.FC = () => (
     durationInFrames={450}
     defaultProps={{ durees: dureesParDefaut.map((d) => Math.round(d * FPS)), voix: dureesParDefaut.map(() => false) }}
     calculateMetadata={makeMeta("voix-", dureesParDefaut)}
+  />
+  <Composition
+    id="JoueurDHierEN"
+    component={JoueurDHier}
+    width={1080}
+    height={1920}
+    fps={FPS}
+    durationInFrames={450}
+    defaultProps={{ durees: dureesParDefaut.map((d) => Math.round(d * FPS)), voix: dureesParDefaut.map(() => false), langue: "en" as const }}
+    calculateMetadata={makeMeta("en-voix-", dureesParDefaut)}
   />
   </>
 );

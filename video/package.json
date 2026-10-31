@@ -4,6 +4,7 @@
   "scripts": {
     "studio": "remotion studio",
     "joueur": "node scripts/video.mjs joueur",
+    "joueur:en": "node scripts/video.mjs joueur-en",
     "ligue": "node scripts/video.mjs ligue",
     "verifier": "tsc --noEmit"
   },

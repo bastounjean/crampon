@@ -3,6 +3,7 @@
 //
 //   npm run joueur                 → rend « Le joueur d'hier » avec les voix déjà dans public/
 //   npm run joueur -- voix.mp3     → découpe voix.mp3 sur les silences, puis rend
+//   npm run joueur:en -- voice.mp3 → pareil, version anglaise (voix et textes en anglais)
 //   npm run ligue                  → rend la vidéo « Ligue TikTok »
 //   npm run ligue -- voix.mp3      → pareil, avec découpe de la voix
 //
@@ -22,6 +23,7 @@ const NB_SEQUENCES = 6;
 
 const MODELES = {
   joueur: { composition: "JoueurDHier", prefixe: "voix-" },
+  "joueur-en": { composition: "JoueurDHierEN", prefixe: "en-voix-", suffixe: "-en" },
   ligue: { composition: "LigueTiktok", prefixe: "ligue-voix-" },
 };
 
@@ -127,7 +129,7 @@ const decouperVoix = (fichier, prefixe) => {
 };
 
 const nomFichier = (modele) => {
-  if (modele !== "joueur") return "ligue-tiktok.mp4";
+  if (modele === "ligue") return "ligue-tiktok.mp4";
   const src = readFileSync(path.join(ICI, "src", "joueur.ts"), "utf8");
   const nom = (src.match(/nom:\s*"([^"]+)"/) || [])[1] || "joueur";
   const slug = nom
@@ -136,7 +138,7 @@ const nomFichier = (modele) => {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  return `joueur-${slug}.mp4`;
+  return `joueur-${slug}${MODELES[modele].suffixe ?? ""}.mp4`;
 };
 
 const principal = () => {
@@ -146,7 +148,7 @@ const principal = () => {
   const options = args.filter((a) => a.startsWith("--"));
   const [modele, voix] = args.filter((a) => !a.startsWith("--"));
   const choix = MODELES[modele];
-  if (!choix) stop("Usage : npm run joueur [-- voix.mp3]   ou   npm run ligue [-- voix.mp3]");
+  if (!choix) stop("Usage : npm run joueur [-- voix.mp3], npm run joueur:en [-- voice.mp3] ou npm run ligue [-- voix.mp3]");
   if (voix) decouperVoix(path.resolve(process.env.INIT_CWD || process.cwd(), voix), choix.prefixe);
   mkdirSync(SORTIE, { recursive: true });
   const cible = path.join(SORTIE, nomFichier(modele));
