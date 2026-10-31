@@ -10,9 +10,18 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { joueur } from "./joueur";
+import { Joueur, Langue, joueurs } from "./joueur";
 
-export type Props = { durees: number[]; voix: boolean[] };
+export type Props = { durees: number[]; voix: boolean[]; langue?: Langue };
+
+// Les petits textes fixes de la vidéo, dans chaque langue
+const UI = {
+  fr: { nat: "NAT", ne: "NÉ", forme: "FORMÉ", clubs: "CLUBS", cetait: "C'ÉTAIT…", chaleur: ["FROID", "TIÈDE", "CHAUD", "BRÛLANT", "TROUVÉ"] },
+  en: { nat: "NAT", ne: "BORN", forme: "YOUTH", clubs: "CLUBS", cetait: "IT WAS…", chaleur: ["COLD", "WARM", "HOT", "BURNING", "FOUND"] },
+};
+
+const JoueurCtx = React.createContext<{ joueur: Joueur; ui: (typeof UI)["fr"] }>({ joueur: joueurs.fr, ui: UI.fr });
+const useJoueur = () => React.useContext(JoueurCtx);
 
 export const C = {
   pitchA: "#1f5a3b",
@@ -64,23 +73,27 @@ export const Pitch: React.FC = () => (
   </AbsoluteFill>
 );
 
-const Flag: React.FC<{ show: number }> = ({ show }) => (
+const Flag: React.FC<{ show: number }> = ({ show }) => {
+  const { joueur } = useJoueur();
+  return (
   <div style={{ width: 84, height: 56, display: "flex", flexDirection: "column", border: `3px solid ${C.ink}`, opacity: show, transform: `scale(${0.6 + 0.4 * show})` }}>
     {joueur.drapeau.map((c, i) => (
       <div key={i} style={{ flex: 1, background: c }} />
     ))}
   </div>
-);
+  );
+};
 
 // La carte du jeu, façon site
 const Card: React.FC<{ phase: number; local: number; aujourdhui?: boolean }> = ({ phase, local, aujourdhui }) => {
   const { fps } = useVideoConfig();
+  const { joueur, ui } = useJoueur();
   const reveal = phase >= 4 && !aujourdhui ? spring({ frame: local, fps, config: { damping: 14 } }) : 0;
   const rows: [string, string, number][] = [
-    ["NAT", joueur.indices[0].fiche.NAT ?? "", 1],
-    ["NÉ", joueur.indices[0].fiche["NÉ"] ?? "", 1],
-    ["FORMÉ", joueur.indices[1].fiche["FORMÉ"] ?? "", 2],
-    ["CLUBS", joueur.indices[2].fiche.CLUBS ?? "", 3],
+    [ui.nat, joueur.indices[0].fiche.nat ?? "", 1],
+    [ui.ne, joueur.indices[0].fiche.ne ?? "", 1],
+    [ui.forme, joueur.indices[1].fiche.forme ?? "", 2],
+    [ui.clubs, joueur.indices[2].fiche.clubs ?? "", 3],
   ];
   const shown = (p: number) => {
     if (aujourdhui) return 0;
@@ -151,10 +164,11 @@ const Card: React.FC<{ phase: number; local: number; aujourdhui?: boolean }> = (
 
 // La jauge de chaleur du site : monte à chaque indice
 const Heat: React.FC<{ phase: number; local: number }> = ({ phase, local }) => {
+  const { ui } = useJoueur();
   const steps = [8, 38, 64, 88, 100, 100];
   const prev = phase === 0 ? 0 : steps[phase - 1];
   const v = interpolate(local, [0, 14], [prev, steps[phase]], { extrapolateRight: "clamp" });
-  const label = v >= 100 ? "TROUVÉ" : v >= 80 ? "BRÛLANT" : v >= 55 ? "CHAUD" : v >= 30 ? "TIÈDE" : "FROID";
+  const label = ui.chaleur[v >= 100 ? 4 : v >= 80 ? 3 : v >= 55 ? 2 : v >= 30 ? 1 : 0];
   const col = v >= 100 ? "#3fae6a" : C.red;
   return (
     <div style={{ width: 760, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -172,6 +186,7 @@ const Heat: React.FC<{ phase: number; local: number }> = ({ phase, local }) => {
 // Gros titre du haut, change à chaque séquence
 const Headline: React.FC<{ phase: number; local: number }> = ({ phase, local }) => {
   const { fps } = useVideoConfig();
+  const { joueur, ui } = useJoueur();
   const pop = spring({ frame: local, fps, config: { damping: 11, stiffness: 180 } });
   const box: React.CSSProperties = { position: "absolute", top: 120, left: 40, right: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 18 };
 
@@ -180,13 +195,13 @@ const Headline: React.FC<{ phase: number; local: number }> = ({ phase, local }) 
     return (
       <div style={box}>
         <div style={{ display: "flex", gap: 40, alignItems: "flex-start" }}>
-          {joueur.accroche.clubs.map((c, i) => {
+          {joueur.accroche.clubs.map((nom, i) => {
             // le premier logo est déjà visible à la toute première image
             const s = interpolate(local, [i * 3, i * 3 + 6], [0.55, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
             return (
-              <div key={c.nom} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, transform: `translateY(${(1 - s) * -90}px) scale(${s})`, opacity: local >= i * 3 ? 1 : 0 }}>
-                <Img src={staticFile(c.logo)} style={{ width: 190, height: 190, objectFit: "contain" }} />
-                <div style={{ ...cond(75), fontSize: 50, color: C.cream }}>{c.nom}</div>
+              <div key={nom} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, transform: `translateY(${(1 - s) * -90}px) scale(${s})`, opacity: local >= i * 3 ? 1 : 0 }}>
+                <Img src={staticFile(joueur.logos[i])} style={{ width: 190, height: 190, objectFit: "contain" }} />
+                <div style={{ ...cond(75), fontSize: 50, color: C.cream }}>{nom}</div>
               </div>
             );
           })}
@@ -211,7 +226,7 @@ const Headline: React.FC<{ phase: number; local: number }> = ({ phase, local }) 
   if (phase === 4) {
     return (
       <div style={box}>
-        <div style={{ fontFamily: "Plex", fontWeight: 600, fontSize: 44, letterSpacing: "0.2em", color: C.cream }}>C'ÉTAIT…</div>
+        <div style={{ fontFamily: "Plex", fontWeight: 600, fontSize: 44, letterSpacing: "0.2em", color: C.cream }}>{ui.cetait}</div>
         <div style={{ ...cond(), fontSize: 176, color: C.amber, textAlign: "center", transform: `scale(${interpolate(pop, [0, 1], [1.8, 1])})`, opacity: pop, textShadow: "0 8px 0 rgba(0,0,0,.35)" }}>
           {joueur.nom.split(" ").map((w) => (
             <div key={w}>{w}</div>
@@ -246,8 +261,16 @@ const Countdown: React.FC<{ local: number; total: number }> = ({ local, total })
   );
 };
 
-export const JoueurDHier: React.FC<Props> = ({ durees, voix }) => {
+export const JoueurDHier: React.FC<Props> = ({ durees, voix, langue = "fr" }) => (
+  <JoueurCtx.Provider value={{ joueur: joueurs[langue], ui: UI[langue] }}>
+    <Film durees={durees} voix={voix} langue={langue} />
+  </JoueurCtx.Provider>
+);
+
+const Film: React.FC<Required<Props>> = ({ durees, voix, langue }) => {
   const { fps } = useVideoConfig();
+  const { joueur } = useJoueur();
+  const prefixeVoix = langue === "fr" ? "voix-" : `${langue}-voix-`;
   const { frame, starts, phase, local } = usePhase(durees);
 
   // Dernière séquence : la carte se retourne et devient celle d'aujourd'hui
@@ -289,7 +312,7 @@ export const JoueurDHier: React.FC<Props> = ({ durees, voix }) => {
       {phase === 5 && (
         <div style={{ position: "absolute", top: 1250, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 18, transform: `scale(${ctaPop})` }}>
           <div style={{ ...cond(85), fontSize: 110, color: C.cream, background: C.ink, padding: "18px 44px 22px", border: `6px solid ${C.amber}`, textTransform: "none", transform: `scale(${pulse})` }}>
-            {joueur.cta.site}
+            {joueur.site}
           </div>
           <div style={{ fontFamily: "Plex", fontWeight: 600, fontSize: 44, letterSpacing: "0.12em", color: C.amber }}>{joueur.cta.sousTitre.toUpperCase()}</div>
         </div>
@@ -300,7 +323,7 @@ export const JoueurDHier: React.FC<Props> = ({ durees, voix }) => {
       {/* sons */}
       {durees.map((d, i) => (
         <Sequence key={`v${i}`} from={starts[i]} durationInFrames={d}>
-          {voix[i] && <Audio src={staticFile(`voix-${i + 1}.mp3`)} />}
+          {voix[i] && <Audio src={staticFile(`${prefixeVoix}${i + 1}.mp3`)} />}
         </Sequence>
       ))}
       {joueur.accroche.clubs.map((_, i) => (
