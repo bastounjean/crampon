@@ -50,6 +50,13 @@ CREATE TABLE IF NOT EXISTS league_members (
   PRIMARY KEY (league_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS league_members_user ON league_members (user_id);
+CREATE TABLE IF NOT EXISTS league_winners (
+  league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  username TEXT NOT NULL,
+  total INTEGER NOT NULL,
+  PRIMARY KEY (league_id, month)
+);
 CREATE TABLE IF NOT EXISTS packs (
   id ${id},
   day TEXT NOT NULL,

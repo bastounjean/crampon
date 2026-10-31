@@ -346,6 +346,8 @@ const DAY_FMT = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric'
 function today() {
   return DAY_FMT.format(new Date());
 }
+// le jour de jeu (heure de Paris) d'un instant donné, par exemple la création d'une ligue
+const dayOfDate = (d) => DAY_FMT.format(new Date(d));
 function dayIndex(day) {
   return Math.round((Date.parse(day + 'T00:00:00Z') - Date.parse(LAUNCH + 'T00:00:00Z')) / 86400000);
 }
@@ -627,6 +629,6 @@ function catalog() {
 
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
-  setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
+  setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
   collectCard, drawPack, deckTotals, duelPick,
 };

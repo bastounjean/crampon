@@ -254,6 +254,12 @@ a.slot:hover { outline: 2px solid var(--ink); outline-offset: -1px; }
 .rank tr.me td { background: var(--paper-2); font-weight: 700; }
 .rank tr.gap td { border-top: 2px dotted var(--hair); }
 .rank td.big { font-weight: 700; font-size: 16px; }
+.tiktok-box { border: 1px solid var(--ink); background: var(--card); padding: 12px 16px 10px; margin-bottom: 18px; }
+.tiktok-box .tt-tag { display: inline-block; background: var(--red); color: var(--on-accent); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; padding: 2px 8px; }
+.tiktok-box .tt-win { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }
+.tiktok-box .tt-win .nm { font-size: 26px; font-weight: 800; font-stretch: 75%; overflow-wrap: anywhere; }
+.tiktok-box .tt-win .pt { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.tiktok-box p { font-size: 14px; margin: 4px 0 0; }
 .rank-note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
 .scorebox { display: inline-flex; gap: 14px; align-items: baseline; margin-top: 12px; padding: 8px 14px; border: 1px solid var(--ink); }
 .scorebox .pts { font: 700 30px/1 var(--mono); color: var(--red); }

@@ -1302,6 +1302,23 @@ function duelOverScreen(v) {
 
 // ——— Page : classement ———
 let RANK_TAB = 'points';
+// « 1er novembre » en français, pas « 1 novembre »
+const dayName = (d, year = true) => new Date(d + 'T12:00:00Z').toLocaleDateString(LOC, { day: 'numeric', month: 'long', ...(year ? { year: 'numeric' } : {}) }).replace(/^1 /, L('1er ', '1 '));
+const monthName = (m) => new Date(m + '-15T12:00:00Z').toLocaleDateString(LOC, { month: 'long', year: 'numeric' });
+// l'encart « Joueur TikTok du mois » : le gagnant du dernier mois fini, et qui mène le mois en cours
+function tiktokBox(t) {
+  if (!t) return '';
+  const join = `<a href="/ligue/${t.code}" data-link>${L('Rejoins la ligue TikTok', 'Join the TikTok league')}</a> ${L('avec le code', 'with the code')} <span class="code">${t.code}</span>`;
+  const now = t.starts ? L(`La ligue démarre le ${dayName(t.starts, false)}.`, `The league starts on ${dayName(t.starts, false)}.`)
+    : t.leader ? L(`En ${monthName(t.month)}, <b>${esc(t.leader.username)}</b> mène avec ${t.leader.total} pts.`, `In ${monthName(t.month)}, <b>${esc(t.leader.username)}</b> leads with ${t.leader.total} pts.`)
+    : L(`Personne n'a encore marqué en ${monthName(t.month)}.`, `Nobody has scored yet in ${monthName(t.month)}.`);
+  return `<div class="tiktok-box">
+    <div class="tt-tag">${L('Joueur TikTok du mois', 'TikTok player of the month')}</div>
+    ${t.winner ? `<div class="tt-win"><span class="nm">${esc(t.winner.username)}</span><span class="pt">${t.winner.total} pts · ${monthName(t.winner.month)}</span></div>`
+      : `<div class="tt-win"><span class="nm muted">${L('À toi de jouer', 'Up for grabs')}</span><span class="pt">${L('premier gagnant à la fin du mois', 'first winner at the end of the month')}</span></div>`}
+    <p>${now} ${join}. ${L("Les points repartent de zéro chaque mois : le premier à la fin du mois s'affiche ici.", 'Points reset every month: whoever is first at the end of the month is shown here.')}</p>
+  </div>`;
+}
 async function pageRank() {
   const [r, me] = await Promise.all([api('leaderboard'), api('me')]);
   renderWho(me.user, me);
@@ -1322,6 +1339,7 @@ async function pageRank() {
   const names = { points: L('Général', 'Overall'), today: L("Aujourd'hui", 'Today'), streaks: L('Séries', 'Streaks') };
   app.innerHTML = `
     <div class="pagehead"><div><div class="kicker">${L('Les meilleurs FoOotix', 'The best FoOotix players')}</div><h1>${L('Classement', 'Ranking')}</h1><p><a href="/ligues" data-link>${L('Mes ligues entre potes', 'My private leagues')}</a> · ${me.user ? L(`Tu as <b>${me.user.points} points</b> et une série de <b>${me.user.streak} jour${s_(me.user.streak)}</b>.`, `You have <b>${me.user.points} points</b> and a <b>${me.user.streak}-day</b> streak.`) : L(`Seuls les joueurs avec un compte sont classés. <a href="/compte" data-link>Crée le tien</a>.`, `Only players with an account are ranked. <a href="/compte" data-link>Create yours</a>.`)}</p></div></div>
+    ${tiktokBox(r.tiktok)}
     <div class="board-tabs">${Object.entries(names).map(([k, v]) => `<button data-tab="${k}" class="${k === RANK_TAB ? 'on' : ''}">${v}</button>`).join('')}</div>
     <div id="tab"></div>
     ${adSlot('wide')}`;
@@ -1519,7 +1537,7 @@ async function pageLeagues() {
   }
   app.innerHTML = `
     <div class="pagehead"><div><div class="kicker">${L('Entre potes', 'With friends')}</div><h1>${L('Mes ligues', 'My leagues')}</h1>
-    <p>${L("Un classement rien qu'à vous, avec les points cumulés de chacun.", "A ranking just for you, with everyone's total points.")}</p></div></div>
+    <p>${L("Un classement rien qu'à vous : les points comptent à partir de la création de la ligue.", 'A ranking just for you: points count from the day the league was created.')}</p></div></div>
     ${r.leagues.length ? `<div class="lglist">
       ${r.leagues.map((l) => `<a class="lg" href="/ligue/${l.code}" data-link><span class="nm"><b>${esc(l.name)}</b><span class="code">${l.code}</span></span><span class="meta">${l.members} ${L('joueur', 'player')}${s_(l.members)}${l.leader ? ` · ${L('en tête', 'leader')} : ${esc(l.leader)}` : ''}</span><span class="pl">${ord(l.rank)}</span></a>`).join('')}
       </div>` : `<p class="muted">${L("Tu n'es dans aucune ligue pour l'instant.", "You aren't in any league yet.")}</p>`}
@@ -1542,6 +1560,10 @@ async function pageLeagues() {
   };
 }
 
+const leagueNote = (l) => l.monthly
+  ? L(`Les points repartent de zéro le 1er de chaque mois (ce mois-ci, à partir du ${dayName(l.from)}). Le premier à la fin du mois devient Joueur TikTok du mois et s'affiche dans le Classement.`, `Points reset on the 1st of every month (this month, from ${dayName(l.from)}). Whoever is first at the end of the month becomes TikTok player of the month and is shown in the Ranking.`)
+  : L(`Les points comptent depuis la création de la ligue, le ${dayName(l.from)}.`, `Points count from the day the league was created, ${dayName(l.from)}.`);
+
 async function pageLeague(code) {
   const l = await api('leagues/' + code);
   renderWho(l.user);
@@ -1556,7 +1578,8 @@ async function pageLeague(code) {
     app.innerHTML = `${head}
       <p>${L("On t'a invité dans cette ligue.", "You've been invited to this league.")} ${l.user ? '' : L('Crée un compte (un pseudo et un mot de passe), puis rejoins-la en un clic.', 'Create an account (a username and a password), then join in one click.')}</p>
       <p>${l.user ? `<button class="btn solid" id="join">${L('Rejoindre la ligue', 'Join the league')}</button>` : `<a class="btn solid" href="/compte?next=/ligue/${l.code}" data-link>${L('Créer un compte et rejoindre', 'Create an account and join')}</a>`}</p><p class="msg" id="jm"></p>
-      ${l.table.length ? `<table class="rank"><caption>${L('En tête', 'Top')}</caption><tbody>${l.table.map((x) => `<tr><td>${x.rank}</td><td>${esc(x.username)}</td><td class="r big">${x.total} pts</td></tr>`).join('')}</tbody></table>` : ''}`;
+      ${l.table.length ? `<table class="rank"><caption>${L('En tête', 'Top')}</caption><tbody>${l.table.map((x) => `<tr><td>${x.rank}</td><td>${esc(x.username)}</td><td class="r big">${x.total} pts</td></tr>`).join('')}</tbody></table>` : ''}
+      <p class="rank-note">${leagueNote(l)}</p>`;
     const j = $('#join');
     if (j) j.onclick = async () => { try { await api('leagues/' + l.code + '/join', {}); route(); } catch (err) { $('#jm').textContent = err.message; } };
     return;
@@ -1567,7 +1590,7 @@ async function pageLeague(code) {
     <table class="rank"><thead><tr><th>#</th><th>${L('Joueur', 'Player')}</th><th class="r">Points</th><th class="r">${L('N°', 'No.')} ${l.number}</th><th class="r opt">${L('Série', 'Streak')}</th></tr></thead><tbody>
     ${l.table.map((x) => `<tr class="${x.me ? 'me' : ''}"><td>${x.rank}</td><td>${esc(x.username)}${x.me ? ` <span class="muted">${L('(toi)', '(you)')}</span>` : ''}</td><td class="r big">${x.total}</td><td class="r">${day(x)}</td><td class="r opt">${x.streak}</td></tr>`).join('')}
     </tbody></table>
-    <p class="rank-note">${L("Les points sont ceux du classement général : chaque joueur trouvé rapporte, même avant d'avoir rejoint la ligue. Le chiffre entre parenthèses, c'est le nombre d'essais du jour.", "Points come from the overall ranking: every player found counts, even before joining the league. The number in brackets is today's guess count.")}</p>
+    <p class="rank-note">${leagueNote(l)} ${L("Le chiffre entre parenthèses, c'est le nombre d'essais du jour.", "The number in brackets is today's guess count.")}</p>
     <p><a class="btn" href="/ligues" data-link>${L('Toutes mes ligues', 'All my leagues')}</a> <button class="btn" id="leave">${L('Quitter la ligue', 'Leave the league')}</button></p>`;
   $('#leave').onclick = async () => {
     if (!confirm(L(`Quitter « ${l.name} » ?`, `Leave “${l.name}”?`))) return;
