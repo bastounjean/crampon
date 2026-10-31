@@ -2,6 +2,10 @@
 
 Un footballeur mystère par jour, tiré au sort parmi les légendes et joueurs actuels passés par la Ligue 1, la Premier League, la Bundesliga, la Liga ou la Serie A.
 
+## Vidéos TikTok
+
+Le dossier `video/` fabrique les vidéos TikTok (@foootixfr) avec Remotion. Il est séparé du site et n'est pas déployé : voir `video/LISEZMOI.md`.
+
 ## Lancer en local
 
 Il faut Node 22.13 ou plus récent (la base SQLite est intégrée à Node, rien d'autre à installer).

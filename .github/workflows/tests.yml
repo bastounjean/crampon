@@ -12,3 +12,15 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm test
+  video:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: video
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run verifier
