@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { LEAGUES, COUNTRIES, POSITIONS } = require('./data/meta');
 const I18N = require('./i18n');
+const ALIAS = require('./data/aliases');
 
 const NOW_YEAR = new Date().getFullYear();
 const LAUNCH = process.env.LAUNCH_DATE || '2026-10-13';
@@ -15,6 +16,10 @@ const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 // gentilés connus, pour accepter « Brésilien » comme « Brésil »
 const ADJ = {};
 for (const [name, adj] of Object.values(COUNTRIES)) ADJ[norm(name)] = adj;
+const byNorm = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [norm(k), v]));
+const NAT_ALIAS = byNorm(ALIAS.COUNTRIES), TEAM_ALIAS = byNorm(ALIAS.TEAMS), CLUB_ALIAS = byNorm(ALIAS.CLUBS);
+// Royaume-Uni : un Anglais, un Écossais, un Gallois ou un Nord-Irlandais est britannique, même si sa fiche ne le dit pas
+const UK = 'Q145', HOME_NATIONS = new Set(['Q21', 'Q22', 'Q25', 'Q26']);
 
 // ——— Joueurs ———
 // IDS : la liste fixe des joueurs qui peuvent tomber (src/data/pool.json).
@@ -108,15 +113,19 @@ function buildClues() {
 
   const nats = {}, sels = {};
   for (const p of PLAYERS) { for (const n of p.cit) nats[n.code] = n; for (const n of p.nat) sels[n.code] = n; }
+  if (!nats[UK] && Object.keys(nats).some((c) => HOME_NATIONS.has(c))) nats[UK] = { code: UK, name: 'Royaume-Uni' };
   for (const n of Object.values(nats)) {
     const adj = ADJ[norm(n.name)];
-    add('nat:' + n.code, n.name, 'Nationalité', adj ? [adj, 'nationalite ' + n.name] : ['nationalite ' + n.name], (p) => p.cit.some((x) => x.code === n.code), 34);
+    const terms = [...(adj ? [adj] : []), 'nationalite ' + n.name, ...(NAT_ALIAS[norm(n.name)] || [])];
+    const test = n.code === UK ? (p) => p.cit.some((x) => x.code === UK || HOME_NATIONS.has(x.code)) : (p) => p.cit.some((x) => x.code === n.code);
+    add('nat:' + n.code, n.name, 'Nationalité', terms, test, 34);
   }
   // la sélection : l'équipe nationale pour laquelle il joue (« équipe de France », « sélection Brésil »)
   for (const n of Object.values(sels)) {
     const adj = ADJ[norm(n.name)];
     const terms = ['selection ' + n.name, 'selectionne ' + n.name, 'equipe de ' + n.name, 'equipe du ' + n.name, 'equipe d ' + n.name, 'equipe des ' + n.name, 'joue pour ' + n.name];
     if (adj) terms.push('international ' + adj, 'selection ' + adj, 'equipe ' + adj);
+    terms.push(...(TEAM_ALIAS[norm(n.name)] || []));
     add('sel:' + n.code, 'Sélection : ' + n.name, 'Sélection', terms, (p) => p.nat.some((x) => x.code === n.code), 38);
   }
   const contAdj = { Europe: 'europeen', Afrique: 'africain', Asie: 'asiatique', 'Amérique du Sud': 'sud americain', 'Amérique du Nord': 'nord americain', 'Océanie': 'oceanien' };
@@ -126,13 +135,13 @@ function buildClues() {
   CLUB_NAMES = {};
   for (const p of PLAYERS) for (const c of p.clubs) CLUB_NAMES[c.id] = c.club;
   for (const [id, name] of Object.entries(CLUB_NAMES).sort((a, b) => a[1].localeCompare(b[1], 'fr')))
-    add('club:' + id, name, 'Club', [shortName(name), name.replace(/^Olympique (de )?/i, ''), ...(NICK[norm(name)] || [])], (p) => p.clubs.some((c) => c.id === id), 45);
+    add('club:' + id, name, 'Club', [shortName(name), name.replace(/^Olympique (de )?/i, ''), ...(NICK[norm(name)] || []), ...(CLUB_ALIAS[norm(name)] || [])], (p) => p.clubs.some((c) => c.id === id), 45);
 
   for (const [code, pos] of Object.entries(POSITIONS))
-    add('pos:' + code, pos.clue, 'Poste', [pos.name, code === 'GB' ? 'goal' : code === 'ATT' ? 'buteur' : code === 'DEF' ? 'defense' : 'milieu'], (p) => p.pos === code, 18);
+    add('pos:' + code, pos.clue, 'Poste', [pos.name, code === 'GB' ? 'goal' : code === 'ATT' ? 'buteur' : code === 'DEF' ? 'defense' : 'milieu', ...ALIAS.POSITIONS[code]], (p) => p.pos === code, 18);
   for (let d = 1920; d <= 2000; d += 10) {
     const short = String(d).slice(2);
-    add('dec:' + d, `Né dans les années ${d}`, 'Génération', [`annees ${short}`, `annees ${d}`, `${d}s`, `ne en ${d}`], (p) => Math.floor(p.bornYear / 10) * 10 === d, 28);
+    add('dec:' + d, `Né dans les années ${d}`, 'Génération', [`annees ${short}`, `annees ${d}`, `${d}s`, `ne en ${d}`, `ne dans les annees ${short}`, `ne dans les annees ${d}`], (p) => Math.floor(p.bornYear / 10) * 10 === d, 28);
   }
   add('hon:BO', "Ballon d'or", 'Palmarès', ['ballon d or', 'ballon dor', 'vainqueur du ballon d or'], (p) => p.bo, 30);
   add('act:1', 'Toujours en activité', 'Carrière', ['en activite', 'actif', 'joue encore'], (p) => p.active, 12);

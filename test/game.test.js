@@ -85,3 +85,28 @@ test('température : grimpe quand on trouve le joueur', () => {
   assert.strictEqual(G.heat(p, [{ type: 'player', key: p.id }]), 100);
   assert.ok(G.heat(p, []) < 100);
 });
+
+test('saisies : postes abrégés, nationalités du foot et surnoms, en français et en anglais', () => {
+  const r = (q) => { const x = G.resolve({ q }); return x && x.clue ? x.clue.id : x && x.player ? x.player.name : x && x.error; };
+  for (const q of ['CM', 'CDM', 'cam', 'milieu défensif', 'box-to-box']) assert.strictEqual(r(q), 'pos:MIL', q);
+  for (const q of ['CB', 'LB', 'right back', 'arrière gauche', 'libéro']) assert.strictEqual(r(q), 'pos:DEF', q);
+  for (const q of ['ST', 'CF', 'RW', 'avant-centre', 'ailier']) assert.strictEqual(r(q), 'pos:ATT', q);
+  for (const q of ['GK', 'GB', 'portier']) assert.strictEqual(r(q), 'pos:GB', q);
+  assert.strictEqual(r('English'), 'nat:Q21');
+  assert.strictEqual(r('Scottish'), 'nat:Q22');
+  assert.strictEqual(r('Welsh'), 'nat:Q25');
+  for (const q of ['UK', 'U.K.', 'British', 'Great Britain']) assert.strictEqual(r(q), 'nat:Q145', q);
+  for (const q of ['USA', 'Holland', 'Korea']) assert.ok(/^nat:/.test(r(q)), q);
+  assert.strictEqual(r('Three Lions'), 'sel:Q21');
+  assert.strictEqual(r('England international'), 'sel:Q21');
+  assert.strictEqual(r('born in the 90s'), 'dec:1990');
+  assert.strictEqual(r('Spurs'), 'club:Q18741');
+  assert.strictEqual(r('Wolves'), G.resolve({ q: 'Wolverhampton' }).clue.id);
+  // un Anglais est britannique, même si sa fiche ne dit que « Angleterre »
+  const uk = G.resolve({ q: 'UK' }).clue;
+  const eng = G.PLAYERS.find((p) => p.cit.length === 1 && p.cit[0].code === 'Q21');
+  assert.ok(uk.test(eng));
+  assert.ok(!uk.test(G.PLAYERS.find((p) => p.cit.length === 1 && p.cit[0].code === 'Q142')));
+  // les joueurs restent trouvables par leur nom
+  for (const q of ['Messi', 'Kane', 'Rooney', 'Zidane']) assert.ok(G.resolve({ q }).player, q);
+});

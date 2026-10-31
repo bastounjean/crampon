@@ -150,11 +150,11 @@ function deep(v, key) {
 function extraTerms(clueId, label) {
   const [kind, v] = clueId.split(/:(.+)/);
   if (kind === 'nat') { const c = COUNTRY[label]; return c ? c : []; }
-  if (kind === 'sel') { const c = COUNTRY[label.replace(/^Sélection : /, '')]; return c ? [`${c[0]} national team`, `plays for ${c[0]}`, ...c.slice(1).map((a) => `${a} international`)] : []; }
+  if (kind === 'sel') { const c = COUNTRY[label.replace(/^Sélection : /, '')]; return c ? [`${c[0]} national team`, `${c[0]} international`, `${c[0]} team`, `plays for ${c[0]}`, ...c.slice(1).flatMap((a) => [`${a} international`, `${a} national team`])] : []; }
   if (kind === 'cont') return [CONT[v], ...(CONT_ADJ[v] || [])].filter(Boolean);
   if (kind === 'pos') return POS_TERMS[v] || [];
   if (kind === 'lg') return LEAGUE_TERMS[v] || [];
-  if (kind === 'dec') { const s = String(v).slice(2); return [`born in the ${v}s`, `${s}s`, `the ${s}s`, `the ${v}s`, `born in ${v}s`]; }
+  if (kind === 'dec') { const s = String(v).slice(2); return [`born in the ${v}s`, `${s}s`, `the ${s}s`, `the ${v}s`, `born in ${v}s`, `born in the ${s}s`, `born in ${s}s`, `${s}s born`, `${v}s born`]; }
   if (kind === 'act') return v === '1' ? ['active', 'still playing', 'still active'] : ['retired', 'legend'];
   if (kind === 'club') { const en = place(label); return en !== label ? [en] : []; }
   return [];
