@@ -48,7 +48,7 @@ module.exports = function front({ app, db, DOMAIN }) {
         ['<span>Jouer</span>', '<span>Play</span>'], ['<span>Classement</span>', '<span>Ranking</span>'], ['<span>Duel</span>', '<span>Duel</span>'],
         ['FoOotix — un joueur par jour, tiré au sort parmi les cinq grands championnats européens.', "FoOotix — one player a day, drawn from Europe's top five leagues."],
         ['Résumés et photos : <a href="https://fr.wikipedia.org" target="_blank" rel="noopener">Wikipédia</a>', 'Summaries and photos: <a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a>'],
-        ['>Règles du jeu<', '>How to play<'], ['>Archives<', '>Archive<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
+        ['>Règles du jeu<', '>How to play<'], ['>Astuces<', '>Tips<'], ['>À propos et contact<', '>About and contact<'], ['>Archives<', '>Archive<'], ['>Mentions légales<', '>Legal notice<'], ['>Confidentialité et cookies<', '>Privacy and cookies<'], ['>Gérer mes cookies<', '>Manage cookies<'],
         ['hreflang="en" lang="en">English version<', 'hreflang="fr" lang="fr">Version française<'],
       ]) h = h.split(fr).join(en);
     }
@@ -56,7 +56,7 @@ module.exports = function front({ app, db, DOMAIN }) {
   };
   app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
   app.get('/sitemap.xml', (req, res) => {
-    const pages = ['/', '/en', '/regles', '/joueurs', '/classement', '/collection', '/duel'];
+    const pages = ['/', '/en', '/regles', '/astuces', '/a-propos', '/joueurs', '/classement', '/collection', '/duel', '/mentions-legales', '/confidentialite'];
     for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
   });
@@ -87,7 +87,7 @@ module.exports = function front({ app, db, DOMAIN }) {
     '/style.css': packed(fs.readFileSync(path.join(PUB, 'style.css')), 'text/css; charset=utf-8', ASSET_CACHE),
   };
   const BASE = { fr: indexFor('fr'), en: indexFor('en') };
-  const render = require('./pages')({ G, dayStats });
+  const render = require('./pages')({ G, dayStats, CONFIG });
   // chaque page arrive avec son vrai contenu, son titre et son adresse canonique (gardée 10 min en mémoire)
   const HTML = new Map();
   const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -142,7 +142,7 @@ module.exports = function front({ app, db, DOMAIN }) {
     sendPacked(req, res, await pageFor(req.path, I18N.pick(req)));
   }));
 
-  app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
+  app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/astuces', '/a-propos', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
     res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
     const page = await pageFor(req.path === '/index.html' ? '/' : req.path, I18N.pick(req));
     if (page.missing) res.status(404);

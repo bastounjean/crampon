@@ -7,7 +7,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const ADJ = Object.fromEntries(Object.values(COUNTRIES).map(([name, adj]) => [name, adj]));
 const NOW_YEAR = new Date().getFullYear();
 
-module.exports = function pages({ G, dayStats }) {
+module.exports = function pages({ G, dayStats, CONFIG = {} }) {
+  const LEGAL = { fr: require('./legal')(CONFIG, false), en: require('./legal')(CONFIG, true) };
   const fmt = (day, en) => new Date(day + 'T12:00:00Z').toLocaleDateString(en ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   const len = (c) => (c.to ?? NOW_YEAR) - (c.from ?? NOW_YEAR);
   const mainClub = (p) => [...p.clubs].filter((c) => c.league && !c.loan).sort((a, b) => len(b) - len(a))[0] || p.clubs[0];
@@ -196,6 +197,127 @@ ${rows.map((d) => `<tr><td>${d.number}</td><td>${esc(fmt(d.day, en))}</td><td><a
     return { title, desc, main: html };
   }
 
+
+  // ——— le vivier en chiffres, calculé sur la vraie liste ———
+  function poolStats() {
+    const ps = G.PLAYERS;
+    const lg = {};
+    for (const p of ps) for (const k of new Set(p.clubs.map((c) => c.league).filter(Boolean))) lg[k] = (lg[k] || 0) + 1;
+    const conts = {};
+    for (const p of ps) { const c = p.nat[0].cont || '?'; conts[c] = (conts[c] || 0) + 1; }
+    return {
+      n: ps.length,
+      active: ps.filter((p) => p.active).length,
+      nats: new Set(ps.map((p) => p.nat[0].name)).size,
+      bo: ps.filter((p) => p.bo).length,
+      lg: Object.entries(lg).sort((a, b) => b[1] - a[1]),
+      conts: Object.entries(conts).filter(([c]) => c !== '?').sort((a, b) => b[1] - a[1]),
+      days: G.dayIndex(G.today()),
+    };
+  }
+
+  // ——— à propos et contact ———
+  function aboutPage(en) {
+    const st = poolStats();
+    const mail = CONFIG.contact && CONFIG.contact.includes('@') ? `<a href="mailto:${esc(CONFIG.contact)}">${esc(CONFIG.contact)}</a>` : esc(CONFIG.contact || '');
+    const who = CONFIG.owner ? esc(CONFIG.owner) : '';
+    const lgList = st.lg.map(([k, n]) => `<li>${esc(LEAGUES[k].name)}${en ? '' : ` (${esc(LEAGUES[k].long)})`}&nbsp;: ${n} ${en ? 'players' : 'joueurs'}</li>`).join('');
+    const ct = (c) => (en ? I18N.tr(c) : c);
+    return en ? `
+<div class="pagehead"><div><div class="kicker">About</div><h1>About FoOotix</h1><p>A daily football guessing game, made independently in France.</p></div></div>
+<div class="prose">
+  <h2>The idea</h2>
+  <p>FoOotix was born from a simple question football fans ask each other all the time: “who's that player who played for Lyon, then Arsenal, then went to Italy?”. Every day, the site draws one footballer and turns that question into a game. You don't get a photo or a name, only clues you earn by guessing other players or asking yes/no questions. Everyone gets the same player on the same day, so you can compare with friends, in a league or on social media.</p>
+  <p>The game is free, works on phones and computers, and doesn't require an account: you can play straight away. An account is only useful to keep your album, your streak and your points from one device to another.</p>
+  <h2>Where the players come from</h2>
+  <p>The list was built by hand from <a href="https://www.wikidata.org" rel="noopener">Wikidata</a>, the open database behind Wikipedia, then checked and corrected. To be in it, a footballer must have spent at least three seasons in one of Europe's top five leagues. Profiles (clubs, dates, loans, national team) are refreshed every day, so a transfer shows up on the site within a day or two.</p>
+  <p>Today the list holds <b>${st.n} footballers</b> from <b>${st.nats} countries</b>: ${st.active} are still playing, ${st.n - st.active} have retired, and ${st.bo} have won the Ballon d'Or. Many played in several leagues:</p>
+  <ul>${lgList}</ul>
+  <p>By continent of their first nationality: ${st.conts.map(([c, n]) => `${esc(ct(c))} ${n}`).join(', ')}.</p>
+  <h2>A new player every day</h2>
+  <p>The draw happens at midnight, Paris time. A player only comes back once almost all the others have been drawn, and lesser-known players earn up to twice as many points as stars. Since launch, ${st.days} players have been drawn: each one gets a profile page in the <a href="/joueurs">archive</a>, with his career, the hints of the day and the other mystery players he crossed paths with.</p>
+  <p>There is also a short video every morning on TikTok (<a href="https://www.tiktok.com/@foootixfr" rel="noopener">@foootixfr</a>) about the previous day's player, and a monthly TikTok league whose winner is shown in the <a href="/classement">ranking</a>.</p>
+  <h2>Fair play</h2>
+  <p>FoOotix is not affiliated with any club, league or federation. Club names are only used to describe players' careers. The site is funded by advertising, shown in a way that doesn't get in the way of the game.</p>
+  <h2>Contact</h2>
+  <p>A mistake in a career, a player missing from the list, an idea, a bug? ${mail ? `Write to ${mail}: every message is read, and corrections are usually made within a few days.` : 'Use the contact details in the <a href="/mentions-legales">legal notice</a>: every message is read.'}${who ? ` FoOotix is published by ${who}.` : ''}</p>
+  <p><a href="/regles">Rules</a> · <a href="/astuces">Tips</a> · <a href="/joueurs">Archive</a> · <a href="/">Play today's game</a></p>
+</div>` : `
+<div class="pagehead"><div><div class="kicker">À propos</div><h1>Qui sommes-nous&nbsp;?</h1><p>Un jeu de devinette quotidien sur le football, fait de façon indépendante en France.</p></div></div>
+<div class="prose">
+  <h2>L'idée</h2>
+  <p>FoOotix est né d'une question que tous les fans de foot se posent entre eux&nbsp;: «&nbsp;c'est qui déjà, ce joueur passé par Lyon, puis Arsenal, avant de filer en Italie&nbsp;?&nbsp;». Chaque jour, le site tire un footballeur au sort et transforme cette question en jeu. Pas de photo ni de nom au départ, seulement des indices que tu gagnes en proposant d'autres joueurs ou en posant des questions fermées. Tout le monde a le même joueur le même jour&nbsp;: on peut donc comparer avec ses potes, dans une ligue ou sur les réseaux.</p>
+  <p>Le jeu est gratuit, marche sur téléphone comme sur ordinateur, et ne demande pas de compte&nbsp;: on peut jouer tout de suite. Un compte sert seulement à garder son album, sa série et ses points d'un appareil à l'autre.</p>
+  <h2>D'où viennent les joueurs</h2>
+  <p>La liste a été construite à partir de <a href="https://www.wikidata.org" rel="noopener">Wikidata</a>, la base de données libre derrière Wikipédia, puis vérifiée et corrigée à la main. Pour y entrer, un footballeur doit avoir passé au moins trois saisons dans l'un des cinq grands championnats européens. Les fiches (clubs, dates, prêts, sélection) sont mises à jour chaque jour&nbsp;: un transfert apparaît sur le site en un jour ou deux.</p>
+  <p>Aujourd'hui, la liste compte <b>${st.n} footballeurs</b> de <b>${st.nats} pays</b>&nbsp;: ${st.active} jouent encore, ${st.n - st.active} ont pris leur retraite, et ${st.bo} ont gagné le Ballon d'or. Beaucoup ont joué dans plusieurs championnats&nbsp;:</p>
+  <ul>${lgList}</ul>
+  <p>Par continent de leur première nationalité&nbsp;: ${st.conts.map(([c, n]) => `${esc(c)} ${n}`).join(', ')}.</p>
+  <h2>Un nouveau joueur chaque jour</h2>
+  <p>Le tirage a lieu à minuit, heure de Paris. Un joueur ne revient qu'une fois presque tous les autres passés, et un joueur méconnu rapporte jusqu'à deux fois plus de points qu'une star. Depuis le lancement, ${st.days} joueurs ont été tirés&nbsp;: chacun a sa fiche dans les <a href="/joueurs">archives</a>, avec sa carrière, les indices du jour et les autres joueurs mystères qu'il a croisés.</p>
+  <p>Chaque matin, une courte vidéo sur TikTok (<a href="https://www.tiktok.com/@foootixfr" rel="noopener">@foootixfr</a>) revient sur le joueur de la veille, et une ligue TikTok désigne chaque mois un gagnant, affiché dans le <a href="/classement">classement</a>.</p>
+  <h2>Indépendance</h2>
+  <p>FoOotix n'est lié à aucun club, aucune ligue ni aucune fédération. Les noms des clubs servent uniquement à décrire la carrière des joueurs. Le site est financé par la publicité, placée de façon à ne pas gêner le jeu.</p>
+  <h2>Nous contacter</h2>
+  <p>Une erreur dans une carrière, un joueur qui manque, une idée, un bug&nbsp;? ${mail ? `Écris à ${mail}&nbsp;: chaque message est lu, et les corrections sont faites en général sous quelques jours.` : 'Les coordonnées sont dans les <a href="/mentions-legales">mentions légales</a>&nbsp;: chaque message est lu.'}${who ? ` FoOotix est édité par ${who}.` : ''}</p>
+  <p><a href="/regles">Règles</a> · <a href="/astuces">Astuces</a> · <a href="/joueurs">Archives</a> · <a href="/">Jouer au joueur du jour</a></p>
+</div>`;
+  }
+
+  // ——— astuces : un vrai guide pour trouver plus vite ———
+  function tips(en) {
+    const st = poolStats();
+    const big = st.lg[0] ? LEAGUES[st.lg[0][0]].name : 'Premier League';
+    const share = st.lg[0] ? Math.round((st.lg[0][1] / st.n) * 100) : 0;
+    return en ? `
+<div class="pagehead"><div><div class="kicker">Guide</div><h1>Tips to find the mystery player faster</h1><p>Method, good questions and classic traps, to score more points every day.</p></div></div>
+<div class="prose">
+  <h2>1. Start wide, with questions</h2>
+  <p>At the start, ${st.n} players are possible. A good first question splits that list in two. “${esc(big)}” is a great opener: about ${share}% of the players spent time there. Then ask for a continent (“Africa”, “South America”), a position (“goalkeeper”, “defender”) or a decade (“born in the 1990s”). Four or five questions like these often take you past 40°.</p>
+  <p>Careful: every question counts as a try, just like a guessed player. A question that only rules out a few players (a small club, a rare nationality) is a wasted try early on.</p>
+  <h2>2. Pick “crossroads” players</h2>
+  <p>When you guess a player, the game shows everything he shares with the mystery one: nationality, position, clubs, leagues and teammates. So your first guess should be someone who played in many places. Players who went through four or five big leagues and ten clubs (like Pierre-Emerick Aubameyang, Kevin-Prince Boateng or Alexis Sánchez) reveal a lot even when they're wrong.</p>
+  <h2>3. Read the arrows and the teammates</h2>
+  <p>The age arrow tells you whether the mystery player is older or younger: combine two guesses and you can narrow his birth year down to a few seasons. A “teammate at…” line is the strongest clue there is: it means both players were at the same club at the same time. Look up that club's squad from that period in your head, and you're often down to a handful of names.</p>
+  <h2>4. Watch the temperature</h2>
+  <p>The temperature measures how many players are still possible. Around 65°, about ten remain; at 99°, only one. If it barely moves after a question, that question didn't teach you much: change angle (position instead of league, decade instead of continent).</p>
+  <h2>5. Hints: only as a last resort</h2>
+  <p>A hint unlocks after 5 tries, then every 6. Each one costs 10% of your points, but giving up costs everything and resets your streak. When you're stuck above 90°, it's often worth trying a name or two before asking for one.</p>
+  <h2>6. Common traps</h2>
+  <ul>
+    <li><b>Loans count.</b> A loan spell is listed among the clubs, and can explain a surprising “common club”.</li>
+    <li><b>A “no” is a clue too.</b> “Not in Serie A” rules out hundreds of players at once: write down what you've excluded.</li>
+    <li><b>Spelling.</b> You don't need accents: “Ozil” or “Özil”, both work, as do common nicknames.</li>
+  </ul>
+  <h2>7. Train on past days</h2>
+  <p>Every missed day can be replayed from your <a href="/album">album</a>, with no points: it's the best way to practise. Once you've found one, its profile in the <a href="/joueurs">archive</a> shows the hints of the day and the other mystery players he's linked to.</p>
+  <p><a href="/regles">Full rules</a> · <a href="/">Play today's game</a></p>
+</div>` : `
+<div class="pagehead"><div><div class="kicker">Guide</div><h1>Astuces pour trouver le joueur mystère plus vite</h1><p>La méthode, les bonnes questions et les pièges classiques, pour marquer plus de points chaque jour.</p></div></div>
+<div class="prose">
+  <h2>1. Commence large, avec des questions</h2>
+  <p>Au départ, ${st.n} joueurs sont possibles. Une bonne première question coupe cette liste en deux. «&nbsp;${esc(big)}&nbsp;» est une excellente ouverture&nbsp;: environ ${share}&nbsp;% des joueurs y sont passés. Enchaîne avec un continent («&nbsp;Afrique&nbsp;», «&nbsp;Amérique du Sud&nbsp;»), un poste («&nbsp;gardien&nbsp;», «&nbsp;défenseur&nbsp;») ou une décennie («&nbsp;années 1990&nbsp;»). Quatre ou cinq questions de ce genre suffisent souvent à dépasser 40°.</p>
+  <p>Attention&nbsp;: chaque question compte comme un essai, au même titre qu'un joueur proposé. Une question qui n'élimine presque personne (un petit club, une nationalité rare) est un essai gâché en début de partie.</p>
+  <h2>2. Choisis des joueurs «&nbsp;carrefour&nbsp;»</h2>
+  <p>Quand tu proposes un joueur, le jeu montre tout ce qu'il partage avec le mystère&nbsp;: nationalité, poste, clubs, championnats et coéquipiers. Ton premier essai doit donc être quelqu'un qui a beaucoup bougé. Les joueurs passés par quatre ou cinq grands championnats et une dizaine de clubs (comme Pierre-Emerick Aubameyang, Kevin-Prince Boateng ou Alexis Sánchez) en révèlent beaucoup, même quand ce n'est pas eux.</p>
+  <h2>3. Lis les flèches et les coéquipiers</h2>
+  <p>La flèche d'âge te dit si le mystère est plus âgé ou plus jeune&nbsp;: en combinant deux essais, tu encadres son année de naissance à quelques saisons près. Une ligne «&nbsp;coéquipier à…&nbsp;» est l'indice le plus fort qui existe&nbsp;: les deux joueurs étaient dans le même club au même moment. Repasse-toi l'effectif de ce club à cette époque, et il ne reste souvent qu'une poignée de noms.</p>
+  <h2>4. Surveille la température</h2>
+  <p>La température mesure combien de joueurs restent possibles. Vers 65°, il en reste une dizaine&nbsp;; à 99°, un seul. Si elle bouge à peine après une question, c'est que la question ne t'a pas appris grand-chose&nbsp;: change d'angle (le poste plutôt que le championnat, la décennie plutôt que le continent).</p>
+  <h2>5. Les indices&nbsp;: en dernier recours</h2>
+  <p>Un indice se débloque après 5 essais, puis tous les 6. Chacun retire 10&nbsp;% de tes points, mais abandonner fait tout perdre et remet ta série à zéro. Bloqué au-dessus de 90°&nbsp;? Tente un ou deux noms avant de demander un indice.</p>
+  <h2>6. Les pièges classiques</h2>
+  <ul>
+    <li><b>Les prêts comptent.</b> Un prêt apparaît dans les clubs et peut expliquer un «&nbsp;club commun&nbsp;» surprenant.</li>
+    <li><b>Un «&nbsp;non&nbsp;» est aussi un indice.</b> «&nbsp;Pas en Serie A&nbsp;» élimine des centaines de joueurs d'un coup&nbsp;: retiens ce que tu as exclu.</li>
+    <li><b>L'orthographe.</b> Pas besoin d'accents&nbsp;: «&nbsp;Ozil&nbsp;» ou «&nbsp;Özil&nbsp;», les deux marchent, comme les surnoms connus.</li>
+  </ul>
+  <h2>7. Entraîne-toi sur les jours passés</h2>
+  <p>Chaque jour raté peut se rejouer depuis ton <a href="/album">album</a>, sans points&nbsp;: c'est le meilleur entraînement. Une fois trouvé, sa fiche dans les <a href="/joueurs">archives</a> montre les indices du jour et les autres joueurs mystères liés à lui.</p>
+  <p><a href="/regles">Toutes les règles</a> · <a href="/">Jouer au joueur du jour</a></p>
+</div>`;
+  }
+
   const TITLES = {
     '/regles': ['Règles du jeu · FoOotix', 'How to play · FoOotix', "Comment jouer à FoOotix : les points, la carte du joueur mystère, la température, les indices, le Pack Opening et le duel.", 'How to play FoOotix: points, the mystery card, temperature, hints, Pack Opening and duels.'],
     '/joueurs': ['Archives : les joueurs mystères passés · FoOotix', 'Archive: past mystery players · FoOotix', 'Tous les footballeurs déjà tirés sur FoOotix, jour par jour, avec leur poste, leur nationalité, leur club et leur fiche.', 'Every footballer already drawn on FoOotix, day by day, with position, nationality, club and profile.'],
@@ -203,8 +325,10 @@ ${rows.map((d) => `<tr><td>${d.number}</td><td>${esc(fmt(d.day, en))}</td><td><a
     '/collection': ['Pack Opening : un pack de cartes gratuit par jour · FoOotix', 'Pack Opening: a free card pack every day · FoOotix', blurbs['/collection'][0], blurbs['/collection'][1]],
     '/classement': ['Classement · FoOotix', 'Ranking · FoOotix', blurbs['/classement'][0], blurbs['/classement'][1]],
     '/duel': ['Duel : affronte un autre joueur · FoOotix', 'Duel: face another player · FoOotix', blurbs['/duel'][0], blurbs['/duel'][1]],
-    '/mentions-legales': ['Mentions légales · FoOotix', 'Legal notice · FoOotix'],
-    '/confidentialite': ['Confidentialité et cookies · FoOotix', 'Privacy and cookies · FoOotix'],
+    '/mentions-legales': ['Mentions légales · FoOotix', 'Legal notice · FoOotix', "Qui édite et héberge FoOotix, d'où viennent les fiches des joueurs, et comment nous contacter.", 'Who publishes and hosts FoOotix, where player profiles come from, and how to contact us.'],
+    '/confidentialite': ['Confidentialité et cookies · FoOotix', 'Privacy and cookies · FoOotix', "Les données que FoOotix enregistre, les cookies utilisés, la publicité et tes droits.", 'The data FoOotix stores, the cookies it uses, advertising and your rights.'],
+    '/a-propos': ['À propos de FoOotix : le jeu, les joueurs, le contact', 'About FoOotix: the game, the players, contact', "Qui fait FoOotix, comment la liste des footballeurs est construite et mise à jour, et comment nous contacter.", 'Who makes FoOotix, how the list of footballers is built and updated, and how to contact us.'],
+    '/astuces': ['Astuces pour trouver le joueur mystère · FoOotix', 'Tips to find the mystery player · FoOotix', "Le guide pour trouver le footballeur du jour en moins d'essais : premières questions, joueurs carrefour, température, indices et pièges.", 'How to find the daily footballer in fewer tries: first questions, crossroads players, temperature, hints and traps.'],
   };
 
   // ce que le serveur ajoute à la page : { title, desc, main (dans #app), about (sous #app) }
@@ -216,6 +340,9 @@ ${rows.map((d) => `<tr><td>${d.number}</td><td>${esc(fmt(d.day, en))}</td><td><a
     else if (blurbs[pathName]) out.about = `<p>${blurbs[pathName][en ? 1 : 0]}</p><p><a href="/regles">${en ? 'Read the rules' : 'Lire les règles'}</a> · <a href="/">${en ? 'Play' : 'Jouer'}</a></p>`;
     if (pathName === '/regles') out.main = rules(en);
     if (pathName === '/joueurs') out.main = archive(en);
+    if (pathName === '/a-propos') out.main = aboutPage(en);
+    if (pathName === '/astuces') out.main = tips(en);
+    if (LEGAL.fr[pathName]) out.main = LEGAL[en ? 'en' : 'fr'][pathName]();
     const m = pathName.match(/^\/joueur\/([\w-]+)$/);
     if (m) {
       const r = await profile(m[1], en);
