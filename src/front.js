@@ -54,11 +54,23 @@ module.exports = function front({ app, db, DOMAIN }) {
     }
     return h;
   };
-  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${DOMAIN}/sitemap.xml\n`));
+  // L'adresse officielle du site, celle qui répond vraiment (aujourd'hui www.foootix.com : foootix.com y renvoie).
+  // Les balises canoniques et le plan du site doivent la donner, sinon Google tourne en rond entre les deux
+  // adresses et n'indexe pas les pages. On prend donc l'adresse de la visite, si c'est bien le site.
+  const BASE_HOST = DOMAIN.replace(/^www\./, '');
+  const hostOf = (req) => {
+    const h = String(req.hostname || '').toLowerCase();
+    return h === BASE_HOST || h === 'www.' + BASE_HOST ? h : 'www.' + BASE_HOST;
+  };
+  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://${hostOf(req)}/sitemap.xml\n`));
   app.get('/sitemap.xml', (req, res) => {
-    const pages = ['/', '/en', '/regles', '/astuces', '/a-propos', '/joueurs', '/classement', '/collection', '/duel', '/mentions-legales', '/confidentialite'];
-    for (let i = 0; i < G.dayIndex(G.today()); i++) pages.push('/joueur/' + G.playerOfDay(G.dayFromIndex(i)).id);
-    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `<url><loc>https://${DOMAIN}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
+    const pages = ['/', '/en', '/regles', '/astuces', '/a-propos', '/joueurs', '/classement', '/collection', '/duel', '/mentions-legales', '/confidentialite'].map((p) => [p]);
+    for (let i = 0; i < G.dayIndex(G.today()); i++) {
+      const day = G.dayFromIndex(i);
+      pages.push(['/joueur/' + G.playerOfDay(day).id, day]);
+    }
+    const host = hostOf(req);
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map(([p, d]) => `<url><loc>https://${host}${p}</loc>${d ? `<lastmod>${d}</lastmod>` : ''}</url>`).join('\n')}\n</urlset>\n`);
   });
   app.get('/ads.txt', (req, res) => {
     if (!ADS) return res.status(404).type('text').send('');
@@ -91,8 +103,8 @@ module.exports = function front({ app, db, DOMAIN }) {
   // chaque page arrive avec son vrai contenu, son titre et son adresse canonique (gardée 10 min en mémoire)
   const HTML = new Map();
   const attr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  async function pageFor(pathName, lang) {
-    const key = `${lang}:${pathName}:${G.today()}`;
+  async function pageFor(pathName, lang, host) {
+    const key = `${host}:${lang}:${pathName}:${G.today()}`;
     const c = HTML.get(key);
     if (c && Date.now() - c.t < 600000) return c.v;
     // /en : la page d'accueil en anglais, pour les liens partagés à l'étranger (aperçu et texte en anglais)
@@ -100,9 +112,12 @@ module.exports = function front({ app, db, DOMAIN }) {
     const shared = pathName.startsWith('/r/') ? SHARE.parse(pathName.slice(3)) : null;
     const r = await render(pathName === '/en' || shared ? '/' : pathName, lang);
     let h = BASE[lang];
-    const url = `https://${DOMAIN}${pathName}`;
+    const url = `https://${host}${pathName}`;
     h = h.replace('<link rel="canonical" href="https://foootix.com/">', `<link rel="canonical" href="${attr(url)}">`)
       .replace('<meta property="og:url" content="https://foootix.com/">', `<meta property="og:url" content="${attr(url)}">`);
+    // les versions française et anglaise n'existent que pour l'accueil (/ et /en)
+    if (pathName !== '/' && pathName !== '/en') h = h.replace(/<link rel="alternate" hreflang="[^"]*" href="[^"]*">\n/g, '');
+    h = h.split('https://foootix.com/').join(`https://${host}/`);
     if (pathName === '/en' || shared) h = h.replace('</head>', '<script>history.replaceState(null, \'\', \'/\' + location.search);</script>\n</head>');
     if (/^\/(compte|duel\/|ligue\/|r\/)/.test(pathName) || !r) h = h.replace('</head>', '<meta name="robots" content="noindex">\n</head>');
     if (r && r.title) h = h.replace(/<title>[^<]*<\/title>/, `<title>${attr(r.title)}</title>`).replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(r.title)}`);
@@ -111,7 +126,7 @@ module.exports = function front({ app, db, DOMAIN }) {
       const w = SHARE.words(shared);
       h = h.replace(/(<meta property="og:title" content=")[^"]*/, `$1${attr(w.title)}`)
         .replace(/(<meta property="og:description" content=")[^"]*/, `$1${attr(w.desc)}`)
-        .replace(/(<meta property="og:image" content=")[^"]*/, `$1https://${DOMAIN}${attr(pathName)}.png`);
+        .replace(/(<meta property="og:image" content=")[^"]*/, `$1https://${host}${attr(pathName)}.png`);
     }
     h = h.replace('<main id="app"></main>', () => `<main id="app">${(r && r.main) || ''}</main>${r && r.about ? `\n<section class="about" id="about">${r.about}</section>` : ''}`);
     const v = { ...packed(h, 'text/html; charset=utf-8', 'no-cache', 5), missing: !r };
@@ -123,7 +138,7 @@ module.exports = function front({ app, db, DOMAIN }) {
   app.get('/en', A(async (req, res) => {
     res.cookie('lang', 'en', { maxAge: 1000 * 60 * 60 * 24 * 365, sameSite: 'lax', secure: PROD });
     res.set('Vary', 'Accept-Encoding');
-    sendPacked(req, res, await pageFor('/en', 'en'));
+    sendPacked(req, res, await pageFor('/en', 'en', hostOf(req)));
   }));
 
   // l'image d'un résultat partagé : calculée une fois, puis gardée en mémoire et chez les réseaux sociaux
@@ -139,12 +154,13 @@ module.exports = function front({ app, db, DOMAIN }) {
   app.get('/r/:code', A(async (req, res, next) => {
     if (!SHARE.parse(req.params.code)) return next();
     res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
-    sendPacked(req, res, await pageFor(req.path, I18N.pick(req)));
+    sendPacked(req, res, await pageFor(req.path, I18N.pick(req), hostOf(req)));
   }));
 
-  app.get(['/', '/index.html', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/astuces', '/a-propos', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
+  app.get('/index.html', (req, res) => res.redirect(301, '/' + (req.originalUrl.split('?')[1] ? '?' + req.originalUrl.split('?')[1] : '')));
+  app.get(['/', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/astuces', '/a-propos', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
     res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
-    const page = await pageFor(req.path === '/index.html' ? '/' : req.path, I18N.pick(req));
+    const page = await pageFor(req.path, I18N.pick(req), hostOf(req));
     if (page.missing) res.status(404);
     sendPacked(req, res, page);
     // Neon s'endort après 5 min sans requête et met près d'une seconde à se réveiller : on le réveille
