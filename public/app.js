@@ -815,6 +815,82 @@ const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone
 const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'bonus' : null);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BEST = (cards) => TIERS.find((t) => cards.some((x) => x.tier === t)) || 'bronze';
+const GLOW = { bronze: '#f0a868', silver: '#e4ecf5', gold: '#ffd54a', legend: '#5dffb0' };
+
+// effet 3D : l'objet s'incline vers le doigt ou la souris, et un reflet de lumière le suit.
+// Sans pointeur, il se balance doucement tout seul. Écrit des variables CSS (--rx, --ry, --mx, --my…)
+function tilt3d(getEl, area, max = 14) {
+  const st = { on: true };
+  if (reduced()) return st;
+  let tx = 0, ty = 0, x = 0, y = 0, last = -1e9;
+  const t0 = performance.now();
+  area.addEventListener('pointermove', (e) => {
+    const r = area.getBoundingClientRect();
+    tx = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width - 0.5) * 2));
+    ty = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height - 0.5) * 2));
+    last = performance.now();
+  });
+  area.addEventListener('pointerleave', () => { last = -1e9; });
+  (function frame(t) {
+    if (!area.isConnected) return;
+    let gx, gy;
+    if (!st.on) gx = gy = 0;
+    else if (t - last < 1400) { gx = tx; gy = ty; }
+    else { const s = (t - t0) / 1000; gx = Math.sin(s * 1.2) * 0.5; gy = Math.cos(s * 0.9) * 0.3; }
+    x += (gx - x) * 0.1; y += (gy - y) * 0.1;
+    const el = getEl();
+    if (el) {
+      el.style.setProperty('--ry', (x * max).toFixed(2) + 'deg');
+      el.style.setProperty('--rx', (-y * max).toFixed(2) + 'deg');
+      el.style.setProperty('--mx', (50 + x * 50).toFixed(1) + '%');
+      el.style.setProperty('--my', (50 + y * 50).toFixed(1) + '%');
+      el.style.setProperty('--bx', (50 + x * 45).toFixed(1) + '%');
+      el.style.setProperty('--by', (50 + y * 45).toFixed(1) + '%');
+    }
+    requestAnimationFrame(frame);
+  })(t0);
+  return st;
+}
+// gerbe d'étincelles lumineuses autour d'un point de l'écran
+function sparks(x, y, color, n = 40, power = 1, up = false) {
+  if (reduced() || !n) return;
+  const c = document.createElement('canvas');
+  c.className = 'sparks';
+  document.body.appendChild(c);
+  const g = c.getContext('2d');
+  const W = (c.width = innerWidth), H = (c.height = innerHeight);
+  const bits = Array.from({ length: n }, () => {
+    const a = up ? -Math.PI / 2 + (Math.random() - 0.5) * 1.6 : Math.random() * Math.PI * 2, v = (2 + Math.random() * 8) * power;
+    return { x: x + (up ? (Math.random() - 0.5) * 160 : 0), y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1.2 + Math.random() * 2.6, life: 35 + Math.random() * 40, age: 0 };
+  });
+  (function frame() {
+    g.clearRect(0, 0, W, H);
+    g.globalCompositeOperation = 'lighter';
+    let alive = 0;
+    for (const b of bits) {
+      if (b.age++ > b.life) continue;
+      alive++;
+      b.vy += 0.14; b.vx *= 0.97; b.vy *= 0.97; b.x += b.vx; b.y += b.vy;
+      g.globalAlpha = 1 - b.age / b.life;
+      g.fillStyle = color;
+      g.beginPath(); g.arc(b.x, b.y, b.r * 2.4, 0, 7); g.fill();
+      g.fillStyle = '#fff';
+      g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.fill();
+    }
+    if (alive) requestAnimationFrame(frame); else c.remove();
+  })();
+}
+// éclair de lumière plein écran, centré sur un point
+function flash(x, y, color) {
+  if (reduced()) return;
+  const f = document.createElement('div');
+  f.className = 'flash';
+  f.style.background = `radial-gradient(circle at ${x}px ${y}px, #fff 0, ${color} 22%, transparent 70%)`;
+  document.body.appendChild(f);
+  f.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: 700, easing: 'ease-out' }).onfinish = () => f.remove();
+}
+const mid = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r]; };
 
 async function pageCollection() {
   const c = await api('collection');
@@ -878,14 +954,20 @@ function packBox(kind, c) {
   const two = kind === 'main' && c.packs.bonus === 'ready';
   return `<div class="pack-stage">
     ${two ? `<div class="kicker">${L('2 packs à ouvrir aujourd’hui', '2 packs to open today')}</div>` : kind === 'bonus' ? `<div class="kicker">${L('Pack bonus : tu as trouvé le joueur du jour', 'Bonus pack: you found the daily player')}</div>` : ''}
+    <div class="pack-scene" id="packscene">
+    <div class="pack-shadow"></div>
     <div class="pack ${kind === 'bonus' ? 'bonus' : ''}" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le pack', 'Open the pack')}">
+      <div class="pack-peek">${[0, 1, 2].map((k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div>
+      <div class="pack-beam"></div>
       <div class="pack-body">
         <div class="pack-kick">${kind === 'bonus' ? L('Pack bonus', 'Bonus pack') : L('Pack du jour', "Today's pack")}</div>
         <div class="pack-logo">FoOotix</div>
         <div class="pack-n">5 ${L('cartes', 'cards')}</div>
         <div class="pack-foot"><span>foootix.com</span><span>${esc(packDate())}</span></div>
       </div>
+      <div class="pack-light"></div>
       <div class="pack-top"><span>FoOotix</span></div>
+    </div>
     </div>
     <p class="pack-hint">${L('Glisse le pack sur le côté pour le déchirer', 'Swipe the pack sideways to tear it open')}</p>
     <button type="button" class="linkbtn" id="packbtn">${L('ou ouvre-le d’un clic', 'or open it with a click')}</button>
@@ -903,7 +985,8 @@ function openedBox(c) {
 // glisser le pack : le haut se décolle et suit le doigt, puis se déchire au-delà de la moitié de la largeur
 function packDrag(kind) {
   const pack = $('#pack');
-  const top = $('.pack-top', pack), body = $('.pack-body', pack);
+  const top = $('.pack-top', pack), body = $('.pack-body', pack), light = $('.pack-light', pack);
+  const tilt = tilt3d(() => pack, $('#packscene'), 16);
   let x0 = null, dx = 0, raf = 0, done = false;
   const paint = () => {
     raf = 0;
@@ -911,11 +994,12 @@ function packDrag(kind) {
     top.style.transformOrigin = dir > 0 ? '0 100%' : '100% 100%';
     top.style.transform = `translate(${dx * 0.7}px, ${-k * 26}px) rotate(${dir * k * -14}deg)`;
     body.style.transform = `rotate(${dir * k * 1.5}deg)`;
+    light.style.opacity = (k * 0.9).toFixed(2); // la lumière fuit par la déchirure
     if (k >= 1) open(dir);
   };
   pack.addEventListener('pointerdown', (e) => {
     if (done) return;
-    x0 = e.clientX; dx = 0;
+    x0 = e.clientX; dx = 0; tilt.on = false;
     pack.classList.add('drag', 'touched');
     pack.setPointerCapture(e.pointerId);
   });
@@ -926,10 +1010,10 @@ function packDrag(kind) {
   });
   const back = () => {
     if (x0 == null || done) return;
-    x0 = null;
+    x0 = null; tilt.on = true;
     pack.classList.remove('drag');
     const from = top.style.transform;
-    top.style.transform = body.style.transform = '';
+    top.style.transform = body.style.transform = light.style.opacity = '';
     if (from && top.animate) top.animate([{ transform: from }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,1.5,.5,1)' });
   };
   pack.addEventListener('pointerup', back);
@@ -943,21 +1027,43 @@ function packDrag(kind) {
     pack.classList.add('touched');
     $('.pack-hint').style.visibility = $('#packbtn').style.visibility = 'hidden';
     const req = api('pack', kind === 'bonus' ? { bonus: true } : {});
-    if (top.animate && !reduced()) {
+    const anim = !!top.animate && !reduced();
+    tilt.on = false;
+    if (anim) {
+      // 1. le haut du pack s'arrache, un trait de lumière jaillit de la déchirure
       const from = top.style.transform || 'none';
-      top.animate([{ transform: from }, { transform: `translate(${dir * 340}px, -140px) rotate(${dir * 50}deg)`, opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.25,.6,.4,1)', fill: 'forwards' });
-      await sleep(250);
-      body.animate([{ transform: 'none' }, { transform: 'translateY(-10px) scale(1.04)', filter: 'brightness(1.4)', offset: 0.35 }, { transform: 'translateY(70px) scale(.92)', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' });
+      top.animate([{ transform: from }, { transform: `translate(${dir * 360}px, -160px) rotate(${dir * 60}deg)`, opacity: 0 }], { duration: 700, easing: 'cubic-bezier(.25,.6,.4,1)', fill: 'forwards' });
+      light.style.opacity = '';
+      light.animate([{ opacity: 0.9, transform: 'scaleY(1)' }, { opacity: 1, transform: 'scaleY(1.8)' }], { duration: 400, fill: 'forwards' });
+      const [lx, ly] = mid(light);
+      sparks(lx, ly, '#ffe9a8', 36, 0.8, true);
+      pack.classList.add('charging');
     }
     let j;
     try {
-      [j] = await Promise.all([req, sleep(reduced() ? 0 : 600)]);
+      [j] = await Promise.all([req, sleep(anim ? 700 : 0)]);
     } catch (e) {
       PACKING = false;
       $('#packzone').innerHTML = `<p class="msg">${esc(e.message)}</p>`;
       return;
     }
     CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
+    if (anim) {
+      // 2. la lumière prend la couleur de la meilleure carte du pack, et les cartes sortent du pack
+      const best = BEST(kind === 'bonus' ? j.packs.bonusCards : j.packs.mainCards), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
+      pack.style.setProperty('--glow', glow);
+      pack.classList.remove('charging');
+      pack.classList.add('glowing');
+      $('.pack-beam', pack).animate([{ opacity: 0, transform: 'scaleY(.2)' }, { opacity: 1, transform: 'scaleY(1)' }], { duration: 500, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
+      pack.querySelectorAll('.pk').forEach((p, k) => p.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${-150 - k * 14}px) rotate(${(k - 1) * 6}deg)` }], { duration: 620, delay: 120 + k * 90, easing: 'cubic-bezier(.2,.9,.3,1.15)', fill: 'forwards' }));
+      const [lx, ly] = mid(light);
+      sparks(lx, ly, glow, best === 'legend' ? 120 : rare ? 80 : 45, 1.1, true);
+      await sleep(rare ? 1150 : 850);
+      // 3. éclair : le pack disparaît, place aux cartes
+      const [fx, fy] = mid(pack);
+      flash(fx, fy, glow);
+      await sleep(170);
+    }
     revealStage(j, kind);
   }
 }
@@ -977,10 +1083,10 @@ function revealStage(j, kind) {
   let i = -1, flipped = false, busy = false;
   const tagHtml = (c) => `<span class="tag ${c.isNew ? 'new' : ''}">${c.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span>`;
   const put = (k) => {
-    center.innerHTML = `<div class="flip r-${cards[k].tier}"><div class="flip-in"><div class="flip-back">${CARD_BACK}</div><div class="flip-front">${colCard(cards[k])}</div></div></div>`;
+    center.innerHTML = `<div class="flip r-${cards[k].tier}"><div class="tilt"><div class="flip-in"><div class="flip-back">${CARD_BACK}</div><div class="flip-front">${colCard(cards[k])}</div></div></div></div>`;
     tagEl.innerHTML = '';
     const f = center.firstElementChild;
-    if (f.animate && !reduced()) f.animate([{ transform: 'translateY(60px) scale(.9)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.2,.8,.3,1)' });
+    if (f.animate && !reduced()) f.animate([{ transform: 'translateY(140px) rotateX(55deg) scale(.6)', opacity: 0 }, { transform: 'translateY(-12px) rotateX(-6deg) scale(1.03)', opacity: 1, offset: 0.7 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: 'cubic-bezier(.2,.8,.3,1)' });
     $('#strip').children[k].classList.add('cur');
     return f;
   };
@@ -1001,7 +1107,24 @@ function revealStage(j, kind) {
     ghost.animate([{ transform: 'none' }, { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width})` }], { duration: 380, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' })
       .onfinish = () => { ghost.remove(); slot.style.visibility = ''; };
   };
-  const flipNormal = (f) => new Promise((r) => { f.classList.add('up'); setTimeout(r, 520); });
+  // éclat de lumière à la couleur de la rareté quand la carte se retourne
+  const burst = (c, big) => {
+    const [x, y] = mid(center);
+    const n = { bronze: 0, silver: 22, gold: 60, legend: 110 }[c.tier];
+    sparks(x, y, GLOW[c.tier], big ? n * 1.6 : n, big ? 1.5 : 1);
+    if (c.tier === 'gold' || c.tier === 'legend') {
+      if (!reduced()) {
+        const ring = document.createElement('div');
+        ring.className = 'ring';
+        ring.style.setProperty('--glow', GLOW[c.tier]);
+        center.appendChild(ring);
+        ring.animate([{ transform: 'scale(.3)', opacity: 1 }, { transform: 'scale(2.4)', opacity: 0 }], { duration: 800, easing: 'cubic-bezier(.1,.7,.3,1)' }).onfinish = () => ring.remove();
+      }
+      if (big) flash(x, y, GLOW[c.tier]);
+    }
+    if (big && c.tier === 'legend' && !reduced()) zone.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-8px,4px)' }, { transform: 'translate(7px,-5px)' }, { transform: 'translate(-4px,3px)' }, { transform: 'none' }], { duration: 380 });
+  };
+  const flipNormal = (f, c) => new Promise((r) => { f.classList.add('up'); setTimeout(() => burst(c, false), 220); setTimeout(r, 520); });
   // la dernière : elle tremble, puis tourne plusieurs fois sur elle-même avant de se poser
   const flipFinal = async (f, c) => {
     const rare = c.tier === 'legend' || c.tier === 'gold';
@@ -1022,6 +1145,7 @@ function revealStage(j, kind) {
       });
     }
     f.classList.add('up');
+    burst(c, true);
     if (c.tier === 'legend') confetti();
   };
   const step = async () => {
@@ -1036,7 +1160,7 @@ function revealStage(j, kind) {
       await sleep(reduced() ? 0 : 200);
     }
     const last = i === cards.length - 1;
-    if (last) await flipFinal(f, cards[i]); else await flipNormal(f);
+    if (last) await flipFinal(f, cards[i]); else await flipNormal(f, cards[i]);
     flipped = true;
     tagEl.innerHTML = tagHtml(cards[i]);
     const c = cards[i];
@@ -1057,6 +1181,7 @@ function revealStage(j, kind) {
   // la première carte sort du pack, face cachée
   i = 0;
   put(0);
+  tilt3d(() => center.querySelector('.tilt'), center, 13);
   center.firstElementChild.style.cursor = 'pointer';
 }
 

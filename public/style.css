@@ -502,7 +502,33 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 /* ——— Collection : pack du jour et cartes ——— */
 .packzone { border-bottom: 1px solid var(--hair); padding: 6px 0 26px; margin-bottom: 24px; }
 .pack-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.pack { width: 230px; height: 330px; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 6px; }
+.pack-scene { position: relative; perspective: 900px; padding: 30px 40px 26px; margin: -10px 0 -6px; }
+.pack { width: 230px; height: 330px; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 6px;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); filter: drop-shadow(0 18px 22px rgba(0, 0, 0, .35)); --glow: #ffe9a8; }
+.pack-shadow { position: absolute; left: 50%; bottom: 6px; width: 190px; height: 22px; margin-left: -95px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .28), transparent); }
+/* reflet qui suit l'inclinaison, et un léger effet holographique sur l'emballage */
+.pack-body::after, .pack-top::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at var(--mx, 30%) var(--my, 25%), rgba(255, 255, 255, .42), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(115deg, transparent 22%, rgba(255, 90, 200, .22) 36%, rgba(90, 220, 255, .22) 46%, rgba(255, 236, 120, .24) 56%, transparent 72%) var(--bx, 50%) var(--by, 50%) / 260% 260%;
+  mix-blend-mode: overlay; }
+.pack-top::after { background-position: 0 0, var(--bx, 50%) 0; background-size: auto, 260% 900%; }
+.pack-body { z-index: 1; }
+/* cartes cachées dans le pack, qui en sortent à l'ouverture */
+.pack-peek { position: absolute; left: 50%; top: 58px; width: 165px; margin-left: -82px; z-index: 0; visibility: hidden; }
+.pack.glowing .pack-peek { visibility: visible; }
+.pk { position: absolute; left: 0; top: 0; filter: drop-shadow(0 0 14px var(--glow)); }
+.pk .mini { zoom: .55; }
+.pk1 { z-index: 1; } .pk0 { z-index: 2; }
+/* la lumière qui jaillit de la déchirure, à la couleur de la meilleure carte */
+.pack-light { position: absolute; left: -4%; right: -4%; top: 38px; height: 26px; z-index: 3; pointer-events: none; opacity: 0; border-radius: 50%;
+  background: radial-gradient(closest-side, #fff 0, #fff 30%, var(--glow) 60%, transparent); filter: blur(3px); transition: background .3s; }
+.pack-beam { position: absolute; left: 0; right: 0; bottom: calc(100% - 52px); height: 300px; z-index: 0; pointer-events: none; opacity: 0; transform-origin: 50% 100%;
+  background: linear-gradient(to top, var(--glow), transparent 85%); clip-path: polygon(14% 100%, 86% 100%, 115% 0, -15% 0); filter: blur(6px); mix-blend-mode: screen; }
+.pack.charging .pack-body { animation: charge .1s linear infinite; }
+.pack.glowing .pack-body { filter: brightness(1.15); }
+.sparks, .flash { position: fixed; inset: 0; z-index: 65; pointer-events: none; }
+.sparks { width: 100vw; height: 100vh; }
+.flash { mix-blend-mode: screen; }
 .pack.drag { cursor: grabbing; }
 .pack-body { position: absolute; inset: 50px 0 0; color: #f4f1e7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; will-change: transform;
   background: linear-gradient(100deg, #1b5236 0%, #2a7650 36%, #1f5f3f 52%, #154129 100%);
@@ -563,6 +589,19 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 @keyframes charge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px) rotate(-1deg); } 75% { transform: translateX(3px) rotate(1deg); } }
 .stage-tag { min-height: 28px; margin-top: 12px; }
 .flip { width: 300px; height: 460px; perspective: 1100px; }
+.tilt { width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); }
+/* reflet de lumière sur la carte, qui suit l'inclinaison */
+.flip-back::after, .flip-front::after { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%);
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 40%), rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 45%); mix-blend-mode: overlay; }
+/* cartes Or et Légende : effet holographique arc-en-ciel */
+.flip.r-gold .flip-front::before, .flip.r-legend .flip-front::before { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: .75; mix-blend-mode: color-dodge; clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%);
+  background: repeating-linear-gradient(115deg, transparent 0 8%, rgba(255, 80, 190, .35) 13%, rgba(80, 220, 255, .35) 18%, rgba(255, 240, 110, .35) 23%, rgba(110, 255, 170, .3) 28%, transparent 33% 40%) var(--bx, 50%) var(--by, 50%) / 300% 300%; }
+.flip.r-legend .flip-front::before { opacity: .9; }
+.flip.up.r-silver .flip-front { filter: drop-shadow(0 0 16px rgba(228, 236, 245, .9)); }
+.flip.up.r-gold .flip-front { filter: drop-shadow(0 0 22px rgba(255, 213, 74, .95)); }
+.flip.up.r-legend .flip-front { filter: drop-shadow(0 0 28px rgba(93, 255, 176, .9)); }
+.ring { position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none; z-index: -1;
+  border: 4px solid var(--glow); box-shadow: 0 0 30px var(--glow), inset 0 0 30px var(--glow); }
 .flip-in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, .7, .3, 1); }
 .flip-back, .flip-front { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .flip-front { transform: rotateY(180deg); }
@@ -697,6 +736,8 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
   .tr-c .mini { zoom: .35; }
   .today-row { gap: 6px; }
   .pack { width: 210px; height: 300px; }
+  .pack-peek { margin-left: -75px; }
+  .pk .mini { zoom: .5; }
   .pack-logo { font-size: 58px; }
   .rev-msg { font-size: 16px; padding: 0 8px; }
   .strip .sl { zoom: .26; }
