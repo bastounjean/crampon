@@ -63,7 +63,7 @@ function refresh(path) {
   return e.p;
 }
 // charge d'avance ce qu'affiche un onglet, dès qu'on le survole ou qu'on pose le doigt dessus
-const PREFETCH = { '/': ['today'], '/album': ['album'], '/collection': ['collection'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'],  '/regles': ['me'], '/compte': ['me'] };
+const PREFETCH = { '/': ['today'], '/album': ['album'], '/collection': ['collection'], '/marche': ['market'], '/classement': ['leaderboard', 'me'], '/ligues': ['leagues'],  '/regles': ['me'], '/compte': ['me'] };
 function prefetch(href) { (PREFETCH[href] || []).forEach((p) => api(p, null, true).catch(() => {})); }
 ['mouseover', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
   const a = e.target.closest && e.target.closest('a[data-link]');
@@ -187,7 +187,7 @@ async function route({ quiet = false } = {}) {
   // si la page n'est pas prête presque tout de suite, on le montre (sinon on croit que le clic n'a pas marché)
   const wait = setTimeout(() => { if (id === ROUTE) app.classList.add('loading'); }, 120);
   if (!quiet) hit(p);
-  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/classement' && (p === '/ligues' || p.startsWith('/ligue/'))) || (a.getAttribute('href') === '/duel' && p.startsWith('/duel')) || (a.getAttribute('href') === '/collection' && p === '/album')));
+  document.querySelectorAll('.tabs a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === p || (a.getAttribute('href') === '/' && p.startsWith('/jour/')) || (a.getAttribute('href') === '/classement' && (p === '/ligues' || p.startsWith('/ligue/'))) || (a.getAttribute('href') === '/duel' && p.startsWith('/duel')) || (a.getAttribute('href') === '/collection' && (p === '/album' || p === '/marche'))));
   if (!quiet) window.scrollTo(0, 0);
   clearInterval(window.__tick);
   stopDuel();
@@ -200,6 +200,7 @@ async function route({ quiet = false } = {}) {
     if (jd) return await pageGame(jd[1]);
     if (p === '/album') return await pageAlbum();
     if (p === '/collection') return await pageCollection();
+    if (p === '/marche') return await pageMarket();
     if (p === '/classement') return await pageRank();
     if (p === '/compte') return pageAuth();
     if (['/regles', '/joueurs', '/astuces', '/a-propos'].includes(p)) { if (!(await pageSsr(p))) throw new Error(L('Page indisponible, réessaie.', 'Page unavailable, try again.')); return; }
@@ -747,7 +748,7 @@ async function pagePlayer(id) {
 }
 
 // ——— Collection : les packs et l'album, sous un seul onglet ———
-const subTabs = (on) => `<nav class="subtabs">${[['/collection', L('Packs', 'Packs')], ['/album', L('Album', 'Album')]].map(([h, t]) => `<a href="${h}" data-link class="${h === on ? 'on' : ''}">${t}</a>`).join('')}</nav>`;
+const subTabs = (on) => `<nav class="subtabs">${[['/collection', L('Boosters', 'Boosters')], ['/marche', L('Marché', 'Market')], ['/album', L('Album', 'Album')]].map(([h, t]) => `<a href="${h}" data-link class="${h === on ? 'on' : ''}">${t}</a>`).join('')}</nav>`;
 
 // ——— Page : album ———
 async function pageAlbum() {
@@ -897,21 +898,52 @@ async function pageCollection() {
   renderWho(c.user);
   drawCollection(c);
 }
+const coinTag = (n) => `<span class="coins"><i class="coin"></i><b>${Number(n).toLocaleString('fr-FR')}</b></span>`;
+const BOOSTER = {
+  base: { name: L('Booster Base', 'Base booster'), line: L('5 cartes · la 5<sup>e</sup> au moins Argent', '5 cards · the 5th at least Silver'), peek: 3 },
+  gold: { name: L('Booster Or', 'Gold booster'), line: L('5 cartes · 1 Or garantie', '5 cards · 1 Gold guaranteed'), peek: 3 },
+  legend: { name: L('Booster Légende', 'Legend booster'), line: L('1 carte · 1 Légende garantie', '1 card · 1 Legend guaranteed'), peek: 1 },
+};
+// petit message qui apparaît en bas de l'écran
+function toast(text) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+let COL = null; // dernière collection affichée
 function drawCollection(c) {
+  COL = c;
   const total = Object.values(c.totals).reduce((a, b) => a + b, 0);
   const have = (t) => c.cards.filter((x) => x.tier === t).length;
   const nx = nextPack(c);
+  const pr = c.prices || { shop: {}, sell: {} };
   app.innerHTML = `${subTabs('/collection')}
     <div class="pagehead">
-      <div><div class="kicker">${L('Un pack par jour', 'One pack a day')}</div><h1>Pack Opening</h1>
-      <p>${L('Chaque jour, un pack de 5 cartes à ouvrir, et un pack bonus si tu trouves le joueur du jour. Plus un joueur est connu, plus sa carte est rare.', 'A pack of 5 cards to open every day, plus a bonus pack if you find the daily player. The more famous the player, the rarer the card.')}</p></div>
+      <div><div class="kicker">${L('Un booster gratuit par jour', 'One free booster a day')}</div><h1>${L('Boosters', 'Boosters')}</h1>
+      <p>${L('Chaque jour, un booster Base gratuit, et un booster Or si tu trouves le joueur du jour. Revends tes cartes pour gagner des pièces et acheter d’autres boosters, ou des cartes sur le <a href="/marche" data-link>marché</a>.', 'Every day, a free Base booster, plus a Gold booster if you find the daily player. Sell your cards to earn coins and buy more boosters, or cards on the <a href="/marche" data-link>market</a>.')}</p></div>
+      <div class="ph-side">${c.user ? `<div class="wallet">${coinTag(c.coins || 0)}<span>${L('pièces', 'coins')}</span></div>` : ''}
       <div class="counters">
         <div><b>${c.cards.length}</b><span>/ ${total}</span></div>
         ${TIERS.slice(0, 3).map((t) => `<div><b>${have(t)}</b><span>${TIER_NAME[t]}</span></div>`).join('')}
-      </div>
+      </div></div>
     </div>
-    ${c.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ta collection ne vit que sur cet appareil. <a href="/compte" data-link>Crée un compte</a> pour la garder.', 'Without an account, your collection only lives on this device. <a href="/compte" data-link>Create an account</a> to keep it.')}</p>`}
-    <section class="packzone" id="packzone">${nx ? packBox(nx, c) : openedBox(c)}</section>
+    ${c.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ta collection ne vit que sur cet appareil, et tu ne peux ni vendre ni acheter. <a href="/compte" data-link>Crée un compte</a> pour tout débloquer.', 'Without an account, your collection only lives on this device and you can’t buy or sell. <a href="/compte" data-link>Create an account</a> to unlock everything.')}</p>`}
+    <section class="packzone" id="packzone">${nx ? packBox(nx === 'bonus' ? 'gold' : 'base', nx === 'bonus' ? L('Booster Or gagné : tu as trouvé le joueur du jour', 'Gold booster won: you found the daily player') : (c.packs.bonus === 'ready' ? L('2 boosters à ouvrir aujourd’hui', '2 boosters to open today') : '')) : openedBox(c)}</section>
+    <section class="shop">
+      <div class="colbar"><h2>${L('Boutique', 'Shop')}</h2>${c.user ? coinTag(c.coins || 0) : ''}</div>
+      <div class="shop-row">${['base', 'gold', 'legend'].map((k) => {
+        const B = BOOSTER[k];
+        let act;
+        if (k === 'base') act = `<span class="muted">${c.packs.main ? L('Ouvert aujourd’hui', 'Opened today') : L('Gratuit chaque jour', 'Free every day')}</span>`;
+        else if (!c.user) act = `<a class="btn" href="/compte" data-link>${L('Crée un compte', 'Create an account')}</a>`;
+        else act = `<button type="button" class="btn ${c.coins >= pr.shop[k] ? 'solid' : ''}" data-buy="${k}" ${c.coins >= pr.shop[k] ? '' : 'disabled'}>${L('Acheter', 'Buy')} ${coinTag(pr.shop[k])}</button>`;
+        return `<div class="shop-it"><div class="bx k-${k}"><b>FoO</b><i>${k === 'base' ? 'BASE' : k === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</i></div>
+          <div class="shop-t"><b>${B.name}</b><small>${B.line}</small>${k === 'gold' ? `<small>${L('Offert si tu trouves le joueur du jour', 'Free if you find the daily player')}</small>` : ''}${k === 'legend' ? `<small>${L('Uniquement en boutique', 'Shop only')}</small>` : ''}</div>${act}</div>`;
+      }).join('')}</div>
+      ${c.user ? `<p class="odds">${L('Gagne des pièces en revendant tes cartes', 'Earn coins by selling your cards')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${pr.sell[t]}</span>`).join(' · ')}. ${L('Touche une carte de ta collection pour la vendre.', 'Tap a card in your collection to sell it.')}</p>` : ''}
+    </section>
     <section>
       <div class="colbar"><h2>${L('Mes cartes', 'My cards')}</h2>
         <div class="chips">${['all', ...TIERS].map((t) => `<button type="button" class="chip ${COL_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : TIER_NAME[t]} <span>${t === 'all' ? c.cards.length : have(t)}/${t === 'all' ? total : c.totals[t]}</span></button>`).join('')}</div>
@@ -922,9 +954,9 @@ function drawCollection(c) {
   const grid = () => {
     const list = c.cards.filter((x) => COL_FILTER === 'all' || x.tier === COL_FILTER).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
     $('#cgrid').innerHTML = list.length
-      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span>${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}</button>`).join('')
-      : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier pack pour commencer ta collection.', 'Open your first pack to start your collection.')}</p>`;
-    $('#cgrid').querySelectorAll('.cslot').forEach((b) => b.addEventListener('click', () => zoomCard(c.cards.find((x) => x.id === b.dataset.id))));
+      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span><span class="cs-tags">${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}${x.listed ? `<span class="tag sale">${L('En vente', 'For sale')}</span>` : ''}</span></button>`).join('')
+      : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier booster pour commencer ta collection.', 'Open your first booster to start your collection.')}</p>`;
+    $('#cgrid').querySelectorAll('.cslot').forEach((b) => b.addEventListener('click', () => zoomCard(c.cards.find((x) => x.id === b.dataset.id), c)));
   };
   grid();
   app.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
@@ -932,60 +964,95 @@ function drawCollection(c) {
     app.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
     grid();
   }));
-  if (nx) packDrag(nx);
+  // acheter un booster : il apparaît en haut, prêt à être déchiré (les pièces partent à l'ouverture)
+  app.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.buy;
+    $('#packzone').innerHTML = packBox(k, L(`${BOOSTER[k].name} acheté`, `${BOOSTER[k].name} bought`), true);
+    packDrag(k, () => api('shop', { kind: k }));
+    $('#packzone').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'center' });
+  }));
+  if (nx) packDrag(nx === 'bonus' ? 'gold' : 'base', () => api('pack', nx === 'bonus' ? { bonus: true } : {}));
   else tick();
 }
 // une carte de la collection en grand, par-dessus la page
-function zoomCard(c) {
+function zoomCard(c, col) {
   if (!c) return;
   const o = document.createElement('div');
   o.className = 'cardzoom';
-  o.innerHTML = `<div class="cz-in">${colCard(c)}<p><b>${esc(c.name)}</b> · ${TIER_NAME[c.tier]}${c.n > 1 ? ` · ×${c.n}` : ''}</p><button type="button" class="btn">${L('Fermer', 'Close')}</button></div>`;
+  const pr = col && col.prices;
+  const mineL = col ? (col.listings || []).filter((l) => l.player === c.id) : [];
+  const free = c.n - (c.listed || 0);
+  let act = '';
+  if (col && !col.user) act = `<p class="cz-note">${L('<a href="/compte" data-link>Crée un compte</a> pour vendre tes cartes.', '<a href="/compte" data-link>Create an account</a> to sell your cards.')}</p>`;
+  else if (col && pr) {
+    const min = pr.sell[c.tier];
+    act = `<div class="cz-act">
+      ${free > 0 ? `<button type="button" class="btn solid" data-a="sell">${L('Revendre à FoOotix', 'Sell to FoOotix')} ${coinTag(min)}</button>
+      <form class="cz-list" data-a="list"><label>${L('Prix sur le marché', 'Market price')}<input type="number" name="price" min="${min}" max="${pr.max}" step="1" value="${min * 3}" required></label><button class="btn">${L('Mettre en vente', 'Put on sale')}</button></form>` : ''}
+      ${mineL.map((l) => `<div class="cz-sale">${L('En vente à', 'For sale at')} ${coinTag(l.price)} <button type="button" class="linkbtn" data-cancel="${l.id}">${L('Retirer', 'Remove')}</button></div>`).join('')}
+    </div>`;
+  }
+  o.innerHTML = `<div class="cz-in">${colCard(c)}<p><b>${esc(c.name)}</b> · ${TIER_NAME[c.tier]}${c.n > 1 ? ` · ×${c.n}` : ''}</p>${act}<button type="button" class="btn" data-close>${L('Fermer', 'Close')}</button></div>`;
   const close = () => { o.remove(); document.removeEventListener('keydown', esc_); };
   const esc_ = (e) => { if (e.key === 'Escape') close(); };
-  o.addEventListener('click', close);
+  const done = (j, msg) => { close(); toast(msg); const y = window.scrollY; drawCollection(j); window.scrollTo(0, y); };
+  const fail = (e) => toast(esc(e.message));
+  o.addEventListener('click', (e) => { if (e.target === o || e.target.closest('[data-close]')) close(); });
+  o.querySelector('[data-a="sell"]')?.addEventListener('click', () => {
+    if (c.n === 1 && !confirm(L(`C’est ta seule carte ${c.name}. La revendre ?`, `This is your only ${c.name} card. Sell it?`))) return;
+    api('sell', { id: c.id }).then((j) => done(j, L(`+${j.gain} pièces`, `+${j.gain} coins`)), fail);
+  });
+  o.querySelector('[data-a="list"]')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    api('market/list', { id: c.id, price: +e.target.price.value }).then((j) => done(j, L('Carte mise en vente sur le marché', 'Card put on the market')), fail);
+  });
+  o.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => api('market/cancel', { listing: +b.dataset.cancel }).then((j) => done(j, L('Vente retirée', 'Sale removed')), fail)));
   document.addEventListener('keydown', esc_);
   document.body.appendChild(o);
 }
-function oddsLine() {
-  return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
+function oddsLine(kind = 'base') {
+  return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${kind === 'gold' ? L('La 5<sup>e</sup> carte est au moins Or.', 'The 5th card is at least Gold.') : L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
 }
-function packBox(kind, c) {
-  const two = kind === 'main' && c.packs.bonus === 'ready';
+function packBox(kind, kicker = '', bought = false) {
+  const B = BOOSTER[kind];
   return `<div class="pack-stage">
-    ${two ? `<div class="kicker">${L('2 packs à ouvrir aujourd’hui', '2 packs to open today')}</div>` : kind === 'bonus' ? `<div class="kicker">${L('Pack bonus : tu as trouvé le joueur du jour', 'Bonus pack: you found the daily player')}</div>` : ''}
+    ${kicker ? `<div class="kicker">${kicker}</div>` : ''}
     <div class="pack-scene" id="packscene">
     <div class="pack-shadow"></div>
-    <div class="pack ${kind === 'bonus' ? 'bonus' : ''}" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le pack', 'Open the pack')}">
-      <div class="pack-peek">${[0, 1, 2].map((k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div>
+    <div class="pack k-${kind}" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le booster', 'Open the booster')}">
+      <div class="pack-peek">${Array.from({ length: B.peek }, (_, k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div>
       <div class="pack-beam"></div>
       <div class="pack-body">
-        <div class="pack-kick">${kind === 'bonus' ? L('Pack bonus', 'Bonus pack') : L('Pack du jour', "Today's pack")}</div>
+        <div class="pb-rays"></div>
+        <div class="pack-kick">${L('Booster officiel', 'Official booster')}</div>
         <div class="pack-logo">FoOotix</div>
-        <div class="pack-n">5 ${L('cartes', 'cards')}</div>
+        <div class="pack-type">${kind === 'base' ? 'BASE' : kind === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</div>
+        <div class="pack-n">${B.line}</div>
         <div class="pack-foot"><span>foootix.com</span><span>${esc(packDate())}</span></div>
       </div>
       <div class="pack-light"></div>
-      <div class="pack-top"><span>FoOotix</span></div>
+      <div class="tear"><i class="tear-glow"></i><i class="tear-tip"></i></div>
+      <div class="pack-top"><span>FoOotix · ${kind === 'base' ? 'BASE' : kind === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</span></div>
     </div>
     </div>
-    <p class="pack-hint">${L('Glisse le pack sur le côté pour le déchirer', 'Swipe the pack sideways to tear it open')}</p>
+    <p class="pack-hint">${L('Glisse le long du haut du booster pour le déchirer', 'Swipe along the top of the booster to tear it open')}</p>
     <button type="button" class="linkbtn" id="packbtn">${L('ou ouvre-le d’un clic', 'or open it with a click')}</button>
-    ${oddsLine()}
+    ${bought ? `<p class="odds">${L('Les pièces sont débitées à l’ouverture.', 'Coins are spent when you open it.')}</p>` : oddsLine(kind)}
   </div>`;
 }
 function openedBox(c) {
   const today = [...c.packs.mainCards, ...c.packs.bonusCards];
-  return `<div class="pack-done"><div class="kicker">${L('Packs du jour ouverts', "Today's packs are open")}</div>
-    <p>${L('Prochain pack dans', 'Next pack in')} <b id="cd"></b></p>
-    ${c.packs.bonus === 'locked' ? `<p class="bonus-tip">${L('Trouve le joueur du jour pour gagner un pack bonus.', 'Find the daily player to win a bonus pack.')} <a href="/" data-link>${L('Jouer', 'Play')}</a></p>` : ''}</div>
+  return `<div class="pack-done"><div class="kicker">${L('Boosters du jour ouverts', "Today's boosters are open")}</div>
+    <p>${L('Prochain booster gratuit dans', 'Next free booster in')} <b id="cd"></b></p>
+    ${c.packs.bonus === 'locked' ? `<p class="bonus-tip">${L('Trouve le joueur du jour pour gagner un booster Or.', 'Find the daily player to win a Gold booster.')} <a href="/" data-link>${L('Jouer', 'Play')}</a></p>` : ''}</div>
     <div class="today-row">${today.map((x) => `<div class="tr-c"><span class="mini">${colCard(x)}</span><span class="tag ${x.isNew ? 'new' : ''}">${x.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span></div>`).join('')}</div>`;
 }
 
 // glisser le pack : le haut se décolle et suit le doigt, puis se déchire au-delà de la moitié de la largeur
-function packDrag(kind) {
+function packDrag(kind, opener) {
   const pack = $('#pack');
-  const top = $('.pack-top', pack), body = $('.pack-body', pack), light = $('.pack-light', pack);
+  const top = $('.pack-top', pack), body = $('.pack-body', pack), light = $('.pack-light', pack), tear = $('.tear', pack);
+  let lastSpark = 0;
   const tilt = tilt3d(() => pack, $('#packscene'), 16);
   let x0 = null, dx = 0, raf = 0, done = false;
   const paint = () => {
@@ -995,6 +1062,16 @@ function packDrag(kind) {
     top.style.transform = `translate(${dx * 0.7}px, ${-k * 26}px) rotate(${dir * k * -14}deg)`;
     body.style.transform = `rotate(${dir * k * 1.5}deg)`;
     light.style.opacity = (k * 0.9).toFixed(2); // la lumière fuit par la déchirure
+    // le trait de lumière suit le doigt le long de la déchirure, avec des étincelles au bout
+    tear.style.opacity = k > 0.02 ? 1 : 0;
+    tear.style.setProperty('--k', k.toFixed(3));
+    tear.classList.toggle('rtl', dir < 0);
+    const now = performance.now();
+    if (k > 0.05 && k < 1 && now - lastSpark > 70) {
+      lastSpark = now;
+      const r = tear.getBoundingClientRect();
+      sparks(dir > 0 ? r.left + r.width * k : r.right - r.width * k, r.top + r.height / 2, '#fff1b8', 6, 0.5, true);
+    }
     if (k >= 1) open(dir);
   };
   pack.addEventListener('pointerdown', (e) => {
@@ -1013,7 +1090,7 @@ function packDrag(kind) {
     x0 = null; tilt.on = true;
     pack.classList.remove('drag');
     const from = top.style.transform;
-    top.style.transform = body.style.transform = light.style.opacity = '';
+    top.style.transform = body.style.transform = light.style.opacity = tear.style.opacity = '';
     if (from && top.animate) top.animate([{ transform: from }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,1.5,.5,1)' });
   };
   pack.addEventListener('pointerup', back);
@@ -1026,7 +1103,7 @@ function packDrag(kind) {
     pack.classList.remove('drag');
     pack.classList.add('touched');
     $('.pack-hint').style.visibility = $('#packbtn').style.visibility = 'hidden';
-    const req = api('pack', kind === 'bonus' ? { bonus: true } : {});
+    const req = opener();
     const anim = !!top.animate && !reduced();
     tilt.on = false;
     if (anim) {
@@ -1034,6 +1111,8 @@ function packDrag(kind) {
       const from = top.style.transform || 'none';
       top.animate([{ transform: from }, { transform: `translate(${dir * 360}px, -160px) rotate(${dir * 60}deg)`, opacity: 0 }], { duration: 700, easing: 'cubic-bezier(.25,.6,.4,1)', fill: 'forwards' });
       light.style.opacity = '';
+      tear.style.setProperty('--k', 1);
+      tear.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 600, fill: 'forwards' });
       light.animate([{ opacity: 0.9, transform: 'scaleY(1)' }, { opacity: 1, transform: 'scaleY(1.8)' }], { duration: 400, fill: 'forwards' });
       const [lx, ly] = mid(light);
       sparks(lx, ly, '#ffe9a8', 36, 0.8, true);
@@ -1045,12 +1124,13 @@ function packDrag(kind) {
     } catch (e) {
       PACKING = false;
       $('#packzone').innerHTML = `<p class="msg">${esc(e.message)}</p>`;
+      if (kind !== 'base') setTimeout(() => route({ quiet: true }), 2500);
       return;
     }
     CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
     if (anim) {
       // 2. la lumière prend la couleur de la meilleure carte du pack, et les cartes sortent du pack
-      const best = BEST(kind === 'bonus' ? j.packs.bonusCards : j.packs.mainCards), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
+      const best = BEST(j.fresh || []), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
       pack.style.setProperty('--glow', glow);
       pack.classList.remove('charging');
       pack.classList.add('glowing');
@@ -1070,7 +1150,7 @@ function packDrag(kind) {
 
 // les cartes une à une : chaque clic retourne la suivante, la plus rare arrive en dernier
 function revealStage(j, kind) {
-  const cards = kind === 'bonus' ? j.packs.bonusCards : j.packs.mainCards;
+  const cards = j.fresh || [];
   const zone = $('#packzone');
   zone.innerHTML = `<div class="stage">
     <p class="rev-msg" id="revmsg">${L('Touche la carte pour la retourner', 'Tap the card to flip it')}</p>
@@ -1169,8 +1249,8 @@ function revealStage(j, kind) {
       : `${i + 1}/${cards.length} · ${c.name} · ${TIER_NAME[c.tier]}`;
     if (last) {
       PACKING = false;
-      const more = kind === 'main' && j.packs.bonus === 'ready';
-      $('#stageact').innerHTML = `${more ? `<button type="button" class="btn solid" id="nextpack">${L('Ouvrir le pack bonus', 'Open the bonus pack')}</button>` : ''}<button type="button" class="btn ${more ? '' : 'solid'}" id="tocol">${L('Voir ma collection', 'See my collection')}</button>`;
+      const more = !!nextPack(j);
+      $('#stageact').innerHTML = `${more ? `<button type="button" class="btn solid" id="nextpack">${L('Ouvrir le booster Or', 'Open the Gold booster')}</button>` : ''}<button type="button" class="btn ${more ? '' : 'solid'}" id="tocol">${L('Voir ma collection', 'See my collection')}</button>`;
       const redraw = () => { const y = window.scrollY; drawCollection(j); window.scrollTo(0, y); };
       $('#tocol').onclick = () => { redraw(); $('#cgrid')?.scrollIntoView({ behavior: 'smooth' }); };
       if (more) $('#nextpack').onclick = redraw;
@@ -1183,6 +1263,61 @@ function revealStage(j, kind) {
   put(0);
   tilt3d(() => center.querySelector('.tilt'), center, 13);
   center.firstElementChild.style.cursor = 'pointer';
+}
+
+// ——— Page : marché (les cartes mises en vente par les joueurs, achetées avec des pièces) ———
+let MK_FILTER = 'all', MK_Q = '';
+async function pageMarket() {
+  const m = await api('market');
+  renderWho(m.user);
+  drawMarket(m);
+}
+function drawMarket(m) {
+  app.innerHTML = `${subTabs('/marche')}
+    <div class="pagehead">
+      <div><div class="kicker">${L('Achète et vends entre joueurs', 'Buy and sell between players')}</div><h1>${L('Marché', 'Market')}</h1>
+      <p>${L('Les cartes mises en vente par les autres joueurs. Pour vendre les tiennes, touche une carte dans ta <a href="/collection" data-link>collection</a>.', 'Cards put on sale by other players. To sell yours, tap a card in your <a href="/collection" data-link>collection</a>.')}</p></div>
+      <div class="ph-side">${m.user ? `<div class="wallet">${coinTag(m.coins || 0)}<span>${L('pièces', 'coins')}</span></div>` : ''}<div class="counters"><div><b>${m.listings.length}</b><span>${L('en vente', 'for sale')}</span></div></div></div>
+    </div>
+    ${m.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('<a href="/compte" data-link>Crée un compte</a> pour acheter et vendre des cartes.', '<a href="/compte" data-link>Create an account</a> to buy and sell cards.')}</p>`}
+    <div class="colbar">
+      <div class="chips">${['all', ...TIERS, 'mine'].map((t) => `<button type="button" class="chip ${MK_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : t === 'mine' ? L('Mes ventes', 'My sales') : TIER_NAME[t]}</button>`).join('')}</div>
+      <input class="mk-q" id="mkq" type="search" placeholder="${L('Chercher un joueur', 'Search a player')}" value="${esc(MK_Q)}">
+    </div>
+    <div class="cgrid mk-grid" id="mkgrid"></div>
+    ${adSlot('wide')}`;
+  const norm = (x) => x.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const grid = () => {
+    const q = norm(MK_Q.trim());
+    const list = m.listings.filter((l) => (MK_FILTER === 'all' || (MK_FILTER === 'mine' ? l.mine : l.card.tier === MK_FILTER)) && (!q || norm(l.card.name).includes(q)));
+    $('#mkgrid').innerHTML = list.length
+      ? list.map((l) => `<div class="mk-it"><button type="button" class="cslot" data-z="${l.id}"><span class="mini">${colCard(l.card)}</span></button>
+        <div class="mk-p">${coinTag(l.price)}<small>${l.mine ? L('Ta vente', 'Your sale') : L('par', 'by') + ' ' + esc(l.seller)}</small></div>
+        ${l.mine ? `<button type="button" class="btn" data-cancel="${l.id}">${L('Retirer', 'Remove')}</button>`
+          : m.user ? `<button type="button" class="btn ${m.coins >= l.price ? 'solid' : ''}" data-buy="${l.id}" ${m.coins >= l.price ? '' : 'disabled'}>${L('Acheter', 'Buy')}</button>` : ''}</div>`).join('')
+      : `<p class="empty">${m.listings.length ? L('Aucune carte ne correspond.', 'No card matches.') : L('Personne ne vend de carte pour l’instant. Sois le premier : touche une carte de ta collection.', 'Nobody is selling yet. Be the first: tap a card in your collection.')}</p>`;
+    $('#mkgrid').querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => zoomCard({ ...m.listings.find((l) => l.id === +b.dataset.z).card, n: 1 })));
+    $('#mkgrid').querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
+      const l = m.listings.find((x) => x.id === +b.dataset.buy);
+      if (!confirm(L(`Acheter ${l.card.name} pour ${l.price} pièces ?`, `Buy ${l.card.name} for ${l.price} coins?`))) return;
+      b.disabled = true;
+      api('market/buy', { listing: l.id }).then(async (j) => {
+        toast(L(`${esc(j.bought.name)} rejoint ta collection !`, `${esc(j.bought.name)} joins your collection!`));
+        if (j.bought.tier === 'legend' || j.bought.tier === 'gold') { const [x, y] = mid(b); sparks(x, y, GLOW[j.bought.tier], 60); }
+        drawMarket(await fetchJSON('market'));
+      }, (e) => { toast(esc(e.message)); b.disabled = false; });
+    }));
+    $('#mkgrid').querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => {
+      api('market/cancel', { listing: +b.dataset.cancel }).then(async () => { toast(L('Vente retirée', 'Sale removed')); drawMarket(await fetchJSON('market')); }, (e) => toast(esc(e.message)));
+    }));
+  };
+  grid();
+  app.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+    MK_FILTER = b.dataset.t;
+    app.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
+    grid();
+  }));
+  $('#mkq').addEventListener('input', (e) => { MK_Q = e.target.value; grid(); });
 }
 
 // ——— Page : duel (1 contre 1, le même joueur à trouver, le premier qui trouve gagne) ———

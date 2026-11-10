@@ -74,6 +74,24 @@ CREATE TABLE IF NOT EXISTS cards (
   player_id TEXT NOT NULL,
   PRIMARY KEY (pack_id, slot)
 );
+CREATE TABLE IF NOT EXISTS wallets (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  coins INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS listings (
+  id ${id},
+  pack_id INTEGER NOT NULL,
+  slot INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  seller INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  price INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  buyer INTEGER,
+  sold_at TEXT,
+  cancelled INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS listings_card ON listings (pack_id, slot) WHERE buyer IS NULL AND cancelled = 0;
+CREATE INDEX IF NOT EXISTS listings_seller ON listings (seller);
 CREATE TABLE IF NOT EXISTS visits (
   day TEXT NOT NULL,
   vid TEXT NOT NULL,
@@ -104,6 +122,9 @@ CREATE TABLE IF NOT EXISTS page_views (
 // colonnes ajoutées après la création des tables
 const MIGRATIONS = [
   'ALTER TABLE games ADD COLUMN hint_list TEXT', // indices donnés, dans l'ordre (JSON) ; sinon les « hints » premiers de la liste
+  'ALTER TABLE packs ADD COLUMN kind TEXT', // type de booster : base (vide), gold ou legend
+  'ALTER TABLE cards ADD COLUMN holder INTEGER', // compte qui a la carte, s'il l'a achetée sur le marché (sinon celui du pack)
+  'ALTER TABLE cards ADD COLUMN gone INTEGER', // 1 : carte revendue à FoOotix
 ];
 
 let api;

@@ -323,6 +323,7 @@ ${rows.map((d) => `<tr><td>${d.number}</td><td>${esc(fmt(d.day, en))}</td><td><a
     '/joueurs': ['Archives : les joueurs mystères passés · FoOotix', 'Archive: past mystery players · FoOotix', 'Tous les footballeurs déjà tirés sur FoOotix, jour par jour, avec leur poste, leur nationalité, leur club et leur fiche.', 'Every footballer already drawn on FoOotix, day by day, with position, nationality, club and profile.'],
     '/album': ['Mon album · FoOotix', 'My album · FoOotix'],
     '/collection': ['Pack Opening : un pack de cartes gratuit par jour · FoOotix', 'Pack Opening: a free card pack every day · FoOotix', blurbs['/collection'][0], blurbs['/collection'][1]],
+    '/marche': ['Marché : achète et vends des cartes · FoOotix', 'Market: buy and sell cards · FoOotix', 'Le marché de FoOotix : achète les cartes de footballeurs mises en vente par les autres joueurs, et vends les tiennes.', 'The FoOotix market: buy footballer cards put on sale by other players, and sell yours.'],
     '/classement': ['Classement · FoOotix', 'Ranking · FoOotix', blurbs['/classement'][0], blurbs['/classement'][1]],
     '/duel': ['Duel : affronte un autre joueur · FoOotix', 'Duel: face another player · FoOotix', blurbs['/duel'][0], blurbs['/duel'][1]],
     '/mentions-legales': ['Mentions légales · FoOotix', 'Legal notice · FoOotix', "Qui édite et héberge FoOotix, d'où viennent les fiches des joueurs, et comment nous contacter.", 'Who publishes and hosts FoOotix, where player profiles come from, and how to contact us.'],

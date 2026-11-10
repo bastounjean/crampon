@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const express = require('express');
 
 const BOT = /bot|crawl|spider|slurp|preview|monitor|uptime|headless|lighthouse|curl|wget|python|axios|node-fetch/i;
-const PAGES = ['/', '/album', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue', '/joueur'];
+const PAGES = ['/', '/album', '/collection', '/marche', '/classement', '/compte', '/regles', '/confidentialite', '/mentions-legales', '/ligues', '/ligue', '/joueur'];
 
 module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
   const VBUF = new Map(); // "jour|visiteur" → { views, ref, mobile }
@@ -120,7 +120,7 @@ module.exports = function stats({ app, db, G, A, slowDown, DOMAIN }) {
     const max = Math.max(1, ...days.map((d) => (V.get(d) || {}).n || 0));
     const fmt = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
     const pct = (a, b) => (b ? Math.round((100 * a) / b) + ' %' : '–');
-    const NAMES = { '/': 'Jeu du jour', '/album': 'Album', '/classement': 'Classement', '/compte': 'Compte', '/regles': 'Règles', '/ligues': 'Ligues', '/ligue': 'Page d\'une ligue', '/joueur': 'Fiches joueurs', '/confidentialite': 'Confidentialité', '/mentions-legales': 'Mentions légales' };
+    const NAMES = { '/': 'Jeu du jour', '/album': 'Album', '/collection': 'Boosters', '/marche': 'Marché', '/classement': 'Classement', '/compte': 'Compte', '/regles': 'Règles', '/ligues': 'Ligues', '/ligue': 'Page d\'une ligue', '/joueur': 'Fiches joueurs', '/confidentialite': 'Confidentialité', '/mentions-legales': 'Mentions légales' };
     const totalPv = pages.reduce((s, r) => s + r.n, 0);
 
     const warn = process.env.SECRET ? '' : '<p class="err"><b>Attention :</b> la variable SECRET n\'est pas définie sur Render. Quelqu\'un qui lit le code peut deviner les joueurs des prochains jours. Préviens Claude avant de la créer : la changer modifie aussi les joueurs déjà passés.</p>';

@@ -598,9 +598,23 @@ function collectCard(p) {
     tier: d.tierOf[p.id] || 'bronze', rating: d.rating[p.id] || 60,
   };
 }
-// rand(n) → entier de 0 à n-1. La 5e carte est au moins argent ; les cartes sortent de la moins rare à la plus rare.
-function drawPack(rand, size = 5) {
+// Trois boosters :
+//  - base (gratuit chaque jour) : 5 cartes, la 5e au moins Argent ;
+//  - gold (gagné en trouvant le joueur du jour, ou acheté) : 5 cartes, la 5e au moins Or ;
+//  - legend (acheté seulement) : 1 seule carte, forcément une Légende.
+// rand(n) → entier de 0 à n-1. Les cartes sortent de la moins rare à la plus rare.
+const BOOSTERS = {
+  base: { size: 5, last: ['legend', 'gold', 'silver'] },
+  gold: { size: 5, last: ['legend', 'gold'] },
+  legend: { size: 1, last: ['legend'] },
+};
+// pièces : revente directe d'une carte à FoOotix, et prix des boosters en boutique
+const SELL = { bronze: 5, silver: 15, gold: 60, legend: 300 };
+const SHOP = { gold: 150, legend: 1500 };
+const MAX_PRICE = 100000;
+function drawPack(rand, kind = 'base') {
   const d = deck();
+  const b = BOOSTERS[kind] || BOOSTERS.base;
   const roll = (tiers) => {
     const total = tiers.reduce((n, t) => n + t.weight, 0);
     let r = rand(total);
@@ -609,8 +623,8 @@ function drawPack(rand, size = 5) {
   };
   const got = new Set();
   const out = [];
-  for (let k = 0; k < size; k++) {
-    const tier = roll(k === size - 1 ? TIERS.filter((t) => t.id !== 'bronze') : TIERS);
+  for (let k = 0; k < b.size; k++) {
+    const tier = roll(k === b.size - 1 ? TIERS.filter((t) => b.last.includes(t.id)) : TIERS);
     let id;
     do id = d.byTier[tier][rand(d.byTier[tier].length)]; while (got.has(id));
     got.add(id);
@@ -619,6 +633,7 @@ function drawPack(rand, size = 5) {
   const order = TIERS.map((t) => t.id).reverse();
   return out.sort((a, b) => order.indexOf(d.tierOf[a]) - order.indexOf(d.tierOf[b]) || d.rating[a] - d.rating[b]);
 }
+const tierOf = (id) => deck().tierOf[id] || 'bronze';
 // joueur à deviner en duel : un des 400 plus connus parmi ceux qui peuvent tomber (fiches complètes)
 function duelPick(rand) {
   const top = PLAYERS.filter((p) => !isDead(p)).sort((a, b) => (b.links || 0) - (a.links || 0)).slice(0, 400);
@@ -639,5 +654,5 @@ function catalog() {
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
   setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
-  collectCard, drawPack, deckTotals, duelPick,
+  collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE,
 };
