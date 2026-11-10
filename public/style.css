@@ -502,10 +502,36 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 /* ——— Collection : pack du jour et cartes ——— */
 .packzone { border-bottom: 1px solid var(--hair); padding: 6px 0 26px; margin-bottom: 24px; }
 .pack-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.pack { width: 230px; height: 330px; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 6px; }
+.pack-scene { position: relative; perspective: 900px; padding: 30px 40px 26px; margin: -10px 0 -6px; }
+.pack { width: 230px; height: 330px; position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; outline-offset: 6px;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); filter: drop-shadow(0 18px 22px rgba(0, 0, 0, .35)); --glow: #ffe9a8; }
+.pack-shadow { position: absolute; left: 50%; bottom: 6px; width: 190px; height: 22px; margin-left: -95px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .28), transparent); }
+/* reflet qui suit l'inclinaison, et un léger effet holographique sur l'emballage */
+.pack-body::after, .pack-top::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at var(--mx, 30%) var(--my, 25%), rgba(255, 255, 255, .42), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(115deg, transparent 22%, rgba(255, 90, 200, .22) 36%, rgba(90, 220, 255, .22) 46%, rgba(255, 236, 120, .24) 56%, transparent 72%) var(--bx, 50%) var(--by, 50%) / 260% 260%;
+  mix-blend-mode: overlay; }
+.pack-top::after { background-position: 0 0, var(--bx, 50%) 0; background-size: auto, 260% 900%; }
+.pack-body { z-index: 1; }
+/* cartes cachées dans le pack, qui en sortent à l'ouverture */
+.pack-peek { position: absolute; left: 50%; top: 58px; width: 165px; margin-left: -82px; z-index: 0; visibility: hidden; }
+.pack.glowing .pack-peek { visibility: visible; }
+.pk { position: absolute; left: 0; top: 0; filter: drop-shadow(0 0 14px var(--glow)); }
+.pk .mini { zoom: .55; }
+.pk1 { z-index: 1; } .pk0 { z-index: 2; }
+/* la lumière qui jaillit de la déchirure, à la couleur de la meilleure carte */
+.pack-light { position: absolute; left: -4%; right: -4%; top: 38px; height: 26px; z-index: 3; pointer-events: none; opacity: 0; border-radius: 50%;
+  background: radial-gradient(closest-side, #fff 0, #fff 30%, var(--glow) 60%, transparent); filter: blur(3px); transition: background .3s; }
+.pack-beam { position: absolute; left: 0; right: 0; bottom: calc(100% - 52px); height: 300px; z-index: 0; pointer-events: none; opacity: 0; transform-origin: 50% 100%;
+  background: linear-gradient(to top, var(--glow), transparent 85%); clip-path: polygon(14% 100%, 86% 100%, 115% 0, -15% 0); filter: blur(6px); mix-blend-mode: screen; }
+.pack.charging .pack-body { animation: charge .1s linear infinite; }
+.pack.glowing .pack-body { filter: brightness(1.15); }
+.sparks, .flash { position: fixed; inset: 0; z-index: 65; pointer-events: none; }
+.sparks { width: 100vw; height: 100vh; }
+.flash { mix-blend-mode: screen; }
 .pack.drag { cursor: grabbing; }
 .pack-body { position: absolute; inset: 50px 0 0; color: #f4f1e7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; will-change: transform;
-  background: linear-gradient(100deg, #1b5236 0%, #2a7650 36%, #1f5f3f 52%, #154129 100%);
+  background: linear-gradient(100deg, #1b2270 0%, #4630b8 36%, #2a1f8a 55%, #120f4a 100%);
   -webkit-mask: linear-gradient(#000 0 0) 0 0 / 100% calc(100% - 7px) no-repeat, conic-gradient(from -45deg at 50% 100%, #000 90deg, #0000 0) 0 100% / 10px 7px repeat-x;
   mask: linear-gradient(#000 0 0) 0 0 / 100% calc(100% - 7px) no-repeat, conic-gradient(from -45deg at 50% 100%, #000 90deg, #0000 0) 0 100% / 10px 7px repeat-x; }
 .pack-body::before { content: ''; position: absolute; inset: 10px 10px 18px; border: 1px solid rgba(233, 199, 95, .55); }
@@ -513,7 +539,7 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .pack-logo { font-weight: 900; font-stretch: 62%; font-size: 64px; line-height: .9; letter-spacing: -1px; }
 .pack-n { color: #f4f1e7; letter-spacing: .12em; }
 .pack-foot { position: absolute; left: 22px; right: 22px; bottom: 28px; display: flex; justify-content: space-between; font-size: 9.5px; letter-spacing: .1em; color: rgba(244, 241, 231, .7); }
-.pack-top { position: absolute; left: 0; right: 0; top: 0; height: 52px; background: #154129; border-bottom: 2px dashed #e9c75f; display: flex; align-items: center; justify-content: center; z-index: 2; will-change: transform;
+.pack-top { position: absolute; left: 0; right: 0; top: 0; height: 52px; background: #120f4a; border-bottom: 2px dashed #e9c75f; display: flex; align-items: center; justify-content: center; z-index: 2; will-change: transform;
   -webkit-mask: linear-gradient(#000 0 0) 0 100% / 100% calc(100% - 7px) no-repeat, conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) 0 0 / 10px 7px repeat-x;
   mask: linear-gradient(#000 0 0) 0 100% / 100% calc(100% - 7px) no-repeat, conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) 0 0 / 10px 7px repeat-x; }
 .pack-top span { font-weight: 900; font-stretch: 62%; font-size: 18px; color: #e9c75f; letter-spacing: .02em; margin-top: 6px; }
@@ -535,13 +561,17 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .fut.t-bronze .fut-in { background: linear-gradient(160deg, #e2b789 0%, #c08852 50%, #9c683a 100%); color: #2a170a; }
 .fut.t-silver { background: #5f646a; }
 .fut.t-silver .fut-in { background: linear-gradient(160deg, #f1f2f3 0%, #c8ccd1 50%, #a3a8ae 100%); color: #1b1e22; }
-.fut.t-legend { background: #e9c75f; }
-.fut.t-legend .fut-in { background: linear-gradient(160deg, #2a7650 0%, #1b5236 45%, #0f2e1f 100%); color: #f3e2a0; }
-.fut.t-legend .silh { fill: rgba(243, 226, 160, .6); }
+/* Or : un or vif et brillant */
+.fut.t-gold { background: linear-gradient(160deg, #fff1a8, #b97800 50%, #ffe27a); }
+.fut.t-gold .fut-in { background: linear-gradient(155deg, #fff6c2 0%, #ffd640 26%, #ffb300 58%, #e08a00 100%); color: #2b1600; }
+/* Légende : violet nuit et or, comme une carte « icône » */
+.fut.t-legend { background: linear-gradient(160deg, #fff1a8, #d39b1c 45%, #ffe27a 70%, #b97800); }
+.fut.t-legend .fut-in { background: radial-gradient(120% 70% at 50% 0%, #8a3cff 0%, transparent 60%), linear-gradient(160deg, #4b1d96 0%, #2a0f63 45%, #12062e 100%); color: #ffdf73; }
+.fut.t-legend .silh { fill: rgba(255, 223, 115, .55); }
 .fut[class*="t-"] .fut-pic img { width: 170px; height: 180px; max-width: none; object-fit: cover; object-position: 50% 12%;
   -webkit-mask: linear-gradient(#000 78%, transparent); mask: linear-gradient(#000 78%, transparent); }
-.fut.back { background: #e9c75f; }
-.fut.back .fut-in { background: linear-gradient(100deg, #1b5236 0%, #2a7650 40%, #154129 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #e9c75f; padding: 0; }
+.fut.back { background: linear-gradient(160deg, #fff1a8, #c98d10 50%, #ffe27a); }
+.fut.back .fut-in { background: radial-gradient(90% 60% at 50% 45%, #5a3ee0 0%, transparent 70%), linear-gradient(100deg, #1b2270 0%, #3a2aa0 40%, #120f4a 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #e9c75f; padding: 0; }
 .fut.back b { font-weight: 900; font-stretch: 62%; font-size: 96px; line-height: 1; letter-spacing: -1px; }
 .fut.back span { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; }
 .mini { display: block; zoom: .55; }
@@ -554,7 +584,8 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .stage-c::before { content: ''; position: absolute; left: 50%; top: 50%; width: 640px; height: 640px; margin: -320px 0 0 -320px; opacity: 0; pointer-events: none; z-index: -1;
   background: repeating-conic-gradient(var(--ray, #d8bb62) 0 9deg, transparent 9deg 22deg);
   -webkit-mask: radial-gradient(closest-side, #000 25%, transparent); mask: radial-gradient(closest-side, #000 25%, transparent); transition: opacity .4s; }
-.stage-c.ray-legend { --ray: #2a7650; }
+.stage-c.ray-legend { --ray: #a259ff; }
+.stage-c.ray-gold { --ray: #ffc21a; }
 .stage-c.ray-silver { --ray: #a3a8ae; }
 .stage-c.ray-bronze { --ray: #c08852; }
 .stage-c.rays::before { opacity: .55; animation: spinrays 9s linear infinite; }
@@ -563,6 +594,19 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 @keyframes charge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px) rotate(-1deg); } 75% { transform: translateX(3px) rotate(1deg); } }
 .stage-tag { min-height: 28px; margin-top: 12px; }
 .flip { width: 300px; height: 460px; perspective: 1100px; }
+.tilt { width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); }
+/* reflet de lumière sur la carte, qui suit l'inclinaison */
+.flip-back::after, .flip-front::after { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%);
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 40%), rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 45%); mix-blend-mode: overlay; }
+/* cartes Or et Légende : effet holographique arc-en-ciel */
+.flip.r-gold .flip-front::before, .flip.r-legend .flip-front::before { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: .75; mix-blend-mode: color-dodge; clip-path: polygon(14% 0, 86% 0, 100% 7%, 100% 88%, 50% 100%, 0 88%, 0 7%);
+  background: repeating-linear-gradient(115deg, transparent 0 8%, rgba(255, 80, 190, .35) 13%, rgba(80, 220, 255, .35) 18%, rgba(255, 240, 110, .35) 23%, rgba(110, 255, 170, .3) 28%, transparent 33% 40%) var(--bx, 50%) var(--by, 50%) / 300% 300%; }
+.flip.r-legend .flip-front::before { opacity: .9; }
+.flip.up.r-silver .flip-front { filter: drop-shadow(0 0 16px rgba(228, 236, 245, .9)); }
+.flip.up.r-gold .flip-front { filter: drop-shadow(0 0 22px rgba(255, 213, 74, .95)); }
+.flip.up.r-legend .flip-front { filter: drop-shadow(0 0 30px rgba(170, 100, 255, .95)); }
+.ring { position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; border-radius: 50%; pointer-events: none; z-index: -1;
+  border: 4px solid var(--glow); box-shadow: 0 0 30px var(--glow), inset 0 0 30px var(--glow); }
 .flip-in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, .7, .3, 1); }
 .flip-back, .flip-front { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .flip-front { transform: rotateY(180deg); }
@@ -601,7 +645,7 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .packcta { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 12px 14px; border: 2px solid var(--ink); text-decoration: none; color: inherit; }
 .packcta:hover .btn { background: var(--green); border-color: var(--green); }
 .packcta.off { border-style: dashed; border-width: 1px; border-color: var(--hair); }
-.mini-pack { flex: none; width: 40px; height: 56px; position: relative; display: flex; align-items: center; justify-content: center; background: #1f5f3f; border-top: 9px solid #154129; color: #e9c75f; }
+.mini-pack { flex: none; width: 40px; height: 56px; position: relative; display: flex; align-items: center; justify-content: center; background: linear-gradient(100deg, #1b2270, #4630b8 50%, #120f4a); border-top: 9px solid #120f4a; color: #e9c75f; }
 .mini-pack.bonus { background: #2a2620; border-top-color: #c9a640; }
 .mini-pack b { font-weight: 900; font-stretch: 62%; font-size: 15px; }
 .mini-pack i { position: absolute; right: -8px; top: -14px; background: var(--red); color: #fff; font: 700 11px/18px var(--mono); width: 18px; text-align: center; font-style: normal; }
@@ -697,6 +741,8 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
   .tr-c .mini { zoom: .35; }
   .today-row { gap: 6px; }
   .pack { width: 210px; height: 300px; }
+  .pack-peek { margin-left: -75px; }
+  .pk .mini { zoom: .5; }
   .pack-logo { font-size: 58px; }
   .rev-msg { font-size: 16px; padding: 0 8px; }
   .strip .sl { zoom: .26; }
