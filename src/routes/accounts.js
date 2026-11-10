@@ -48,6 +48,12 @@ module.exports = function routes({ app }) {
     if (await db.get('SELECT 1 x FROM users WHERE lower(username) = lower(?)', u)) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
     const r = await db.run('INSERT INTO users (username, pass, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id', u, await hash(String(password)), db.now());
     if (!r.rows.length) return res.status(400).json({ error: 'Ce pseudo est déjà pris.' });
+    // parrainage : le pseudo de celui qui a envoyé le lien d'invitation
+    const ref = String((req.body || {}).ref || '').trim().slice(0, 30);
+    if (ref) {
+      const p = await db.get('SELECT id FROM users WHERE lower(username) = lower(?)', ref);
+      if (p && p.id !== r.rows[0].id) await db.run('UPDATE users SET referred_by = ? WHERE id = ?', p.id, r.rows[0].id);
+    }
     await openSession(req, res, r.rows[0].id);
     res.json({ ok: true });
   }));

@@ -108,7 +108,7 @@ function renderWho(user, ed) {
   ME = user;
   if (ed) renderEdition(ed);
   $('#who').innerHTML = user
-    ? `<a class="pts" href="/classement" data-link title="${L('Tes points cumulés et ta série', 'Your total points and streak')}"><b>${user.points}</b> pts · ${L('série', 'streak')} <b>${user.streak}</b></a><a class="me" href="/compte" data-link>${esc(user.username)}</a>`
+    ? `<a class="purse" href="/collection" data-link title="${L('Tes pièces', 'Your coins')}"><i class="coin"></i><b>${Number(user.coins || 0).toLocaleString('fr-FR')}</b></a><a class="pts" href="/classement" data-link title="${L('Tes points cumulés et ta série', 'Your total points and streak')}"><b>${user.points}</b> pts · ${L('série', 'streak')} <b>${user.streak}</b></a><a class="me" href="/compte" data-link>${esc(user.username)}</a>`
     : `<a class="login" href="/compte" data-link>${L('Se connecter', 'Log in')}</a>`;
   const lo = $('#logout');
   if (lo) lo.onclick = async () => { await api('logout', {}); go('/'); };
@@ -122,6 +122,9 @@ function renderEdition(st) {
 // Le bandeau de consentement est celui de Google (« Confidentialité et messages » dans AdSense),
 // il bloque les cookies publicitaires tant que le visiteur n'a pas choisi.
 const CFG = window.FOOTIX || {};
+// lien de parrainage : foootix.com/?parrain=pseudo — gardé jusqu'à la création du compte
+try { const pr = new URLSearchParams(location.search).get('parrain'); if (pr) localStorage.setItem('parrain', pr.slice(0, 30)); } catch {}
+const parrain = () => { try { return localStorage.getItem('parrain') || ''; } catch { return ''; } };
 function adSlot(where) {
   if (CFG.preview) return `<div class="ad ad-${where}"><span>${L('Publicité', 'Advertisement')}</span><div class="ad-fake"></div></div>`;
   if (!CFG.ads || !CFG.slot) return '';
@@ -379,7 +382,6 @@ function fifaCard(c, rating, found, cls = '') {
         <div title="${L('Nationalité (passeport)', 'Nationality (passport)')}"><dt>NAT</dt><dd>${v(c.cit)}</dd></div>
         <div title="${L('Sélection nationale (équipe pour laquelle il joue)', 'National team he plays for')}"><dt>${L('SÉL', 'TEAM')}</dt><dd>${v(c.nat?.name)}</dd></div>
         <div><dt>${L('NÉ', 'BORN')}</dt><dd>${v(c.born)}</dd></div>
-        <div><dt>CLUB</dt><dd>${v(c.club)}</dd></div>
         <div><dt>${L('CHAMP', 'LEAGUE')}</dt><dd>${v(c.leagues.join(' '))}</dd></div>
         <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
         <div><dt>${L('STATUT', 'STATUS')}</dt><dd>${v(c.status)}</dd></div>
@@ -507,14 +509,15 @@ function packCta(st) {
   const p = st.packs;
   if (!p) return '';
   const ready = (p.main ? 0 : 1) + (p.bonus === 'ready' ? 1 : 0);
+  const mini = (k, n) => `<span class="mini-booster">${boosterArt(k)}${n > 1 ? '<i>2</i>' : ''}</span>`;
   if (ready) {
-    const title = ready > 1 ? L('2 packs à ouvrir', '2 packs to open') : p.bonus === 'ready' ? L('Pack bonus gagné !', 'Bonus pack won!') : L('Ton pack du jour t’attend', "Today's pack is waiting");
-    return `<a class="packcta" href="/collection" data-link><span class="mini-pack ${!p.main ? '' : 'bonus'}"><b>FoO</b>${ready > 1 ? '<i>2</i>' : ''}</span>
-      <span class="pc-t"><b>${title}</b><small>${L('5 cartes à collectionner. Plus le joueur est connu, plus sa carte est rare.', '5 cards to collect. The more famous the player, the rarer the card.')}</small></span>
-      <span class="btn solid">${L('Ouvrir un pack', 'Open a pack')}</span></a>`;
+    const title = ready > 1 ? L('2 boosters à ouvrir', '2 boosters to open') : p.bonus === 'ready' ? L('Booster Or gagné !', 'Gold booster won!') : L('Ton booster du jour t’attend', "Today's booster is waiting");
+    return `<a class="packcta" href="/collection" data-link>${mini(!p.main ? 'base' : 'gold', ready)}
+      <span class="pc-t"><b>${title}</b><small>${L('Plus le joueur est connu, plus sa carte est rare.', 'The more famous the player, the rarer the card.')}</small></span>
+      <span class="btn solid">${L('Ouvrir', 'Open')}</span></a>`;
   }
-  if (p.bonus === 'locked' && st.status === 'playing') return `<div class="packcta off"><span class="mini-pack bonus"><b>+1</b></span>
-    <span class="pc-t"><b>${L('Un pack bonus à gagner', 'A bonus pack to win')}</b><small>${L('Trouve le joueur du jour pour ouvrir un 2<sup>e</sup> pack dans ta collection.', 'Find the daily player to open a 2nd pack in your collection.')}</small></span></div>`;
+  if (p.bonus === 'locked' && st.status === 'playing') return `<div class="packcta off">${mini('gold', 1)}
+    <span class="pc-t"><b>${L('Un booster Or à gagner', 'A Gold booster to win')}</b><small>${L('Trouve le joueur du jour : 5 cartes dont au moins une Or.', 'Find the daily player: 5 cards with at least one Gold.')}</small></span></div>`;
   return '';
 }
 
@@ -812,14 +815,26 @@ function cardName(n) {
   return w.slice(k).join(' ');
 }
 // même carte que sur la page Jouer, aux couleurs de sa rareté
-const colCard = (c) => fifaCard({ ...c, name: cardName(c.name) }, c.rating, false, 't-' + c.tier);
+// carte de collection : épurée, la photo en grand, le nom, le club et la rareté
+function colCard(c) {
+  const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '';
+  return `<div class="fut cmp t-${c.tier}"><div class="fut-in">
+    <div class="fut-side"><div class="fut-rate">${c.rating}</div><div class="fut-pos">${esc(c.pos || '')}</div><div class="fut-flag">${flag}</div></div>
+    <div class="cmp-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
+    <div class="cmp-name">${esc(cardName(c.name))}</div>
+    <div class="cmp-sub">${esc(c.club || '')}</div>
+    <div class="cmp-tier"><i></i>${TIER_NAME[c.tier]}</div>
+  </div></div>`;
+}
 const CARD_BACK = '<div class="fut back"><div class="fut-in"><b>FoO</b><span>FoOotix</span></div></div>';
 const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }), { day: 'numeric', month: 'short' });
 const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'bonus' : null);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BEST = (cards) => TIERS.find((t) => cards.some((x) => x.tier === t)) || 'bronze';
-const GLOW = { bronze: '#f0a868', silver: '#e4ecf5', gold: '#ffc21a', legend: '#b36bff' };
+const GLOW = { bronze: '#f0a868', silver: '#e4ecf5', gold: '#ffc21a', legend: 'rainbow' };
+const RAINBOW = ['#ff5ea8', '#ffb347', '#fff36b', '#6dffa8', '#5ecbff', '#a98bff'];
+const glowCss = (c) => (c === 'rainbow' ? '#ff9de0' : c); // couleur unie quand un dégradé ne passe pas
 
 // effet 3D : l'objet s'incline vers le doigt ou la souris, et un reflet de lumière le suit.
 // Sans pointeur, il se balance doucement tout seul. Écrit des variables CSS (--rx, --ry, --mx, --my…)
@@ -865,7 +880,8 @@ function sparks(x, y, color, n = 40, power = 1, up = false) {
   const W = (c.width = innerWidth), H = (c.height = innerHeight);
   const bits = Array.from({ length: n }, () => {
     const a = up ? -Math.PI / 2 + (Math.random() - 0.5) * 1.6 : Math.random() * Math.PI * 2, v = (2 + Math.random() * 8) * power;
-    return { x: x + (up ? (Math.random() - 0.5) * 160 : 0), y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1.2 + Math.random() * 2.6, life: 35 + Math.random() * 40, age: 0 };
+    return { x: x + (up ? (Math.random() - 0.5) * 160 : 0), y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1.2 + Math.random() * 2.6, life: 35 + Math.random() * 40, age: 0,
+      c: color === 'rainbow' ? RAINBOW[Math.floor(Math.random() * RAINBOW.length)] : color };
   });
   (function frame() {
     g.clearRect(0, 0, W, H);
@@ -876,7 +892,7 @@ function sparks(x, y, color, n = 40, power = 1, up = false) {
       alive++;
       b.vy += 0.14; b.vx *= 0.97; b.vy *= 0.97; b.x += b.vx; b.y += b.vy;
       g.globalAlpha = 1 - b.age / b.life;
-      g.fillStyle = color;
+      g.fillStyle = b.c;
       g.beginPath(); g.arc(b.x, b.y, b.r * 2.4, 0, 7); g.fill();
       g.fillStyle = '#fff';
       g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.fill();
@@ -889,7 +905,9 @@ function flash(x, y, color) {
   if (reduced()) return;
   const f = document.createElement('div');
   f.className = 'flash';
-  f.style.background = `radial-gradient(circle at ${x}px ${y}px, #fff 0, ${color} 22%, transparent 70%)`;
+  f.style.background = color === 'rainbow'
+    ? `radial-gradient(circle at ${x}px ${y}px, #fff 0, rgba(255,255,255,.9) 10%, transparent 60%), conic-gradient(from 0deg at ${x}px ${y}px, #ff5ea8aa, #ffb347aa, #fff36baa, #6dffa8aa, #5ecbffaa, #a98bffaa, #ff5ea8aa)`
+    : `radial-gradient(circle at ${x}px ${y}px, #fff 0, ${color} 22%, transparent 70%)`;
   document.body.appendChild(f);
   f.animate([{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: 700, easing: 'ease-out' }).onfinish = () => f.remove();
 }
@@ -915,66 +933,143 @@ function toast(text) {
   setTimeout(() => t.remove(), 3200);
 }
 let COL = null; // dernière collection affichée
+let SEL = null; // booster choisi dans le carrousel
+const BOUGHT = {}; // boosters payés (les pièces partent à l'ouverture)
 function drawCollection(c) {
   COL = c;
   const total = Object.values(c.totals).reduce((a, b) => a + b, 0);
   const have = (t) => c.cards.filter((x) => x.tier === t).length;
-  const nx = nextPack(c);
-  const pr = c.prices || { shop: {}, sell: {} };
+  const pct = Math.max(0.6, (c.cards.length / total) * 100);
   app.innerHTML = `${subTabs('/collection')}
-    <div class="pagehead">
-      <div><div class="kicker">${L('Un booster gratuit par jour', 'One free booster a day')}</div><h1>${L('Boosters', 'Boosters')}</h1>
-      <p>${L('Chaque jour, un booster Base gratuit, et un booster Or si tu trouves le joueur du jour. Revends tes cartes pour gagner des pièces et acheter d’autres boosters, ou des cartes sur le <a href="/marche" data-link>marché</a>.', 'Every day, a free Base booster, plus a Gold booster if you find the daily player. Sell your cards to earn coins and buy more boosters, or cards on the <a href="/marche" data-link>market</a>.')}</p></div>
-      <div class="ph-side">${c.user ? `<div class="wallet">${coinTag(c.coins || 0)}<span>${L('pièces', 'coins')}</span></div>` : ''}
-      <div class="counters">
-        <div><b>${c.cards.length}</b><span>/ ${total}</span></div>
-        ${TIERS.slice(0, 3).map((t) => `<div><b>${have(t)}</b><span>${TIER_NAME[t]}</span></div>`).join('')}
-      </div></div>
+    <div class="pagehead soft">
+      <div><div class="kicker">${L('Un booster gratuit par jour', 'One free booster a day')}</div><h1>${L('Boosters', 'Boosters')}</h1></div>
     </div>
-    ${c.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('Sans compte, ta collection ne vit que sur cet appareil, et tu ne peux ni vendre ni acheter. <a href="/compte" data-link>Crée un compte</a> pour tout débloquer.', 'Without an account, your collection only lives on this device and you can’t buy or sell. <a href="/compte" data-link>Create an account</a> to unlock everything.')}</p>`}
-    <section class="packzone" id="packzone">${nx ? packBox(nx === 'bonus' ? 'gold' : 'base', nx === 'bonus' ? L('Booster Or gagné : tu as trouvé le joueur du jour', 'Gold booster won: you found the daily player') : (c.packs.bonus === 'ready' ? L('2 boosters à ouvrir aujourd’hui', '2 boosters to open today') : '')) : openedBox(c)}</section>
-    <section class="shop">
-      <div class="colbar"><h2>${L('Boutique', 'Shop')}</h2>${c.user ? coinTag(c.coins || 0) : ''}</div>
-      <div class="shop-row">${['base', 'gold', 'legend'].map((k) => {
-        const B = BOOSTER[k];
-        let act;
-        if (k === 'base') act = `<span class="muted">${c.packs.main ? L('Ouvert aujourd’hui', 'Opened today') : L('Gratuit chaque jour', 'Free every day')}</span>`;
-        else if (!c.user) act = `<a class="btn" href="/compte" data-link>${L('Crée un compte', 'Create an account')}</a>`;
-        else act = `<button type="button" class="btn ${c.coins >= pr.shop[k] ? 'solid' : ''}" data-buy="${k}" ${c.coins >= pr.shop[k] ? '' : 'disabled'}>${L('Acheter', 'Buy')} ${coinTag(pr.shop[k])}</button>`;
-        return `<div class="shop-it"><div class="bx k-${k}"><b>FoO</b><i>${k === 'base' ? 'BASE' : k === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</i></div>
-          <div class="shop-t"><b>${B.name}</b><small>${B.line}</small>${k === 'gold' ? `<small>${L('Offert si tu trouves le joueur du jour', 'Free if you find the daily player')}</small>` : ''}${k === 'legend' ? `<small>${L('Uniquement en boutique', 'Shop only')}</small>` : ''}</div>${act}</div>`;
-      }).join('')}</div>
-      ${c.user ? `<p class="odds">${L('Gagne des pièces en revendant tes cartes', 'Earn coins by selling your cards')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${pr.sell[t]}</span>`).join(' · ')}. ${L('Touche une carte de ta collection pour la vendre.', 'Tap a card in your collection to sell it.')}</p>` : ''}
-    </section>
+    ${c.user ? '' : `<p class="nudge">${L('Sans compte, ta collection ne vit que sur cet appareil, et tu ne peux ni vendre ni acheter. <a href="/compte" data-link>Crée un compte</a> pour tout débloquer.', 'Without an account, your collection only lives on this device and you can’t buy or sell. <a href="/compte" data-link>Create an account</a> to unlock everything.')}</p>`}
+    <section class="packzone" id="packzone"></section>
+    ${c.user ? earnBox(c) : ''}
     <section>
-      <div class="colbar"><h2>${L('Mes cartes', 'My cards')}</h2>
-        <div class="chips">${['all', ...TIERS].map((t) => `<button type="button" class="chip ${COL_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : TIER_NAME[t]} <span>${t === 'all' ? c.cards.length : have(t)}/${t === 'all' ? total : c.totals[t]}</span></button>`).join('')}</div>
+      <div class="colhead">
+        <h2>${L('Ma collection', 'My collection')}</h2>
+        <div class="colprog"><div class="cp-n"><b>${c.cards.length}</b> / ${total} ${L('cartes', 'cards')}</div><div class="cp-bar"><i style="width:${pct}%"></i></div></div>
       </div>
+      <div class="chips">${['all', ...TIERS].map((t) => `<button type="button" class="chip ${t !== 'all' ? 'g-' + t : ''} ${COL_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : `<i class="gem"></i>${TIER_NAME[t]}`} <span>${t === 'all' ? c.cards.length : have(t)}/${t === 'all' ? total : c.totals[t]}</span></button>`).join('')}</div>
       <div class="cgrid" id="cgrid"></div>
     </section>
     ${adSlot('wide')}`;
   const grid = () => {
     const list = c.cards.filter((x) => COL_FILTER === 'all' || x.tier === COL_FILTER).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
     $('#cgrid').innerHTML = list.length
-      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span><span class="cs-tags">${x.n > 1 ? `<span class="tag">×${x.n}</span>` : ''}${x.listed ? `<span class="tag sale">${L('En vente', 'For sale')}</span>` : ''}</span></button>`).join('')
+      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span>${x.n > 1 ? `<span class="badge">×${x.n}</span>` : ''}${x.listed ? `<span class="ribbon">${L('En vente', 'For sale')}</span>` : ''}</button>`).join('')
       : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier booster pour commencer ta collection.', 'Open your first booster to start your collection.')}</p>`;
     $('#cgrid').querySelectorAll('.cslot').forEach((b) => b.addEventListener('click', () => zoomCard(c.cards.find((x) => x.id === b.dataset.id), c)));
   };
   grid();
-  app.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+  app.querySelectorAll('.chips .chip').forEach((b) => b.addEventListener('click', () => {
     COL_FILTER = b.dataset.t;
-    app.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
+    app.querySelectorAll('.chips .chip').forEach((x) => x.classList.toggle('on', x === b));
     grid();
   }));
-  // acheter un booster : il apparaît en haut, prêt à être déchiré (les pièces partent à l'ouverture)
-  app.querySelectorAll('[data-buy]').forEach((b) => b.addEventListener('click', () => {
-    const k = b.dataset.buy;
-    $('#packzone').innerHTML = packBox(k, L(`${BOOSTER[k].name} acheté`, `${BOOSTER[k].name} bought`), true);
-    packDrag(k, () => api('shop', { kind: k }));
-    $('#packzone').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'center' });
-  }));
-  if (nx) packDrag(nx === 'bonus' ? 'gold' : 'base', () => api('pack', nx === 'bonus' ? { bonus: true } : {}));
-  else tick();
+  bindEarn(c);
+  drawChooser(c);
+}
+
+// ——— Choisir son booster : un carrousel, celui du milieu se déchire ———
+const KINDS = ['base', 'gold', 'legend'];
+function boosterState(c, k) {
+  if (k === 'base') return c.packs.main ? { open: false, why: 'done' } : { open: true, opener: () => api('pack', {}) };
+  if (k === 'gold' && c.packs.bonus === 'ready') return { open: true, free: true, opener: () => api('pack', { bonus: true }) };
+  if (BOUGHT[k]) return { open: true, paid: true, opener: () => api('shop', { kind: k }) };
+  return { open: false, why: 'buy' };
+}
+function drawChooser(c) {
+  const zone = $('#packzone');
+  if (!SEL) SEL = KINDS.find((k) => boosterState(c, k).open) || 'base';
+  const i = KINDS.indexOf(SEL);
+  const order = [KINDS[(i + 2) % 3], SEL, KINDS[(i + 1) % 3]];
+  const st = boosterState(c, SEL);
+  const pr = c.prices || { shop: {} };
+  const B = BOOSTER[SEL];
+  const seg = (on, label, state) => `<div class="seg ${state}"><i>${state === 'locked' ? LOCK : ''}</i><span>${label}</span></div>`;
+  let act;
+  if (st.open) act = `<p class="pack-hint">${L('Glisse le long du haut du booster pour le déchirer', 'Swipe along the top of the booster to tear it open')}</p>
+      <button type="button" class="btn solid big" id="packbtn">${st.paid ? L('Ouvrir', 'Open') + ` · ${coinTag(pr.shop[SEL])}` : L('Ouvrir', 'Open')}</button>`;
+  else if (SEL === 'base') act = `<p class="pack-hint">${L('Prochain booster gratuit dans', 'Next free booster in')} <b id="cd" class="mono"></b></p>`;
+  else if (!c.user) act = `<a class="btn solid big" href="/compte" data-link>${L('Crée un compte pour l’acheter', 'Create an account to buy it')}</a>`;
+  else {
+    const can = (c.coins || 0) >= pr.shop[SEL];
+    act = `${SEL === 'gold' ? `<p class="pack-hint muted">${c.packs.bonus === 'opened' ? L('Booster Or du jour déjà ouvert.', 'Today’s Gold booster is open.') : L('Gratuit si tu trouves le joueur du jour.', 'Free if you find the daily player.')} ${c.packs.bonus === 'locked' ? `<a href="/" data-link>${L('Jouer', 'Play')}</a>` : ''}</p>` : ''}
+      <button type="button" class="btn solid big" data-buy="${SEL}" ${can ? '' : 'disabled'}>${L('Acheter', 'Buy')} ${coinTag(pr.shop[SEL])}</button>
+      ${can ? '' : `<p class="pack-hint muted">${L(`Il te manque ${pr.shop[SEL] - (c.coins || 0)} pièces. Revends des cartes ou regarde une vidéo.`, `You need ${pr.shop[SEL] - (c.coins || 0)} more coins. Sell cards or watch a video.`)}</p>`}`;
+  }
+  zone.innerHTML = `<div class="chooser">
+    <div class="daily"><div class="daily-segs">${seg(true, 'Base', c.packs.main ? 'done' : 'ready')}${seg(true, L('Or', 'Gold'), c.packs.bonus === 'opened' ? 'done' : c.packs.bonus === 'ready' ? 'ready' : 'locked')}</div>
+      <div class="daily-t"><b>${(c.packs.main ? 1 : 0) + (c.packs.bonus === 'opened' ? 1 : 0)}</b>/2 ${L('boosters gratuits aujourd’hui', 'free boosters today')}</div></div>
+    <div class="carousel">
+      <button type="button" class="car-arrow l" data-go="-1" aria-label="${L('Booster précédent', 'Previous booster')}">‹</button>
+      ${order.map((k, n) => n === 1
+        ? `<div class="car-it mid">${packShell(k, st.open)}</div>`
+        : `<button type="button" class="car-it side ${n === 0 ? 'l' : 'r'}" data-k="${k}" aria-label="${BOOSTER[k].name}">${packShell(k, false, true)}</button>`).join('')}
+      <button type="button" class="car-arrow r" data-go="1" aria-label="${L('Booster suivant', 'Next booster')}">›</button>
+    </div>
+    <div class="car-info">
+      <h3>${B.name}</h3>
+      <p class="car-line">${B.line}${SEL === 'legend' ? ` · ${L('uniquement en boutique', 'shop only')}` : ''}</p>
+      <div class="car-act">${act}</div>
+      ${SEL === 'legend' ? '' : oddsLine(SEL)}
+    </div>
+  </div>`;
+  const pick = (k) => { SEL = k; drawChooser(c); };
+  zone.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => pick(b.dataset.k)));
+  zone.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => pick(KINDS[(i + 3 + +b.dataset.go) % 3])));
+  zone.querySelector('[data-buy]')?.addEventListener('click', (e) => { BOUGHT[e.currentTarget.dataset.buy] = true; drawChooser(c); });
+  if (st.open) packDrag(SEL, () => { if (st.paid) delete BOUGHT[SEL]; return st.opener(); });
+  else if (SEL === 'base') tick();
+  // inclinaison des boosters sur les côtés aussi, pour la profondeur
+  if (!st.open) tilt3d(() => zone.querySelector('.car-it.mid .pack'), zone.querySelector('.carousel'), 12);
+}
+const LOCK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="7" width="10" height="7.5" rx="1.6" fill="currentColor"/></svg>';
+// pièces gratuites : vidéo publicitaire et parrainage
+function earnBox(c) {
+  const v = c.video || { left: 0, coins: 20, perDay: 5 };
+  const r = c.referral || { friend: 100, sponsor: 150, invited: 0 };
+  const link = `${location.origin}/?parrain=${encodeURIComponent(c.user.username)}`;
+  return `<section class="earn">
+    <h2>${L('Gagner des pièces', 'Earn coins')}</h2>
+    <div class="earn-row">
+      <button type="button" class="earn-it vid" id="watch" ${v.left > 0 ? '' : 'disabled'}>
+        <span class="ei-ico"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg></span>
+        <span class="ei-t"><b>${L('Regarder une vidéo', 'Watch a video')}</b><small>${v.left > 0 ? L(`encore ${v.left} sur ${v.perDay} aujourd’hui`, `${v.left} of ${v.perDay} left today`) : L('reviens demain', 'come back tomorrow')}</small></span>
+        <span class="ei-gain">+${v.coins} <i class="coin"></i></span>
+      </button>
+      <button type="button" class="earn-it ref" id="invite" data-link-url="${esc(link)}">
+        <span class="ei-ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4" fill="currentColor"/><path d="M2.5 19c.6-3.6 3.3-5.6 6.5-5.6s5.9 2 6.5 5.6z" fill="currentColor"/><path d="M18 8v6M15 11h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span class="ei-t"><b>${L('Inviter un ami', 'Invite a friend')}</b><small>${L(`+${r.friend} pour lui, +${r.sponsor} pour toi quand il trouve son premier joueur`, `+${r.friend} for them, +${r.sponsor} for you when they find their first player`)}${r.invited ? ` · ${r.invited} ${L('invité(s)', 'invited')}` : ''}</small></span>
+        <span class="ei-gain">+${r.sponsor} <i class="coin"></i></span>
+      </button>
+    </div>
+  </section>`;
+}
+function bindEarn(c) {
+  $('#invite')?.addEventListener('click', async (e) => {
+    const url = e.currentTarget.dataset.linkUrl;
+    const text = L('Viens jouer à FoOotix avec moi : devine le footballeur du jour et ouvre des boosters ! On gagne des pièces tous les deux :', 'Come play FoOotix with me: guess the daily footballer and open boosters! We both earn coins:');
+    try { if (navigator.share) { await navigator.share({ title: 'FoOotix', text, url }); return; } } catch { return; }
+    try { await navigator.clipboard.writeText(`${text} ${url}`); toast(L('Lien d’invitation copié !', 'Invite link copied!')); } catch { prompt(L('Ton lien d’invitation :', 'Your invite link:'), url); }
+  });
+  $('#watch')?.addEventListener('click', (e) => watchVideo(e.currentTarget));
+}
+// vidéo récompensée (Google AdSense, « annonces avec récompense ») : les pièces arrivent seulement si la vidéo est vue en entier
+function watchVideo(btn) {
+  if (!CFG.ads || !window.adsbygoogle) return toast(L('Les vidéos arrivent bientôt.', 'Videos are coming soon.'));
+  btn.disabled = true;
+  let shown = false;
+  window.adsbygoogle.push({
+    type: 'reward', name: 'pieces',
+    beforeReward: (showAdFn) => { shown = true; showAdFn(); },
+    adDismissed: () => toast(L('Regarde la vidéo jusqu’au bout pour gagner tes pièces.', 'Watch the whole video to earn your coins.')),
+    adViewed: () => api('reward', {}).then((j) => { toast(L(`+${j.gain} pièces !`, `+${j.gain} coins!`)); renderWho(j.user); const y = scrollY; drawCollection(j); scrollTo(0, y); }, (err) => toast(esc(err.message))),
+    adBreakDone: () => { btn.disabled = false; if (!shown) toast(L('Pas de vidéo disponible pour l’instant, réessaie un peu plus tard.', 'No video available right now, try again later.')); },
+  });
 }
 // une carte de la collection en grand, par-dessus la page
 function zoomCard(c, col) {
@@ -1015,31 +1110,64 @@ function zoomCard(c, col) {
 function oddsLine(kind = 'base') {
   return `<p class="odds">${L('Chances par carte', 'Odds per card')} : ${['bronze', 'silver', 'gold', 'legend'].map((t) => `<span>${TIER_NAME[t]} ${ODDS[t]} %</span>`).join(' · ')}. ${kind === 'gold' ? L('La 5<sup>e</sup> carte est au moins Or.', 'The 5th card is at least Gold.') : L('La 5<sup>e</sup> carte est au moins Argent.', 'The 5th card is at least Silver.')}</p>`;
 }
-function packBox(kind, kicker = '', bought = false) {
-  const B = BOOSTER[kind];
-  return `<div class="pack-stage">
-    ${kicker ? `<div class="kicker">${kicker}</div>` : ''}
-    <div class="pack-scene" id="packscene">
+// le booster : une illustration (cartes en éventail, ballon, rayons, éclats), une soudure argentée en haut et en bas
+let ART_ID = 0;
+const ART = {
+  base: { bg: ['#05263f', '#0b5f86', '#19b3c8'], ray: '#bff9ff', ring: '#ffd640', cards: ['#c08852', '#c8ccd1', '#ffd640'], rib: '#fff6dc', ribInk: '#08314a', label: 'BOOSTER BASE' },
+  gold: { bg: ['#4a1d00', '#b45a00', '#ffb52e'], ray: '#fff0b0', ring: '#fff6d0', cards: ['#ffd640', '#ffe680', '#ffb300'], rib: '#2b1600', ribInk: '#ffd640', label: 'BOOSTER OR' },
+  legend: { bg: ['#140630', '#3a1780', '#0d2a6e'], ray: '#ffffff', ring: '#ffffff', cards: ['url(#RB)', 'url(#RB)', 'url(#RB)'], rib: '#ffffff', ribInk: '#1a0b3a', label: 'BOOSTER LÉGENDE' },
+};
+function boosterArt(kind) {
+  const A = ART[kind], u = 'a' + ++ART_ID;
+  const RB = `<linearGradient id="${u}rb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5ea8"/><stop offset=".2" stop-color="#ffb347"/><stop offset=".4" stop-color="#fff36b"/><stop offset=".6" stop-color="#6dffa8"/><stop offset=".8" stop-color="#5ecbff"/><stop offset="1" stop-color="#a98bff"/></linearGradient>`;
+  const fill = (c) => c.replace('url(#RB)', `url(#${u}rb)`);
+  const rays = Array.from({ length: 18 }, (_, k) => `<polygon points="0,0 -11,-300 11,-300" transform="rotate(${k * 20})"/>`).join('');
+  const shield = 'M-23,-46 H23 L32,-38 V30 L0,46 L-32,30 V-38 Z';
+  const spark = (x, y, r, c) => `<path d="M${x},${y - r} L${x + r * .35},${y} L${x},${y + r} L${x - r * .35},${y} Z" fill="${c}"/>`;
+  const star = (x, y, r) => `<path d="M${x},${y - r} Q${x},${y} ${x + r},${y} Q${x},${y} ${x},${y + r} Q${x},${y} ${x - r},${y} Q${x},${y} ${x},${y - r}Z" fill="#fff"/>`;
+  const gems = kind === 'legend' ? RAINBOW : kind === 'gold' ? ['#fff3b0', '#ffd640', '#ffffff', '#ffe680'] : ['#7df9ff', '#ffd640', '#ffffff', '#c8ccd1'];
+  const ball = `<g><circle r="17" fill="#fff" stroke="#1a1a1a" stroke-width="1.6"/><path d="M0,-6.5 L6.2,-2 L3.8,5.3 L-3.8,5.3 L-6.2,-2Z" fill="#1a1a1a"/><path d="M0,-6.5V-16.4M6.2,-2L15.6,-5M3.8,5.3L9.6,13.6M-3.8,5.3L-9.6,13.6M-6.2,-2L-15.6,-5" stroke="#1a1a1a" stroke-width="1.6" fill="none"/></g>`;
+  return `<svg class="pb-art" viewBox="0 0 240 284" preserveAspectRatio="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="${u}bg" x1="0" y1="0" x2=".6" y2="1"><stop offset="0" stop-color="${A.bg[0]}"/><stop offset=".55" stop-color="${A.bg[1]}"/><stop offset="1" stop-color="${A.bg[2]}"/></linearGradient>
+    <radialGradient id="${u}gl" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset=".45" stop-color="#fff" stop-opacity=".18"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="${u}cd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".4" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    ${RB}
+  </defs>
+  <rect width="240" height="284" fill="url(#${u}bg)"/>
+  <g class="pb-rays" transform="translate(120 150)" fill="${A.ray}" opacity=".13">${rays}</g>
+  ${kind === 'legend' ? `<rect class="pb-holo" width="240" height="284" fill="url(#${u}rb)" opacity=".5"/>` : ''}
+  <circle cx="120" cy="150" r="118" fill="url(#${u}gl)"/>
+  <text x="120" y="17" text-anchor="middle" class="pb-open" fill="${kind === 'gold' ? '#2b1600' : '#fff'}">◂  OUVRIR ICI  ▸</text>
+  <text x="120" y="60" text-anchor="middle" class="pb-logo" fill="#fff" stroke="${A.bg[0]}" stroke-width="7" paint-order="stroke" stroke-linejoin="round">Fo<tspan fill="#ffd640">O</tspan>otix</text>
+  <g transform="translate(120 152)">
+    <circle r="74" fill="${A.bg[0]}" opacity=".35"/>
+    <circle r="74" fill="none" stroke="${A.ring}" stroke-width="5"/>
+    <circle r="66" fill="none" stroke="${A.ring}" stroke-width="1.2" opacity=".6"/>
+    <g transform="rotate(-20) translate(-26 4)"><path d="${shield}" fill="${fill(A.cards[0])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/></g>
+    <g transform="rotate(20) translate(26 4)"><path d="${shield}" fill="${fill(A.cards[1])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/></g>
+    <g transform="scale(1.18)"><path d="${shield}" fill="${fill(A.cards[2])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/><g transform="translate(0 -4)">${ball}</g>
+      <rect x="-19" y="22" width="38" height="6" rx="3" fill="#fff" opacity=".8"/></g>
+  </g>
+  ${spark(30, 96, 9, gems[0])}${spark(206, 104, 11, gems[1])}${spark(44, 214, 7, gems[2])}${spark(196, 210, 8, gems[3])}${spark(214, 158, 5, gems[0])}${spark(22, 156, 6, gems[1])}
+  ${star(58, 82, 6)}${star(186, 70, 8)}${star(176, 228, 5)}
+  <g transform="translate(120 246)">
+    <path d="M-100,-15 H100 L92,0 L100,15 H-100 L-92,0Z" fill="${A.rib}" stroke="${kind === 'gold' ? '#ffd640' : 'rgba(0,0,0,.25)'}" stroke-width="1.5"/>
+    <text y="5.5" text-anchor="middle" class="pb-label" fill="${A.ribInk}">${A.label}</text>
+  </g>
+  <text x="120" y="278" text-anchor="middle" class="pb-sub" fill="${kind === 'gold' ? '#2b1600' : '#fff'}">${kind === 'legend' ? '1 CARTE · LÉGENDE GARANTIE' : kind === 'gold' ? '5 CARTES · 1 OR GARANTIE' : '5 CARTES · FOOTBALLEURS'}</text>
+</svg>`;
+}
+// l'emballage complet ; live = booster à déchirer (avec les cartes cachées et la lumière)
+function packShell(kind, live, side = false) {
+  return `<div class="pack-scene" ${live ? 'id="packscene"' : ''}>
     <div class="pack-shadow"></div>
-    <div class="pack k-${kind}" id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le booster', 'Open the booster')}">
-      <div class="pack-peek">${Array.from({ length: B.peek }, (_, k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div>
-      <div class="pack-beam"></div>
-      <div class="pack-body">
-        <div class="pb-rays"></div>
-        <div class="pack-kick">${L('Booster officiel', 'Official booster')}</div>
-        <div class="pack-logo">FoOotix</div>
-        <div class="pack-type">${kind === 'base' ? 'BASE' : kind === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</div>
-        <div class="pack-n">${B.line}</div>
-        <div class="pack-foot"><span>foootix.com</span><span>${esc(packDate())}</span></div>
-      </div>
-      <div class="pack-light"></div>
-      <div class="tear"><i class="tear-glow"></i><i class="tear-tip"></i></div>
-      <div class="pack-top"><span>FoOotix · ${kind === 'base' ? 'BASE' : kind === 'gold' ? L('OR', 'GOLD') : L('LÉGENDE', 'LEGEND')}</span></div>
+    <div class="pack k-${kind} ${side ? 'still' : ''}" ${live ? `id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le booster', 'Open the booster')}"` : ''}>
+      ${live ? `<div class="pack-peek">${Array.from({ length: BOOSTER[kind].peek }, (_, k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div><div class="pack-beam"></div>` : ''}
+      <div class="pack-body">${boosterArt(kind)}<div class="pb-crimp"></div></div>
+      ${live ? '<div class="pack-light"></div><div class="tear"><i class="tear-glow"></i><i class="tear-tip"></i></div>' : ''}
+      <div class="pack-top"></div>
     </div>
-    </div>
-    <p class="pack-hint">${L('Glisse le long du haut du booster pour le déchirer', 'Swipe along the top of the booster to tear it open')}</p>
-    <button type="button" class="linkbtn" id="packbtn">${L('ou ouvre-le d’un clic', 'or open it with a click')}</button>
-    ${bought ? `<p class="odds">${L('Les pièces sont débitées à l’ouverture.', 'Coins are spent when you open it.')}</p>` : oddsLine(kind)}
   </div>`;
 }
 function openedBox(c) {
@@ -1133,7 +1261,8 @@ function packDrag(kind, opener) {
     if (anim) {
       // 2. la lumière prend la couleur de la meilleure carte du pack, et les cartes sortent du pack
       const best = BEST(j.fresh || []), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
-      pack.style.setProperty('--glow', glow);
+      pack.style.setProperty('--glow', glowCss(glow));
+      if (glow === 'rainbow') pack.classList.add('g-rainbow');
       pack.classList.remove('charging');
       pack.classList.add('glowing');
       $('.pack-beam', pack).animate([{ opacity: 0, transform: 'scaleY(.2)' }, { opacity: 1, transform: 'scaleY(1)' }], { duration: 500, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
@@ -1198,7 +1327,8 @@ function revealStage(j, kind) {
       if (!reduced()) {
         const ring = document.createElement('div');
         ring.className = 'ring';
-        ring.style.setProperty('--glow', GLOW[c.tier]);
+        ring.style.setProperty('--glow', glowCss(GLOW[c.tier]));
+        if (c.tier === 'legend') ring.classList.add('rainbow');
         center.appendChild(ring);
         ring.animate([{ transform: 'scale(.3)', opacity: 1 }, { transform: 'scale(2.4)', opacity: 0 }], { duration: 800, easing: 'cubic-bezier(.1,.7,.3,1)' }).onfinish = () => ring.remove();
       }
@@ -1252,10 +1382,11 @@ function revealStage(j, kind) {
     if (last) {
       PACKING = false;
       const more = !!nextPack(j);
-      $('#stageact').innerHTML = `${more ? `<button type="button" class="btn solid" id="nextpack">${L('Ouvrir le booster Or', 'Open the Gold booster')}</button>` : ''}<button type="button" class="btn ${more ? '' : 'solid'}" id="tocol">${L('Voir ma collection', 'See my collection')}</button>`;
+      SEL = null;
+      $('#stageact').innerHTML = `${more ? `<button type="button" class="btn solid" id="nextpack">${L('Booster suivant', 'Next booster')}</button>` : `<button type="button" class="btn solid" id="nextpack">${L('Choisir un booster', 'Pick a booster')}</button>`}<button type="button" class="btn" id="tocol">${L('Voir ma collection', 'See my collection')}</button>`;
       const redraw = () => { const y = window.scrollY; drawCollection(j); window.scrollTo(0, y); };
       $('#tocol').onclick = () => { redraw(); $('#cgrid')?.scrollIntoView({ behavior: 'smooth' }); };
-      if (more) $('#nextpack').onclick = redraw;
+      $('#nextpack').onclick = () => { redraw(); $('#packzone')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     }
     busy = false;
   };
@@ -1279,9 +1410,9 @@ function drawMarket(m) {
     <div class="pagehead">
       <div><div class="kicker">${L('Achète et vends entre joueurs', 'Buy and sell between players')}</div><h1>${L('Marché', 'Market')}</h1>
       <p>${L('Les cartes mises en vente par les autres joueurs. Pour vendre les tiennes, touche une carte dans ta <a href="/collection" data-link>collection</a>.', 'Cards put on sale by other players. To sell yours, tap a card in your <a href="/collection" data-link>collection</a>.')}</p></div>
-      <div class="ph-side">${m.user ? `<div class="wallet">${coinTag(m.coins || 0)}<span>${L('pièces', 'coins')}</span></div>` : ''}<div class="counters"><div><b>${m.listings.length}</b><span>${L('en vente', 'for sale')}</span></div></div></div>
+      <div class="mk-count"><b>${m.listings.length}</b> ${L('cartes en vente', 'cards for sale')}</div>
     </div>
-    ${m.user ? '' : `<p class="nudge" style="margin:0 0 20px">${L('<a href="/compte" data-link>Crée un compte</a> pour acheter et vendre des cartes.', '<a href="/compte" data-link>Create an account</a> to buy and sell cards.')}</p>`}
+    ${m.user ? '' : `<p class="nudge">${L('<a href="/compte" data-link>Crée un compte</a> pour acheter et vendre des cartes.', '<a href="/compte" data-link>Create an account</a> to buy and sell cards.')}</p>`}
     <div class="colbar">
       <div class="chips">${['all', ...TIERS, 'mine'].map((t) => `<button type="button" class="chip ${MK_FILTER === t ? 'on' : ''}" data-t="${t}">${t === 'all' ? L('Toutes', 'All') : t === 'mine' ? L('Mes ventes', 'My sales') : TIER_NAME[t]}</button>`).join('')}</div>
       <input class="mk-q" id="mkq" type="search" placeholder="${L('Chercher un joueur', 'Search a player')}" value="${esc(MK_Q)}">
@@ -1654,7 +1785,7 @@ async function pageAuth() {
     const f = $(id);
     f.onsubmit = async (e) => {
       e.preventDefault();
-      try { await api(path, Object.fromEntries(new FormData(f))); go(nextPath()); } catch (err) { $('.msg', f).textContent = err.message; }
+      try { await api(path, { ...Object.fromEntries(new FormData(f)), ...(path === 'signup' && parrain() ? { ref: parrain() } : {}) }); go(nextPath()); } catch (err) { $('.msg', f).textContent = err.message; }
     };
   }
 }

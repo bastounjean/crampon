@@ -92,11 +92,12 @@ const streakOf = async (userId) => streakFrom((await wonDays([userId])).get(user
 // Chaque requête vers la base coûte un aller-retour : on les lance en parallèle quand on peut.
 async function publicUser(req) {
   if (!req.user) return null;
-  const [{ p }, st] = await Promise.all([
+  const [{ p }, st, w] = await Promise.all([
     db.get("SELECT COALESCE(SUM(points), 0) p FROM games WHERE user_id = ? AND status = 'won'", req.user.id),
     streakOf(req.user.id),
+    db.get('SELECT coins FROM wallets WHERE user_id = ?', req.user.id),
   ]);
-  return { username: req.user.username, points: p, ...st };
+  return { username: req.user.username, points: p, coins: w ? w.coins : 0, ...st };
 }
 
 // stats du jour : mêmes chiffres pour tout le monde, gardés 20 s en mémoire

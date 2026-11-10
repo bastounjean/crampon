@@ -168,14 +168,41 @@ module.exports = function routes({ app }) {
   // débit seulement si le solde suffit : renvoie vrai si c'est fait
   const debit = async (userId, n) => (await db.run('UPDATE wallets SET coins = coins - ? WHERE user_id = ? AND coins >= ?', n, userId, n)).changes > 0;
 
+  // parrainage : versé une seule fois, dès que le filleul a trouvé un joueur du jour
+  async function payReferral(req) {
+    if (!req.user) return;
+    const u = await db.get('SELECT referred_by, ref_paid FROM users WHERE id = ?', req.user.id);
+    if (!u || !u.referred_by || u.ref_paid) return;
+    if (!(await db.get("SELECT 1 x FROM games WHERE user_id = ? AND status IN ('won', 'late') LIMIT 1", req.user.id))) return;
+    const r = await db.run('UPDATE users SET ref_paid = 1 WHERE id = ? AND ref_paid IS NULL', req.user.id);
+    if (!r.changes) return;
+    await credit(req.user.id, G.REFERRAL.friend);
+    const n = await db.get('SELECT COUNT(*) n FROM users WHERE referred_by = ? AND ref_paid = 1', u.referred_by);
+    if (n.n <= G.REFERRAL.max) await credit(u.referred_by, G.REFERRAL.sponsor);
+    forget(req);
+  }
+  async function referrals(req) {
+    if (!req.user) return null;
+    const r = await db.get('SELECT COUNT(*) n, COUNT(ref_paid) paid FROM users WHERE referred_by = ?', req.user.id);
+    return { invited: r.n, paid: r.paid, ...G.REFERRAL };
+  }
+  async function rewardsLeft(req) {
+    if (!req.user) return null;
+    const r = await db.get('SELECT n FROM rewards WHERE user_id = ? AND day = ?', req.user.id, G.today());
+    return { left: G.REWARD.perDay - (r ? r.n : 0), coins: G.REWARD.coins, perDay: G.REWARD.perDay };
+  }
+
   async function collection(req) {
+    await payReferral(req);
     const day = G.today();
     const [cond, params] = mine(req);
-    const [rows, listed, st, wallet] = await Promise.all([
+    const [rows, listed, st, wallet, refs, video] = await Promise.all([
       db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE ${ALIVE} AND ${cond} ORDER BY p.id, c.slot`, ...params),
       req.user ? db.all(`SELECT l.id, l.player_id, l.price FROM listings l WHERE l.seller = ? AND ${ACTIVE}`, req.user.id) : [],
       packState(req, day),
       coins(req),
+      referrals(req),
+      rewardsLeft(req),
     ]);
     const owned = new Map();
     const today = { [day]: [], [BONUS(day)]: [] };
@@ -191,9 +218,20 @@ module.exports = function routes({ app }) {
     return {
       day, packs: { ...st, mainCards: today[day], bonusCards: today[BONUS(day)] }, cards: [...owned.values()], totals: G.deckTotals(),
       coins: wallet, listings: listed.map((l) => ({ id: l.id, player: l.player_id, price: l.price })),
-      prices: { sell: G.SELL, shop: G.SHOP, max: G.MAX_PRICE },
+      prices: { sell: G.SELL, shop: G.SHOP, max: G.MAX_PRICE }, referral: refs, video,
     };
   }
+  // vidéo publicitaire regardée en entier : quelques pièces, dans la limite du jour
+  app.post('/api/reward', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const day = G.today();
+    await db.run('INSERT INTO rewards (user_id, day, n) VALUES (?, ?, 0) ON CONFLICT DO NOTHING', req.user.id, day);
+    const r = await db.run('UPDATE rewards SET n = n + 1 WHERE user_id = ? AND day = ? AND n < ?', req.user.id, day, G.REWARD.perDay);
+    if (!r.changes) return res.status(400).json({ error: 'Tu as regardé toutes les vidéos du jour. Reviens demain !' });
+    await credit(req.user.id, G.REWARD.coins);
+    forget(req);
+    res.json({ ...(await withNew(req)), gain: G.REWARD.coins });
+  }));
   app.get('/api/collection', A(async (req, res) => {
     const [c, user] = await Promise.all([collection(req), publicUser(req)]);
     res.json({ ...c, user });
