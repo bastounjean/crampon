@@ -153,39 +153,173 @@ module.exports = function routes({ app }) {
     const has = new Set(rows.map((r) => r.day));
     return { main: has.has(day), bonus: has.has(BONUS(day)) ? 'opened' : g && g.status === 'won' ? 'ready' : 'locked' };
   }
+  // cartes que l'on possède : celles de ses packs (sauf revendues ou achetées par un autre), et celles achetées sur le marché
+  const mine = (req) => (req.user
+    ? ['(c.holder = ? OR (c.holder IS NULL AND p.user_id = ?))', [req.user.id, req.user.id]]
+    : ['(c.holder IS NULL AND p.anon = ?)', [req.aid]]);
+  const ALIVE = '(c.gone IS NULL OR c.gone = 0)';
+  const ACTIVE = 'l.buyer IS NULL AND l.cancelled = 0';
+  async function coins(req) {
+    if (!req.user) return null;
+    const w = await db.get('SELECT coins FROM wallets WHERE user_id = ?', req.user.id);
+    return w ? w.coins : 0;
+  }
+  const credit = (userId, n) => db.run('INSERT INTO wallets (user_id, coins) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET coins = wallets.coins + excluded.coins', userId, n);
+  // débit seulement si le solde suffit : renvoie vrai si c'est fait
+  const debit = async (userId, n) => (await db.run('UPDATE wallets SET coins = coins - ? WHERE user_id = ? AND coins >= ?', n, userId, n)).changes > 0;
+
   async function collection(req) {
-    const [col, val] = owner(req);
     const day = G.today();
-    const rows = await db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE p.${col} = ? ORDER BY p.id, c.slot`, val);
+    const [cond, params] = mine(req);
+    const [rows, listed, st, wallet] = await Promise.all([
+      db.all(`SELECT p.day, c.slot, c.player_id FROM cards c JOIN packs p ON p.id = c.pack_id WHERE ${ALIVE} AND ${cond} ORDER BY p.id, c.slot`, ...params),
+      req.user ? db.all(`SELECT l.id, l.player_id, l.price FROM listings l WHERE l.seller = ? AND ${ACTIVE}`, req.user.id) : [],
+      packState(req, day),
+      coins(req),
+    ]);
     const owned = new Map();
     const today = { [day]: [], [BONUS(day)]: [] };
     for (const r of rows) {
       const pl = G.BY_ID[r.player_id];
       if (!pl) continue;
-      const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0 };
+      const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0, listed: 0 };
       o.n++;
       owned.set(pl.id, o);
       if (today[r.day]) today[r.day].push({ ...G.collectCard(pl), isNew: o.n === 1 });
     }
-    const st = await packState(req, day);
-    return { day, packs: { ...st, mainCards: today[day], bonusCards: today[BONUS(day)] }, cards: [...owned.values()], totals: G.deckTotals() };
+    for (const l of listed) { const o = owned.get(l.player_id); if (o) o.listed++; }
+    return {
+      day, packs: { ...st, mainCards: today[day], bonusCards: today[BONUS(day)] }, cards: [...owned.values()], totals: G.deckTotals(),
+      coins: wallet, listings: listed.map((l) => ({ id: l.id, player: l.player_id, price: l.price })),
+      prices: { sell: G.SELL, shop: G.SHOP, max: G.MAX_PRICE },
+    };
   }
   app.get('/api/collection', A(async (req, res) => {
     const [c, user] = await Promise.all([collection(req), publicUser(req)]);
     res.json({ ...c, user });
   }));
+  // ouvre un pack : enregistre ses cartes et les renvoie dans l'ordre de sortie
+  async function openPack(day, col, val, kind) {
+    const r = await db.run(`INSERT INTO packs (day, ${col}, kind, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, day, val, kind === 'base' ? null : kind, db.now());
+    if (!r.rows.length) return null;
+    const ids = G.drawPack((n) => crypto.randomInt(n), kind);
+    for (let i = 0; i < ids.length; i++) await db.run('INSERT INTO cards (pack_id, slot, player_id) VALUES (?, ?, ?)', r.rows[0].id, i, ids[i]);
+    return ids.map((id) => G.collectCard(G.BY_ID[id]));
+  }
+  async function withNew(req, fresh) {
+    const [c, user] = await Promise.all([collection(req), publicUser(req)]);
+    // « nouvelle » : la carte n'était pas déjà dans la collection avant ce pack
+    if (fresh) {
+      const count = Object.fromEntries(c.cards.map((x) => [x.id, x.n]));
+      const seen = {};
+      fresh = fresh.map((x) => { seen[x.id] = (seen[x.id] || 0) + 1; return { ...x, isNew: count[x.id] === seen[x.id] }; });
+    }
+    return { ...c, user, fresh };
+  }
   app.post('/api/pack', A(async (req, res) => {
     const [col, val] = owner(req);
     const day = G.today();
     const bonus = !!(req.body || {}).bonus;
     forget(req);
     if (bonus && (await packState(req, day)).bonus === 'locked') return res.status(400).json({ error: 'Trouve le joueur du jour pour gagner le pack bonus.' });
-    const r = await db.run(`INSERT INTO packs (day, ${col}, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id`, bonus ? BONUS(day) : day, val, db.now());
-    if (r.rows.length) {
-      const ids = G.drawPack((n) => crypto.randomInt(n));
-      for (let i = 0; i < ids.length; i++) await db.run('INSERT INTO cards (pack_id, slot, player_id) VALUES (?, ?, ?)', r.rows[0].id, i, ids[i]);
+    const fresh = await openPack(bonus ? BONUS(day) : day, col, val, bonus ? 'gold' : 'base');
+    res.json({ ...(await withNew(req, fresh)), opened: bonus ? 'bonus' : 'main', kind: bonus ? 'gold' : 'base', already: !fresh });
+  }));
+
+  // ——— Pièces, boutique et marché (compte obligatoire) ———
+  const needUser = (req, res) => {
+    if (req.user) return true;
+    res.status(401).json({ error: 'Crée un compte pour vendre et acheter des cartes.' });
+    return false;
+  };
+  // une carte de ce joueur que l'on possède et qui n'est pas déjà en vente
+  const freeCard = (req, playerId) => db.get(`SELECT c.pack_id, c.slot FROM cards c JOIN packs p ON p.id = c.pack_id
+      WHERE c.player_id = ? AND ${ALIVE} AND ${mine(req)[0]}
+      AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.pack_id = c.pack_id AND l.slot = c.slot AND ${ACTIVE})
+      ORDER BY c.pack_id DESC, c.slot LIMIT 1`, playerId, ...mine(req)[1]);
+
+  // revente directe à FoOotix, au prix fixe de la rareté
+  app.post('/api/sell', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const id = String((req.body || {}).id || '');
+    if (!G.BY_ID[id]) return res.status(400).json({ error: 'Carte inconnue.' });
+    const c = await freeCard(req, id);
+    if (!c) return res.status(400).json({ error: 'Tu n’as pas cette carte (ou elle est déjà en vente).' });
+    const r = await db.run(`UPDATE cards SET gone = 1 WHERE pack_id = ? AND slot = ? AND (gone IS NULL OR gone = 0)
+      AND NOT EXISTS (SELECT 1 FROM listings l WHERE l.pack_id = cards.pack_id AND l.slot = cards.slot AND ${ACTIVE})`, c.pack_id, c.slot);
+    if (!r.changes) return res.status(409).json({ error: 'Cette carte vient de changer, réessaie.' });
+    const gain = G.SELL[G.tierOf(id)];
+    await credit(req.user.id, gain);
+    res.json({ ...(await withNew(req)), gain });
+  }));
+
+  // boutique : booster Or ou Légende contre des pièces
+  app.post('/api/shop', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const kind = String((req.body || {}).kind || '');
+    const price = G.SHOP[kind];
+    if (!price) return res.status(400).json({ error: 'Booster inconnu.' });
+    if (!(await debit(req.user.id, price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
+    let fresh;
+    try {
+      fresh = await openPack('achat:' + crypto.randomUUID(), 'user_id', req.user.id, kind);
+    } catch (e) {
+      await credit(req.user.id, price);
+      throw e;
     }
-    const [c, user] = await Promise.all([collection(req), publicUser(req)]);
-    res.json({ ...c, user, opened: bonus ? 'bonus' : 'main', already: !r.rows.length });
+    res.json({ ...(await withNew(req, fresh)), kind });
+  }));
+
+  // le marché : les cartes en vente par les joueurs
+  app.get('/api/market', A(async (req, res) => {
+    const rows = await db.all(`SELECT l.id, l.player_id, l.price, l.seller, l.created_at, u.username FROM listings l JOIN users u ON u.id = l.seller
+      WHERE ${ACTIVE} ORDER BY l.id DESC LIMIT 400`);
+    const [wallet, user] = await Promise.all([coins(req), publicUser(req)]);
+    res.json({
+      user, coins: wallet, prices: { sell: G.SELL, shop: G.SHOP, max: G.MAX_PRICE },
+      listings: rows.filter((r) => G.BY_ID[r.player_id]).map((r) => ({
+        id: r.id, price: r.price, seller: r.username, mine: !!req.user && r.seller === req.user.id, at: r.created_at,
+        card: G.collectCard(G.BY_ID[r.player_id]),
+      })),
+    });
+  }));
+  // mettre une carte en vente : au moins le prix de revente directe
+  app.post('/api/market/list', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const id = String((req.body || {}).id || '');
+    const price = Math.round(Number((req.body || {}).price));
+    if (!G.BY_ID[id]) return res.status(400).json({ error: 'Carte inconnue.' });
+    const min = G.SELL[G.tierOf(id)];
+    if (!Number.isFinite(price) || price < min || price > G.MAX_PRICE) return res.status(400).json({ error: `Prix entre ${min} et ${G.MAX_PRICE} pièces.` });
+    const c = await freeCard(req, id);
+    if (!c) return res.status(400).json({ error: 'Tu n’as pas cette carte (ou elle est déjà en vente).' });
+    try {
+      await db.run('INSERT INTO listings (pack_id, slot, player_id, seller, price, created_at) VALUES (?, ?, ?, ?, ?, ?)', c.pack_id, c.slot, id, req.user.id, price, db.now());
+    } catch {
+      return res.status(409).json({ error: 'Cette carte est déjà en vente.' });
+    }
+    res.json(await withNew(req));
+  }));
+  app.post('/api/market/cancel', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const r = await db.run(`UPDATE listings SET cancelled = 1 WHERE id = ? AND seller = ? AND buyer IS NULL AND cancelled = 0`, Number((req.body || {}).listing), req.user.id);
+    if (!r.changes) return res.status(400).json({ error: 'Cette vente n’existe plus.' });
+    res.json(await withNew(req));
+  }));
+  // acheter : on paie d'abord, puis on réserve l'annonce ; si quelqu'un l'a prise avant, on est remboursé
+  app.post('/api/market/buy', A(async (req, res) => {
+    if (!needUser(req, res)) return;
+    const l = await db.get(`SELECT * FROM listings l WHERE l.id = ? AND ${ACTIVE}`, Number((req.body || {}).listing));
+    if (!l) return res.status(400).json({ error: 'Cette carte n’est plus en vente.' });
+    if (l.seller === req.user.id) return res.status(400).json({ error: 'C’est ta propre vente.' });
+    if (!(await debit(req.user.id, l.price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
+    const r = await db.run('UPDATE listings SET buyer = ?, sold_at = ? WHERE id = ? AND buyer IS NULL AND cancelled = 0', req.user.id, db.now(), l.id);
+    if (!r.changes) {
+      await credit(req.user.id, l.price);
+      return res.status(409).json({ error: 'Quelqu’un vient de l’acheter avant toi.' });
+    }
+    await db.run('UPDATE cards SET holder = ? WHERE pack_id = ? AND slot = ?', req.user.id, l.pack_id, l.slot);
+    await credit(l.seller, l.price);
+    res.json({ ...(await withNew(req)), bought: G.collectCard(G.BY_ID[l.player_id]) });
   }));
 };

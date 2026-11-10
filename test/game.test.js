@@ -110,3 +110,25 @@ test('saisies : postes abrégés, nationalités du foot et surnoms, en français
   // les joueurs restent trouvables par leur nom
   for (const q of ['Messi', 'Kane', 'Rooney', 'Zidane']) assert.ok(G.resolve({ q }).player, q);
 });
+
+test('boosters : Base, Or (1 Or garantie) et Légende (1 seule carte, Légende)', () => {
+  let seed = 7;
+  const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  for (let i = 0; i < 300; i++) {
+    const base = G.drawPack(rand, 'base');
+    assert.strictEqual(base.length, 5);
+    assert.strictEqual(new Set(base).size, 5);
+    assert.ok(G.tierOf(base[4]) !== 'bronze', 'la 5e carte du Base est au moins Argent');
+    const gold = G.drawPack(rand, 'gold');
+    assert.strictEqual(gold.length, 5);
+    assert.ok(gold.some((id) => ['gold', 'legend'].includes(G.tierOf(id))), 'le booster Or a au moins une Or');
+    const leg = G.drawPack(rand, 'legend');
+    assert.strictEqual(leg.length, 1);
+    assert.strictEqual(G.tierOf(leg[0]), 'legend');
+  }
+});
+
+test('pièces : la revente directe vaut plus pour une carte plus rare, et les boosters coûtent des pièces', () => {
+  assert.ok(G.SELL.bronze < G.SELL.silver && G.SELL.silver < G.SELL.gold && G.SELL.gold < G.SELL.legend);
+  assert.ok(G.SHOP.gold > 0 && G.SHOP.legend > G.SHOP.gold);
+});

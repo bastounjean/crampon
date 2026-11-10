@@ -65,6 +65,8 @@ module.exports = function routes({ app }) {
     if (!req.user) return res.status(401).json({ error: 'Tu n’es pas connecté.' });
     const u = await db.get('SELECT pass FROM users WHERE id = ?', req.user.id);
     if (!(await check(String((req.body || {}).password || ''), u.pass))) return res.status(400).json({ error: 'Mot de passe incorrect.' });
+    // les cartes vendues à d'autres joueurs sur le marché restent chez eux : leurs packs sont détachés du compte
+    await db.run("UPDATE packs SET user_id = NULL, anon = 'supprime:' || id WHERE user_id = ? AND id IN (SELECT pack_id FROM cards WHERE holder IS NOT NULL AND holder <> ?)", req.user.id, req.user.id);
     await db.run('DELETE FROM users WHERE id = ?', req.user.id);
     forget(req);
     SESS.clear();

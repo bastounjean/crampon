@@ -158,7 +158,7 @@ module.exports = function front({ app, db, DOMAIN }) {
   }));
 
   app.get('/index.html', (req, res) => res.redirect(301, '/' + (req.originalUrl.split('?')[1] ? '?' + req.originalUrl.split('?')[1] : '')));
-  app.get(['/', '/jour/:day', '/album', '/collection', '/classement', '/compte', '/regles', '/astuces', '/a-propos', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
+  app.get(['/', '/jour/:day', '/album', '/collection', '/marche', '/classement', '/compte', '/regles', '/astuces', '/a-propos', '/confidentialite', '/mentions-legales', '/ligues', '/ligue/:code', '/duel', '/duel/:code', '/joueur/:id', '/joueurs'], A(async (req, res) => {
     res.set('Vary', 'Accept-Encoding, Accept-Language, Cookie');
     const page = await pageFor(req.path, I18N.pick(req), hostOf(req));
     if (page.missing) res.status(404);
