@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS listings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS listings_card ON listings (pack_id, slot) WHERE buyer IS NULL AND cancelled = 0;
 CREATE INDEX IF NOT EXISTS listings_seller ON listings (seller);
+CREATE TABLE IF NOT EXISTS rewards (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
 CREATE TABLE IF NOT EXISTS visits (
   day TEXT NOT NULL,
   vid TEXT NOT NULL,
@@ -125,6 +131,8 @@ const MIGRATIONS = [
   'ALTER TABLE packs ADD COLUMN kind TEXT', // type de booster : base (vide), gold ou legend
   'ALTER TABLE cards ADD COLUMN holder INTEGER', // compte qui a la carte, s'il l'a achetée sur le marché (sinon celui du pack)
   'ALTER TABLE cards ADD COLUMN gone INTEGER', // 1 : carte revendue à FoOotix
+  'ALTER TABLE users ADD COLUMN referred_by INTEGER', // parrain : compte qui a invité ce joueur
+  'ALTER TABLE users ADD COLUMN ref_paid INTEGER', // 1 : les pièces du parrainage ont été versées
 ];
 
 let api;

@@ -612,6 +612,10 @@ const BOOSTERS = {
 const SELL = { bronze: 5, silver: 15, gold: 60, legend: 300 };
 const SHOP = { gold: 150, legend: 1500 };
 const MAX_PRICE = 100000;
+// parrainage : pièces pour le filleul et le parrain, une fois que le filleul a trouvé un joueur du jour
+const REFERRAL = { friend: 100, sponsor: 150, max: 30 };
+// vidéo publicitaire regardée jusqu'au bout : pièces gagnées, et nombre de vidéos par jour
+const REWARD = { coins: 20, perDay: 5 };
 function drawPack(rand, kind = 'base') {
   const d = deck();
   const b = BOOSTERS[kind] || BOOSTERS.base;
@@ -654,5 +658,5 @@ function catalog() {
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
   setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
-  collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE,
+  collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE, REFERRAL, REWARD,
 };
