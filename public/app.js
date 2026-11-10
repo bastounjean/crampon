@@ -816,7 +816,7 @@ const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'b
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BEST = (cards) => TIERS.find((t) => cards.some((x) => x.tier === t)) || 'bronze';
-const GLOW = { bronze: '#f0a868', silver: '#e4ecf5', gold: '#ffd54a', legend: '#5dffb0' };
+const GLOW = { bronze: '#f0a868', silver: '#e4ecf5', gold: '#ffc21a', legend: '#b36bff' };
 
 // effet 3D : l'objet s'incline vers le doigt ou la souris, et un reflet de lumière le suit.
 // Sans pointeur, il se balance doucement tout seul. Écrit des variables CSS (--rx, --ry, --mx, --my…)
