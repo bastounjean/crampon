@@ -879,3 +879,77 @@ body:has(#app.loading)::before { width: 70%; transition: width 2s cubic-bezier(.
 .fut.t-legend .fut-rate, .fut.t-legend .fut-name { text-shadow: 0 0 12px rgba(255, 223, 115, .55), 0 2px 0 rgba(0, 0, 0, .5); }
 .cslot .mini { transition: transform .25s cubic-bezier(.2, .8, .3, 1), filter .25s; }
 .cslot:hover .mini { transform: perspective(700px) rotateY(-10deg) rotateX(5deg) translateY(-4px); filter: drop-shadow(0 12px 14px rgba(0, 0, 0, .25)); }
+
+/* ═══════════ Look « Stade de nuit » : fond de stade éclairé, panneaux en verre, or et violet ═══════════ */
+html:root, html:root[data-theme] {
+  --paper: #120f33; --paper-2: #1b1745; --card: rgba(255, 255, 255, .055); --ink: #f4f1ff; --muted: #a9a3cf; --rule: rgba(255, 255, 255, .16); --hair: rgba(255, 255, 255, .13);
+  --green: #3ee08f; --red: #ff4f8b; --blue: #6fb7ff; --amber: #ffc53d; --half: #ffd640; --gold: #ffd640; --violet: #8a5cff; --on-accent: #1a0f00; --crest: #f4f1ff;
+  --w-bg: #16143a; --w-text: #e8e6f5; --w-border: #3a3670; --w-muted: #a9a3cf; --w-link: #9fb4ff; --w-box: #1d1a48; --w-box2: #26225a; --w-sect: #1f3a35; --w-sect2: #252a55; --w-note: #2e2a1f; --w-fig: #3a3670;
+  color-scheme: dark;
+  background:
+    radial-gradient(60vw 50vh at 8% -8%, rgba(150, 170, 255, .38), transparent 60%),
+    radial-gradient(60vw 50vh at 92% -8%, rgba(190, 120, 255, .34), transparent 60%),
+    radial-gradient(90vw 40vh at 50% 108%, rgba(62, 224, 143, .22), transparent 70%),
+    var(--pitch-lines) center / cover fixed,
+    linear-gradient(180deg, #0b0a24 0%, #110d33 45%, #0a0820 100%) fixed;
+  --pitch-lines: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%201050%20680%27%20preserveAspectRatio%3D%27xMidYMid%20slice%27%3E%3Cg%20fill%3D%27none%27%20stroke%3D%27rgba%28255%2C255%2C255%2C.06%29%27%20stroke-width%3D%273%27%3E%3Crect%20x%3D%2720%27%20y%3D%2720%27%20width%3D%271010%27%20height%3D%27640%27/%3E%3Cline%20x1%3D%27525%27%20y1%3D%2720%27%20x2%3D%27525%27%20y2%3D%27660%27/%3E%3Ccircle%20cx%3D%27525%27%20cy%3D%27340%27%20r%3D%2792%27/%3E%3Crect%20x%3D%2720%27%20y%3D%27138%27%20width%3D%27165%27%20height%3D%27404%27/%3E%3Crect%20x%3D%27865%27%20y%3D%27138%27%20width%3D%27165%27%20height%3D%27404%27/%3E%3C/g%3E%3C/svg%3E");
+  background-color: #0b0a24;
+}
+/* faisceaux des projecteurs qui balaient doucement le ciel */
+body::before { content: ''; position: fixed; inset: -20vh -20vw auto; height: 90vh; pointer-events: none; z-index: -1; opacity: .5;
+  background: conic-gradient(from 160deg at 10% 0%, transparent 0deg, rgba(170, 185, 255, .16) 8deg, transparent 18deg, transparent 360deg),
+    conic-gradient(from 175deg at 90% 0%, transparent 0deg, rgba(200, 150, 255, .14) 10deg, transparent 22deg, transparent 360deg);
+  animation: beams 14s ease-in-out infinite alternate; }
+@keyframes beams { from { transform: translateX(-3vw) rotate(-1deg); } to { transform: translateX(3vw) rotate(1deg); } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+#app, .foot { background: linear-gradient(180deg, rgba(36, 30, 92, .72), rgba(18, 15, 51, .82)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 30px 80px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
+#app { border-radius: 22px; margin-top: 26px; }
+.foot { border-radius: 18px; }
+.topbar { --bar: rgba(10, 9, 32, .94); --bar-ink: #fff; --bar-mute: #a9a3cf; --bar-accent: #ffd640; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+:root:not([data-theme="light"]) .topbar { --bar: rgba(10, 9, 32, .94); }
+.logo { background: linear-gradient(180deg, #fff 30%, #ffd640 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 14px rgba(255, 214, 64, .35)); }
+.logo span, .logo small { -webkit-text-fill-color: #ffd640; }
+.tabs a.on::after { height: 3px; border-radius: 3px; box-shadow: 0 0 14px #ffd640, 0 0 4px #ffd640; }
+.topbar .theme { display: none; }
+h1 { background: linear-gradient(180deg, #fff 35%, #c9bfff); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .35)); }
+.kicker { color: #ffd640; text-shadow: 0 0 12px rgba(255, 214, 64, .45); }
+/* boutons : or en relief, et contour en verre */
+.btn { border-radius: 12px; border: 1px solid rgba(255, 255, 255, .28); background: rgba(255, 255, 255, .06); color: var(--ink); transition: transform .15s, box-shadow .15s, background .15s; }
+.btn:hover:not(:disabled) { background: rgba(255, 255, 255, .14); color: var(--ink); transform: translateY(-1px); }
+.btn.solid, .cz-in .btn.solid { background: linear-gradient(180deg, #ffe680, #ffc21a 55%, #f0a800); border-color: #ffd640; color: #2b1600; box-shadow: 0 4px 0 #a86a00, 0 10px 24px rgba(255, 194, 26, .35); }
+.btn.solid:hover:not(:disabled) { background: linear-gradient(180deg, #fff0a8, #ffd640 55%, #ffb300); border-color: #ffd640; color: #2b1600; transform: translateY(-2px); box-shadow: 0 6px 0 #a86a00, 0 14px 30px rgba(255, 194, 26, .45); }
+.btn.solid:active { transform: translateY(2px); box-shadow: 0 2px 0 #a86a00; }
+.btn.red { border-color: var(--red); color: var(--red); }
+/* saisie du jeu : une barre lumineuse */
+.search form { border: 1px solid rgba(255, 255, 255, .22); border-radius: 16px; background: rgba(8, 6, 30, .55); overflow: hidden; box-shadow: 0 0 0 0 rgba(255, 214, 64, 0); transition: box-shadow .2s, border-color .2s; }
+.search form:focus-within { border-color: #ffd640; box-shadow: 0 0 0 4px rgba(255, 214, 64, .18), 0 0 30px rgba(255, 214, 64, .25); }
+.search button { border-left: 0; background: linear-gradient(180deg, #ffe680, #ffc21a 55%, #f0a800); color: #2b1600; }
+.search button:hover { background: linear-gradient(180deg, #fff0a8, #ffd640); }
+.hero .search { background: transparent; }
+.sugg { border-radius: 0 0 14px 14px; background: #1b1745; border-color: rgba(255, 255, 255, .2); }
+/* encadrés : verre */
+.counters, .shop-it, .packcta, .slot, .tiktok-box, .auth form + form { border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05); border-radius: 14px; }
+.counters { overflow: hidden; }
+.counters div { border-left-color: rgba(255, 255, 255, .12); }
+.wallet { border-radius: 14px; }
+.chip { border-radius: 999px; border-color: rgba(255, 255, 255, .2); }
+.chip.on { background: #ffd640; border-color: #ffd640; color: #2b1600; }
+.subtabs a { border-radius: 10px; }
+.tag { border-radius: 6px; }
+.tag.new { background: var(--green); border-color: var(--green); color: #04210f; }
+.mk-q { border-radius: 10px; }
+.game > aside { border-left-color: rgba(255, 255, 255, .12); }
+/* la carte mystère flotte, avec un halo */
+#fcard { position: relative; animation: floaty 5s ease-in-out infinite; filter: drop-shadow(0 24px 30px rgba(0, 0, 0, .5)) drop-shadow(0 0 30px rgba(255, 214, 64, .25)); }
+@keyframes floaty { 0%, 100% { transform: translateY(0) rotate(-.6deg); } 50% { transform: translateY(-8px) rotate(.6deg); } }
+@media (prefers-reduced-motion: reduce) { #fcard { animation: none; } }
+.fut-in { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .3), inset 0 -40px 60px rgba(0, 0, 0, .15); }
+::selection { background: #ffd640; color: #2b1600; }
+#fcard { perspective: 1000px; }
+#fcard .fut { transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); }
+#fcard .fut-in::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3; mix-blend-mode: overlay;
+  background: radial-gradient(circle at var(--mx, 40%) var(--my, 30%), rgba(255, 255, 255, .6), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .25) 45%, transparent 55%) var(--bx, 50%) 0 / 250% 100%; }
+/* les degrés de la température brillent */
+.gauge .deg, .big .deg { text-shadow: 0 0 24px currentColor; }

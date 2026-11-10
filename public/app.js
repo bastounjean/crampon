@@ -402,6 +402,8 @@ function drawGame(lastN) {
   const justEnded = PLAYING && over; // la partie vient de se terminer sous les yeux du joueur
   PLAYING = !over;
   $('#fcard').innerHTML = fifaCard(st.card, best ? t : '?', st.status === 'won');
+  // la carte mystère s'incline vers la souris ou le doigt, avec un reflet
+  if (!$('#fcard').dataset.tilt) { $('#fcard').dataset.tilt = 1; tilt3d(() => $('#fcard .fut'), $('#fcard'), 9); }
   if (justEnded && st.status === 'gaveup' && prevCard) spinReveal($('#fcard'), prevCard);
   if (justEnded && st.status === 'won') confetti();
   $('#path').innerHTML = clubPath(st.card.path, over);
