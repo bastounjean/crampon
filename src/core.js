@@ -97,7 +97,8 @@ async function publicUser(req) {
     streakOf(req.user.id),
     db.get('SELECT coins FROM wallets WHERE user_id = ?', req.user.id),
   ]);
-  return { username: req.user.username, points: p, coins: w ? w.coins : 0, ...st };
+  const coins = G.unlimitedCoins(req.user.username) ? G.UNLIMITED : w ? w.coins : 0;
+  return { username: req.user.username, points: p, coins, ...st };
 }
 
 // stats du jour : mêmes chiffres pour tout le monde, gardés 20 s en mémoire

@@ -616,6 +616,11 @@ const MAX_PRICE = 100000;
 const REFERRAL = { friend: 100, sponsor: 150, max: 30 };
 // vidéo publicitaire regardée jusqu'au bout : pièces gagnées, et nombre de vidéos par jour
 const REWARD = { coins: 20, perDay: 5 };
+// Comptes aux pièces illimitées (compte du propriétaire, pour tester). Décidé uniquement ici, côté serveur :
+// impossible à obtenir depuis le navigateur. La variable UNLIMITED_COINS sur Render (pseudos séparés par des virgules) remplace la liste.
+const UNLIMITED = 999999;
+const unlimitedCoins = (username, list = process.env.UNLIMITED_COINS ?? 'BAptiste') => !!username
+  && String(list).split(',').map((x) => x.trim().toLowerCase()).filter(Boolean).includes(String(username).toLowerCase());
 function drawPack(rand, kind = 'base') {
   const d = deck();
   const b = BOOSTERS[kind] || BOOSTERS.base;
@@ -658,5 +663,5 @@ function catalog() {
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
   setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
-  collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE, REFERRAL, REWARD,
+  collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE, REFERRAL, REWARD, UNLIMITED, unlimitedCoins,
 };
