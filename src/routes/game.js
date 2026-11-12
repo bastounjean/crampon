@@ -161,12 +161,15 @@ module.exports = function routes({ app }) {
   const ACTIVE = 'l.buyer IS NULL AND l.cancelled = 0';
   async function coins(req) {
     if (!req.user) return null;
+    if (G.unlimitedCoins(req.user.username)) return G.UNLIMITED;
     const w = await db.get('SELECT coins FROM wallets WHERE user_id = ?', req.user.id);
     return w ? w.coins : 0;
   }
   const credit = (userId, n) => db.run('INSERT INTO wallets (user_id, coins) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET coins = wallets.coins + excluded.coins', userId, n);
   // débit seulement si le solde suffit : renvoie vrai si c'est fait
-  const debit = async (userId, n) => (await db.run('UPDATE wallets SET coins = coins - ? WHERE user_id = ? AND coins >= ?', n, userId, n)).changes > 0;
+  // compte aux pièces illimitées : rien n'est retiré, l'achat passe toujours
+  const debit = async (user, n) => G.unlimitedCoins(user.username)
+    || (await db.run('UPDATE wallets SET coins = coins - ? WHERE user_id = ? AND coins >= ?', n, user.id, n)).changes > 0;
 
   // parrainage : versé une seule fois, dès que le filleul a trouvé un joueur du jour
   async function payReferral(req) {
@@ -297,7 +300,7 @@ module.exports = function routes({ app }) {
     const kind = String((req.body || {}).kind || '');
     const price = G.SHOP[kind];
     if (!price) return res.status(400).json({ error: 'Booster inconnu.' });
-    if (!(await debit(req.user.id, price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
+    if (!(await debit(req.user, price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
     let fresh;
     try {
       fresh = await openPack('achat:' + crypto.randomUUID(), 'user_id', req.user.id, kind);
@@ -350,7 +353,7 @@ module.exports = function routes({ app }) {
     const l = await db.get(`SELECT * FROM listings l WHERE l.id = ? AND ${ACTIVE}`, Number((req.body || {}).listing));
     if (!l) return res.status(400).json({ error: 'Cette carte n’est plus en vente.' });
     if (l.seller === req.user.id) return res.status(400).json({ error: 'C’est ta propre vente.' });
-    if (!(await debit(req.user.id, l.price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
+    if (!(await debit(req.user, l.price))) return res.status(400).json({ error: 'Pas assez de pièces.' });
     const r = await db.run('UPDATE listings SET buyer = ?, sold_at = ? WHERE id = ? AND buyer IS NULL AND cancelled = 0', req.user.id, db.now(), l.id);
     if (!r.changes) {
       await credit(req.user.id, l.price);

@@ -132,3 +132,12 @@ test('pièces : la revente directe vaut plus pour une carte plus rare, et les bo
   assert.ok(G.SELL.bronze < G.SELL.silver && G.SELL.silver < G.SELL.gold && G.SELL.gold < G.SELL.legend);
   assert.ok(G.SHOP.gold > 0 && G.SHOP.legend > G.SHOP.gold);
 });
+
+test('pièces illimitées : seulement les pseudos de la liste, sans tenir compte des majuscules', () => {
+  assert.strictEqual(G.unlimitedCoins('BAptiste', 'BAptiste'), true);
+  assert.strictEqual(G.unlimitedCoins('baptiste', 'BAptiste'), true);
+  assert.strictEqual(G.unlimitedCoins('Baptiste2', 'BAptiste'), false);
+  assert.strictEqual(G.unlimitedCoins('', 'BAptiste'), false);
+  assert.strictEqual(G.unlimitedCoins('BAptiste', ''), false);
+  assert.strictEqual(G.unlimitedCoins('Paul', 'BAptiste, paul'), true);
+});
