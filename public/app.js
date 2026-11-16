@@ -1047,6 +1047,7 @@ function drawChooser(c) {
   const d2 = st.open ? packDrag(SEL, opener) : null;
   if (!st.open && SEL === 'base') tick();
   upgrade3D(SEL, st.open, d2, opener);
+  sides3D();
   // inclinaison des boosters sur les côtés aussi, pour la profondeur
   if (!st.open) tilt3d(() => zone.querySelector('.car-it.mid .pack'), zone.querySelector('.carousel'), 12);
 }
@@ -1253,6 +1254,23 @@ async function upgrade3D(kind, open, d2, opener) {
   scene.classList.add('is3d');
   c.canTear = () => false;
   if (open) packDrag3D(kind, c, opener);
+}
+// les boosters sur les côtés du carrousel passent aussi en 3D (sans interaction : un clic les amène au centre)
+async function sides3D() {
+  if (reduced()) return;
+  const m = await load3D();
+  if (!m) return;
+  for (const it of document.querySelectorAll('#packzone .car-it.side')) {
+    const scene = it.querySelector('.pack-scene');
+    if (!scene || scene.querySelector('.b3d')) continue;
+    const host = document.createElement('div');
+    host.className = 'b3d';
+    scene.appendChild(host);
+    let c;
+    try { c = await m.mount(host, { kind: it.dataset.k, interactive: false }); } catch { host.remove(); continue; }
+    if (!host.isConnected || PACKING) { c.dispose(); host.remove(); continue; }
+    scene.classList.add('is3d');
+  }
 }
 // ouverture du booster 3D : on déchire la languette du doigt, un trait de lumière suit la déchirure
 function packDrag3D(kind, c, opener) {
