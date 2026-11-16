@@ -380,7 +380,7 @@ function pcCard(o) {
   const [first, last] = o.name ? nameParts(o.name) : ['', ''];
   const long = last.length > 11 ? (last.length > 15 ? ' xl' : ' l') : '';
   return `<div class="fut pc t-${o.tier}${o.cls ? ' ' + o.cls : ''}"><div class="fut-in">
-    <div class="pc-pic">${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
+    <div class="pc-pic">${o.photo ? `<img src="${esc(o.photo)}" alt=""${o.lazy ? ' loading="lazy"' : ''} decoding="async" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
     <div class="pc-tone"></div>
     <div class="pc-top">
       <b class="pc-rate">${o.rating}</b>
@@ -838,10 +838,10 @@ function cardName(n) {
 }
 // même carte que sur la page Jouer, aux couleurs de sa rareté
 // carte de collection : épurée, la photo en grand, le nom, le club et la rareté
-function colCard(c) {
+function colCard(c, lazy = false) {
   const d = (x) => esc(x == null || x === '' ? '–' : x);
   return pcCard({
-    tier: c.tier, name: c.name, photo: c.photo, rating: c.rating,
+    lazy, tier: c.tier, name: c.name, photo: c.photo, rating: c.rating,
     pos: d(c.pos), sub: `${FLAG(c.nat)}${TIER_NAME[c.tier]}`,
     lab: L('Club', 'Club'), val: `<span class="pc-v">${d(shortClub(c.club) || c.club)}</span>`, valLen: (shortClub(c.club) || c.club || '').length,
     stats: [[L('Né', 'Born'), d(c.born)], [L('Champ.', 'League'), d((c.leagues || []).slice(0, 2).join(' '))], [L('Cont.', 'Cont.'), d(c.cont)], [L("B. d'or", "B. d'Or"), c.bo ? '★' : '–']],
@@ -980,7 +980,7 @@ function drawCollection(c) {
   const grid = () => {
     const list = c.cards.filter((x) => COL_FILTER === 'all' || x.tier === COL_FILTER).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
     $('#cgrid').innerHTML = list.length
-      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x)}</span>${x.n > 1 ? `<span class="badge">×${x.n}</span>` : ''}${x.listed ? `<span class="ribbon">${L('En vente', 'For sale')}</span>` : ''}</button>`).join('')
+      ? list.map((x) => `<button type="button" class="cslot" data-id="${esc(x.id)}" aria-label="${esc(x.name)}"><span class="mini">${colCard(x, true)}</span>${x.n > 1 ? `<span class="badge">×${x.n}</span>` : ''}${x.listed ? `<span class="ribbon">${L('En vente', 'For sale')}</span>` : ''}</button>`).join('')
       : `<p class="empty">${c.cards.length ? L('Pas encore de carte de cette rareté.', 'No card of this rarity yet.') : L('Ouvre ton premier booster pour commencer ta collection.', 'Open your first booster to start your collection.')}</p>`;
     $('#cgrid').querySelectorAll('.cslot').forEach((b) => b.addEventListener('click', () => zoomCard(c.cards.find((x) => x.id === b.dataset.id), c)));
   };
@@ -1133,51 +1133,69 @@ function oddsLine(kind = 'base') {
 }
 // le booster : une illustration (cartes en éventail, ballon, rayons, éclats), une soudure argentée en haut et en bas
 let ART_ID = 0;
+// Emballage façon vrai sachet de cartes : film métallisé froissé, panneau imprimé au centre,
+// médaillon, deux joueurs dans des ronds et l'étiquette du booster.
 const ART = {
-  base: { bg: ['#05263f', '#0b5f86', '#19b3c8'], ray: '#bff9ff', ring: '#ffd640', cards: ['#c08852', '#c8ccd1', '#ffd640'], rib: '#fff6dc', ribInk: '#08314a', label: 'BOOSTER BASE' },
-  gold: { bg: ['#4a1d00', '#b45a00', '#ffb52e'], ray: '#fff0b0', ring: '#fff6d0', cards: ['#ffd640', '#ffe680', '#ffb300'], rib: '#2b1600', ribInk: '#ffd640', label: 'BOOSTER OR' },
-  legend: { bg: ['#140630', '#3a1780', '#0d2a6e'], ray: '#ffffff', ring: '#ffffff', cards: ['url(#RB)', 'url(#RB)', 'url(#RB)'], rib: '#ffffff', ribInk: '#1a0b3a', label: 'BOOSTER LÉGENDE' },
+  base: { foil: ['#ff6a4d', '#d81e1a', '#8e0b0d'], panel: ['#0c2a6b', '#1747a8', '#0a1f52'], disc: ['#ff4b3e', '#c3161a'], ring: '#fff', label: 'BOOSTER BASE', tag: '#ffd21f', tagInk: '#c3161a', shirts: [['#c3161a', '#fff'], ['#ffffff', '#1747a8']] },
+  gold: { foil: ['#fff1a6', '#e5a91c', '#8a5a06'], panel: ['#1a1405', '#3b2a07', '#0f0b03'], disc: ['#ffd640', '#c98d10'], ring: '#fff3c4', label: 'BOOSTER OR', tag: '#1a1405', tagInk: '#ffd640', shirts: [['#ffd640', '#1a1405'], ['#1a1405', '#ffd640']] },
+  legend: { foil: ['#f4f6ff', '#b9c2d6', '#6f7b95'], panel: ['#1b0b45', '#4a1d96', '#0e0628'], disc: ['url(#RB)', 'url(#RB)'], ring: '#fff', label: 'BOOSTER LÉGENDE', tag: '#ffffff', tagInk: '#4a1d96', shirts: [['#8a5cff', '#fff'], ['#ff5ea8', '#fff']] },
 };
 function boosterArt(kind) {
   const A = ART[kind], u = 'a' + ++ART_ID;
   const RB = `<linearGradient id="${u}rb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5ea8"/><stop offset=".2" stop-color="#ffb347"/><stop offset=".4" stop-color="#fff36b"/><stop offset=".6" stop-color="#6dffa8"/><stop offset=".8" stop-color="#5ecbff"/><stop offset="1" stop-color="#a98bff"/></linearGradient>`;
   const fill = (c) => c.replace('url(#RB)', `url(#${u}rb)`);
-  const rays = Array.from({ length: 18 }, (_, k) => `<polygon points="0,0 -11,-300 11,-300" transform="rotate(${k * 20})"/>`).join('');
-  const shield = 'M-23,-46 H23 L32,-38 V30 L0,46 L-32,30 V-38 Z';
-  const spark = (x, y, r, c) => `<path d="M${x},${y - r} L${x + r * .35},${y} L${x},${y + r} L${x - r * .35},${y} Z" fill="${c}"/>`;
-  const star = (x, y, r) => `<path d="M${x},${y - r} Q${x},${y} ${x + r},${y} Q${x},${y} ${x},${y + r} Q${x},${y} ${x - r},${y} Q${x},${y} ${x},${y - r}Z" fill="#fff"/>`;
-  const gems = kind === 'legend' ? RAINBOW : kind === 'gold' ? ['#fff3b0', '#ffd640', '#ffffff', '#ffe680'] : ['#7df9ff', '#ffd640', '#ffffff', '#c8ccd1'];
-  const ball = `<g><circle r="17" fill="#fff" stroke="#1a1a1a" stroke-width="1.6"/><path d="M0,-6.5 L6.2,-2 L3.8,5.3 L-3.8,5.3 L-6.2,-2Z" fill="#1a1a1a"/><path d="M0,-6.5V-16.4M6.2,-2L15.6,-5M3.8,5.3L9.6,13.6M-3.8,5.3L-9.6,13.6M-6.2,-2L-15.6,-5" stroke="#1a1a1a" stroke-width="1.6" fill="none"/></g>`;
+  // un joueur en buste, dans un médaillon rond (maillot aux couleurs du booster)
+  const player = (cx, cy, r, [shirt, trim], flip) => `<g transform="translate(${cx} ${cy})">
+    <circle r="${r + 3}" fill="#fff"/><circle r="${r}" fill="url(#${u}sky)"/>
+    <g clip-path="url(#${u}c${r})"><g transform="scale(${(r / 44) * (flip ? -1 : 1)} ${r / 44})">
+      <path d="M-60,60 C-56,26 -34,16 -14,12 L0,22 L14,12 C34,16 56,26 60,60Z" fill="${shirt}"/>
+      <path d="M-14,12 L0,22 L14,12 L10,9 L0,16 L-10,9Z" fill="${trim}"/>
+      <path d="M-44,30 C-40,22 -30,18 -24,16 M44,30 C40,22 30,18 24,16" stroke="${trim}" stroke-width="3" fill="none" opacity=".8"/>
+      <rect x="-7" y="0" width="14" height="13" rx="4" fill="url(#${u}sk)"/>
+      <ellipse cx="0" cy="-12" rx="14" ry="17" fill="url(#${u}sk)"/>
+      <path d="M-14,-13 C-16,-31 -4,-35 2,-34 C13,-34 18,-24 14,-11 C12,-21 5,-25 -3,-24 C-9,-23 -13,-19 -14,-13Z" fill="#140c08"/>
+      <path d="M11,-22 C15,-14 15,-4 9,4" stroke="#fff" stroke-opacity=".45" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </g></g></g>`;
+  const big = (t, x, y, sz) => `<text x="${x}" y="${y}" text-anchor="middle" class="pb-big" font-size="${sz}" fill="#ffd21f" stroke="#0a1f52" stroke-width="4.5" paint-order="stroke" stroke-linejoin="round">${t}</text>`;
   return `<svg class="pb-art" viewBox="0 0 240 284" preserveAspectRatio="none" aria-hidden="true">
   <defs>
-    <linearGradient id="${u}bg" x1="0" y1="0" x2=".6" y2="1"><stop offset="0" stop-color="${A.bg[0]}"/><stop offset=".55" stop-color="${A.bg[1]}"/><stop offset="1" stop-color="${A.bg[2]}"/></linearGradient>
-    <radialGradient id="${u}gl" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset=".45" stop-color="#fff" stop-opacity=".18"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-    <linearGradient id="${u}cd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".4" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${u}fo" x1="0" y1="0" x2="1" y2=".35"><stop offset="0" stop-color="${A.foil[1]}"/><stop offset=".18" stop-color="${A.foil[0]}"/><stop offset=".34" stop-color="${A.foil[2]}"/><stop offset=".55" stop-color="${A.foil[1]}"/><stop offset=".72" stop-color="${A.foil[0]}"/><stop offset="1" stop-color="${A.foil[2]}"/></linearGradient>
+    <linearGradient id="${u}pa" x1="0" y1="0" x2=".3" y2="1"><stop offset="0" stop-color="${A.panel[0]}"/><stop offset=".5" stop-color="${A.panel[1]}"/><stop offset="1" stop-color="${A.panel[2]}"/></linearGradient>
+    <linearGradient id="${u}st" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".22"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${u}sk" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b57e5c"/><stop offset=".6" stop-color="#6e4630"/><stop offset="1" stop-color="#3a2418"/></linearGradient>
+    <radialGradient id="${u}sky" cx=".5" cy=".25" r=".8"><stop offset="0" stop-color="#cfe6ff"/><stop offset=".6" stop-color="#4f7fc7"/><stop offset="1" stop-color="#1b2f66"/></radialGradient>
+    <radialGradient id="${u}di" cx=".4" cy=".3" r=".75"><stop offset="0" stop-color="${fill(A.disc[0])}"/><stop offset="1" stop-color="${fill(A.disc[1])}"/></radialGradient>
+    <clipPath id="${u}c44"><circle r="44"/></clipPath><clipPath id="${u}c38"><circle r="38"/></clipPath>
     ${RB}
   </defs>
-  <rect width="240" height="284" fill="url(#${u}bg)"/>
-  <g class="pb-rays" transform="translate(120 150)" fill="${A.ray}" opacity=".13">${rays}</g>
-  ${kind === 'legend' ? `<rect class="pb-holo" width="240" height="284" fill="url(#${u}rb)" opacity=".5"/>` : ''}
-  <circle cx="120" cy="150" r="118" fill="url(#${u}gl)"/>
-  <text x="120" y="17" text-anchor="middle" class="pb-open" fill="${kind === 'gold' ? '#2b1600' : '#fff'}">◂  OUVRIR ICI  ▸</text>
-  <text x="120" y="60" text-anchor="middle" class="pb-logo" fill="#fff" stroke="${A.bg[0]}" stroke-width="7" paint-order="stroke" stroke-linejoin="round">Fo<tspan fill="#ffd640">O</tspan>otix</text>
-  <g transform="translate(120 152)">
-    <circle r="74" fill="${A.bg[0]}" opacity=".35"/>
-    <circle r="74" fill="none" stroke="${A.ring}" stroke-width="5"/>
-    <circle r="66" fill="none" stroke="${A.ring}" stroke-width="1.2" opacity=".6"/>
-    <g transform="rotate(-20) translate(-26 4)"><path d="${shield}" fill="${fill(A.cards[0])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/></g>
-    <g transform="rotate(20) translate(26 4)"><path d="${shield}" fill="${fill(A.cards[1])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/></g>
-    <g transform="scale(1.18)"><path d="${shield}" fill="${fill(A.cards[2])}" stroke="#fff" stroke-width="2.5"/><path d="${shield}" fill="url(#${u}cd)"/><g transform="translate(0 -4)">${ball}</g>
-      <rect x="-19" y="22" width="38" height="6" rx="3" fill="#fff" opacity=".8"/></g>
+  <rect width="240" height="284" fill="url(#${u}fo)"/>
+  <path d="M10,30 L232,18 L230,250 L8,262Z" fill="url(#${u}pa)"/>
+  <g opacity=".9"><path d="M30,262 L110,22 L140,20 L60,260Z" fill="url(#${u}st)"/><path d="M150,256 L210,18 L224,18 L166,255Z" fill="url(#${u}st)"/></g>
+  <g fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="1"><path d="M10,92 Q120,70 232,84"/><path d="M8,200 Q120,186 230,196"/><circle cx="120" cy="148" r="86"/></g>
+  <path d="M10,30 L232,18 L230,250 L8,262Z" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/>
+  ${player(60, 70, 44, A.shirts[0], false)}
+  <text x="168" y="44" text-anchor="middle" class="pb-logo" font-size="30" fill="#fff" stroke="#0a1f52" stroke-width="5" paint-order="stroke" stroke-linejoin="round">Fo<tspan fill="#ffd21f">O</tspan>otix</text>
+  ${big('CARTES', 168, 66, 17)}${big('À COLLECTIONNER', 168, 84, 13)}
+  <g transform="translate(120 150)">
+    <circle r="58" fill="${kind === 'legend' ? `url(#${u}rb)` : `url(#${u}di)`}" stroke="${A.ring}" stroke-width="3.5"/>
+    <circle r="51" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1" stroke-dasharray="2 3"/>
+    <g transform="translate(0 -14)">
+      <path d="M-16,-22 H16 V-10 C16,4 8,12 0,13 C-8,12 -16,4 -16,-10Z" fill="#fff"/>
+      <path d="M-16,-17 C-27,-17 -27,-2 -12,1 M16,-17 C27,-17 27,-2 12,1" stroke="#fff" stroke-width="3.2" fill="none"/>
+      <rect x="-3.5" y="12" width="7" height="8" fill="#fff"/><rect x="-11" y="20" width="22" height="5" rx="1.5" fill="#fff"/>
+      <circle cx="0" cy="-8" r="6.5" fill="${fill(A.disc[1])}" opacity=".9"/>
+    </g>
+    <text y="27" text-anchor="middle" class="pb-mid" font-size="17" fill="${kind === 'gold' ? '#2b1600' : kind === 'legend' ? '#1b0b45' : '#fff'}">Fo<tspan fill="${kind === 'gold' ? '#b3160f' : '#ffd21f'}">O</tspan>otix</text>
+    <text y="41" text-anchor="middle" class="pb-sub" fill="${kind === 'gold' ? '#2b1600' : kind === 'legend' ? '#1b0b45' : '#fff'}">SAISON ${new Date().getFullYear()}</text>
   </g>
-  ${spark(30, 96, 9, gems[0])}${spark(206, 104, 11, gems[1])}${spark(44, 214, 7, gems[2])}${spark(196, 210, 8, gems[3])}${spark(214, 158, 5, gems[0])}${spark(22, 156, 6, gems[1])}
-  ${star(58, 82, 6)}${star(186, 70, 8)}${star(176, 228, 5)}
-  <g transform="translate(120 246)">
-    <path d="M-100,-15 H100 L92,0 L100,15 H-100 L-92,0Z" fill="${A.rib}" stroke="${kind === 'gold' ? '#ffd640' : 'rgba(0,0,0,.25)'}" stroke-width="1.5"/>
-    <text y="5.5" text-anchor="middle" class="pb-label" fill="${A.ribInk}">${A.label}</text>
+  ${player(184, 222, 38, A.shirts[1], true)}
+  <g transform="translate(18 216)">
+    <rect width="104" height="17" rx="2" fill="${A.tag}" stroke="#fff" stroke-width="1"/>
+    <text x="52" y="12.5" text-anchor="middle" class="pb-label" fill="${A.tagInk}" textLength="${kind === 'legend' ? 94 : 80}" lengthAdjust="spacingAndGlyphs">${A.label}</text>
   </g>
-  <text x="120" y="278" text-anchor="middle" class="pb-sub" fill="${kind === 'gold' ? '#2b1600' : '#fff'}">${kind === 'legend' ? '1 CARTE · LÉGENDE GARANTIE' : kind === 'gold' ? '5 CARTES · 1 OR GARANTIE' : '5 CARTES · FOOTBALLEURS'}</text>
-</svg>`;
+  <text x="20" y="246" class="pb-sub" fill="#fff" textLength="118" lengthAdjust="spacingAndGlyphs">${kind === 'legend' ? '1 CARTE · LÉGENDE GARANTIE' : kind === 'gold' ? '5 CARTES · 1 OR GARANTIE' : '5 CARTES DE FOOTBALLEURS'}</text>
+  <text x="120" y="276" text-anchor="middle" class="pb-open" fill="${kind === 'base' ? '#fff' : '#2b1600'}" opacity=".75">FOOOTIX.COM</text>
+</svg><div class="pb-foil"></div>`;
 }
 // l'emballage complet ; live = booster à déchirer (avec les cartes cachées et la lumière)
 function packShell(kind, live, side = false) {
@@ -1200,6 +1218,18 @@ function openedBox(c) {
 }
 
 // glisser le pack : le haut se décolle et suit le doigt, puis se déchire au-delà de la moitié de la largeur
+// télécharge et décode les photos à l'avance, pour qu'elles soient là dès que la carte apparaît
+const PHOTOS = new Map();
+function preloadPhotos(cards) {
+  return Promise.all((cards || []).filter((c) => c.photo).map((c) => {
+    if (!PHOTOS.has(c.photo)) {
+      const img = new Image();
+      img.src = c.photo;
+      PHOTOS.set(c.photo, (img.decode ? img.decode() : new Promise((r) => { img.onload = r; })).catch(() => {}));
+    }
+    return PHOTOS.get(c.photo);
+  }));
+}
 function packDrag(kind, opener) {
   const pack = $('#pack');
   const top = $('.pack-top', pack), body = $('.pack-body', pack), light = $('.pack-light', pack), tear = $('.tear', pack);
@@ -1279,6 +1309,7 @@ function packDrag(kind, opener) {
       return;
     }
     CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
+    const photos = preloadPhotos(j.fresh);
     if (anim) {
       // 2. la lumière prend la couleur de la meilleure carte du pack, et les cartes sortent du pack
       const best = BEST(j.fresh || []), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
@@ -1296,6 +1327,7 @@ function packDrag(kind, opener) {
       flash(fx, fy, glow);
       await sleep(170);
     }
+    await Promise.race([photos, sleep(1500)]); // les photos sont prêtes avant que les cartes se retournent
     revealStage(j, kind);
   }
 }
@@ -1445,7 +1477,7 @@ function drawMarket(m) {
     const q = norm(MK_Q.trim());
     const list = m.listings.filter((l) => (MK_FILTER === 'all' || (MK_FILTER === 'mine' ? l.mine : l.card.tier === MK_FILTER)) && (!q || norm(l.card.name).includes(q)));
     $('#mkgrid').innerHTML = list.length
-      ? list.map((l) => `<div class="mk-it"><button type="button" class="cslot" data-z="${l.id}"><span class="mini">${colCard(l.card)}</span></button>
+      ? list.map((l) => `<div class="mk-it"><button type="button" class="cslot" data-z="${l.id}"><span class="mini">${colCard(l.card, true)}</span></button>
         <div class="mk-p">${coinTag(l.price)}<small>${l.mine ? L('Ta vente', 'Your sale') : L('par', 'by') + ' ' + esc(l.seller)}</small></div>
         ${l.mine ? `<button type="button" class="btn" data-cancel="${l.id}">${L('Retirer', 'Remove')}</button>`
           : m.user ? `<button type="button" class="btn ${m.coins >= l.price ? 'solid' : ''}" data-buy="${l.id}" ${m.coins >= l.price ? '' : 'disabled'}>${L('Acheter', 'Buy')}</button>` : ''}</div>`).join('')
