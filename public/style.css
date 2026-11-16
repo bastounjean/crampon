@@ -1293,3 +1293,11 @@ html:root { min-height: 100%; background-repeat: no-repeat; background-color: #0
 .mini-booster svg { border: 0; }
 .mini-booster { border-radius: 2px; }
 .mini-booster .pb-foil { opacity: .6; }
+
+/* ═══════════ Booster en vraie 3D ═══════════ */
+.pack-scene { position: relative; }
+.b3d { position: absolute; left: -70px; right: -70px; top: -40px; bottom: -20px; z-index: 3; }
+.b3d-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: grab; }
+.b3d-canvas:active { cursor: grabbing; }
+.pack-scene.is3d .pack, .pack-scene.is3d .pack-shadow { visibility: hidden; }
+.pack-scene.is3d::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 200px; height: 26px; margin-left: -100px; border-radius: 50%; background: radial-gradient(closest-side, rgba(13, 27, 61, .28), transparent); z-index: 2; }

@@ -1043,8 +1043,10 @@ function drawChooser(c) {
   zone.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => pick(b.dataset.k)));
   zone.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => pick(KINDS[(i + 3 + +b.dataset.go) % 3])));
   zone.querySelector('[data-buy]')?.addEventListener('click', (e) => { BOUGHT[e.currentTarget.dataset.buy] = true; drawChooser(c); });
-  if (st.open) packDrag(SEL, () => { if (st.paid) delete BOUGHT[SEL]; return st.opener(); });
-  else if (SEL === 'base') tick();
+  const opener = () => { if (st.paid) delete BOUGHT[SEL]; return st.opener(); };
+  const d2 = st.open ? packDrag(SEL, opener) : null;
+  if (!st.open && SEL === 'base') tick();
+  upgrade3D(SEL, st.open, d2, opener);
   // inclinaison des boosters sur les côtés aussi, pour la profondeur
   if (!st.open) tilt3d(() => zone.querySelector('.car-it.mid .pack'), zone.querySelector('.carousel'), 12);
 }
@@ -1230,12 +1232,81 @@ function preloadPhotos(cards) {
     return PHOTOS.get(c.photo);
   }));
 }
+// ——— Booster en vraie 3D (modèle Blender) ———
+// Chargé à part, seulement ici. Sans WebGL ou si le modèle ne charge pas, on garde le booster dessiné.
+let B3D = null, B3D_CTRL = null;
+const load3D = () => (B3D ||= import('/booster3d.js?v=1').then((m) => (m.supported() ? m : null)).catch(() => null));
+async function upgrade3D(kind, open, d2, opener) {
+  if (reduced()) return;
+  const m = await load3D();
+  const scene = $('#packzone .car-it.mid .pack-scene');
+  if (!m || !scene || (d2 && d2.touched())) return;
+  const host = document.createElement('div');
+  host.className = 'b3d';
+  scene.appendChild(host);
+  let c;
+  try { c = await m.mount(host, { kind }); } catch { host.remove(); return; }
+  if (!host.isConnected || (d2 && d2.touched()) || PACKING) { c.dispose(); host.remove(); return; }
+  if (B3D_CTRL && B3D_CTRL !== c) B3D_CTRL.dispose();
+  B3D_CTRL = c;
+  d2 && d2.abort();
+  scene.classList.add('is3d');
+  c.canTear = () => false;
+  if (open) packDrag3D(kind, c, opener);
+}
+// ouverture du booster 3D : on déchire la languette du doigt, un trait de lumière suit la déchirure
+function packDrag3D(kind, c, opener) {
+  let done = false, k = 0, dir = 1, lastSpark = 0;
+  c.canTear = () => !done;
+  c.onTear = (dx) => {
+    k = Math.min(1, Math.abs(dx) / (c.width() * 0.4));
+    dir = Math.sign(dx) || 1;
+    const [x, y] = c.setTear(k, dir);
+    const now = performance.now();
+    if (k > 0.04 && now - lastSpark > 60) { lastSpark = now; sparks(x, y, '#fff1b8', 7, 0.55, true); }
+    if (k >= 1) open(dir);
+  };
+  c.onTearEnd = () => { if (!done && k < 1) { c.reset(); k = 0; } };
+  $('#packbtn')?.addEventListener('click', () => open(1));
+  async function open(d) {
+    if (done) return;
+    done = true; PACKING = true;
+    $('.pack-hint') && ($('.pack-hint').style.visibility = 'hidden');
+    $('#packbtn') && ($('#packbtn').style.visibility = 'hidden');
+    const req = opener();
+    const [lx, ly] = c.tearCenter();
+    sparks(lx, ly, '#ffe9a8', 36, 0.8, true);
+    let j;
+    try {
+      [j] = await Promise.all([req, c.fly(d), sleep(600)]);
+    } catch (e) {
+      PACKING = false;
+      $('#packzone').innerHTML = `<p class="msg">${esc(e.message)}</p>`;
+      if (kind !== 'base') setTimeout(() => route({ quiet: true }), 2500);
+      return;
+    }
+    CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
+    const photos = preloadPhotos(j.fresh);
+    // la lumière jaillit du sachet à la couleur de la meilleure carte
+    const best = BEST(j.fresh || []), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
+    const charging = c.charge(glowCss(glow), rare ? 1.7 : 1);
+    const [cx, cy] = c.tearCenter();
+    sparks(cx, cy, glow, best === 'legend' ? 120 : rare ? 80 : 45, 1.1, true);
+    await charging;
+    await sleep(rare ? 500 : 200);
+    flash(cx, cy, glow);
+    await sleep(170);
+    await Promise.race([photos, sleep(1500)]);
+    revealStage(j, kind);
+  }
+}
 function packDrag(kind, opener) {
   const pack = $('#pack');
   const top = $('.pack-top', pack), body = $('.pack-body', pack), light = $('.pack-light', pack), tear = $('.tear', pack);
   let lastSpark = 0;
   const tilt = tilt3d(() => pack, $('#packscene'), 16);
   let x0 = null, dx = 0, raf = 0, done = false;
+  const ac = new AbortController(), sig = { signal: ac.signal }; // pour céder la place au booster 3D
   const paint = () => {
     raf = 0;
     const w = pack.offsetWidth, k = Math.min(1, Math.abs(dx) / (w * 0.5)), dir = Math.sign(dx) || 1;
@@ -1260,12 +1331,12 @@ function packDrag(kind, opener) {
     x0 = e.clientX; dx = 0; tilt.on = false;
     pack.classList.add('drag', 'touched');
     pack.setPointerCapture(e.pointerId);
-  });
+  }, sig);
   pack.addEventListener('pointermove', (e) => {
     if (x0 == null || done) return;
     dx = e.clientX - x0;
     if (!raf) raf = requestAnimationFrame(paint);
-  });
+  }, sig);
   const back = () => {
     if (x0 == null || done) return;
     x0 = null; tilt.on = true;
@@ -1274,10 +1345,10 @@ function packDrag(kind, opener) {
     top.style.transform = body.style.transform = light.style.opacity = tear.style.opacity = '';
     if (from && top.animate) top.animate([{ transform: from }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,1.5,.5,1)' });
   };
-  pack.addEventListener('pointerup', back);
-  pack.addEventListener('pointercancel', back);
-  pack.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(1); } });
-  $('#packbtn').addEventListener('click', () => open(1));
+  pack.addEventListener('pointerup', back, sig);
+  pack.addEventListener('pointercancel', back, sig);
+  pack.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(1); } }, sig);
+  $('#packbtn').addEventListener('click', () => open(1), sig);
   async function open(dir) {
     if (done) return;
     done = true; x0 = null; PACKING = true;
@@ -1330,6 +1401,7 @@ function packDrag(kind, opener) {
     await Promise.race([photos, sleep(1500)]); // les photos sont prêtes avant que les cartes se retournent
     revealStage(j, kind);
   }
+  return { abort() { ac.abort(); tilt.on = false; }, touched: () => done || x0 != null };
 }
 
 // les cartes une à une : chaque clic retourne la suivante, la plus rare arrive en dernier
