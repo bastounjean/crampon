@@ -1048,6 +1048,7 @@ function drawChooser(c) {
   if (!st.open && SEL === 'base') tick();
   upgrade3D(SEL, st.open, d2, opener);
   sides3D();
+  setTimeout(() => zone.querySelectorAll('.pack-scene.wait3d').forEach((sc) => show2D(sc)), 10000); // réseau très lent : on montre le dessin
   // inclinaison des boosters sur les côtés aussi, pour la profondeur
   if (!st.open) tilt3d(() => zone.querySelector('.car-it.mid .pack'), zone.querySelector('.carousel'), 12);
 }
@@ -1202,7 +1203,7 @@ function boosterArt(kind) {
 }
 // l'emballage complet ; live = booster à déchirer (avec les cartes cachées et la lumière)
 function packShell(kind, live, side = false) {
-  return `<div class="pack-scene" ${live ? 'id="packscene"' : ''}>
+  return `<div class="pack-scene${B3D_FAIL || reduced() ? '' : ' wait3d'}" ${live ? 'id="packscene"' : ''}>
     <div class="pack-shadow"></div>
     <div class="pack k-${kind} ${side ? 'still' : ''}" ${live ? `id="pack" role="button" tabindex="0" aria-label="${L('Ouvrir le booster', 'Open the booster')}"` : ''}>
       ${live ? `<div class="pack-peek">${Array.from({ length: BOOSTER[kind].peek }, (_, k) => `<span class="pk pk${k}"><span class="mini">${CARD_BACK}</span></span>`).join('')}</div><div class="pack-beam"></div>` : ''}
@@ -1235,23 +1236,28 @@ function preloadPhotos(cards) {
 }
 // ——— Booster en vraie 3D (modèle Blender) ———
 // Chargé à part, seulement ici. Sans WebGL ou si le modèle ne charge pas, on garde le booster dessiné.
-let B3D = null, B3D_CTRL = null;
-const load3D = () => (B3D ||= import('/booster3d.js?v=6').then((m) => (m.supported() ? m : null)).catch(() => null));
+// Pendant le chargement, l'ancien booster dessiné est caché (classe wait3d) ; il ne revient que si la 3D est impossible.
+let B3D = null, B3D_CTRL = null, B3D_FAIL = false;
+const show2D = (scene) => (scene ? [scene] : document.querySelectorAll('.pack-scene.wait3d')).forEach((s) => s.classList.remove('wait3d'));
+const load3D = () => (B3D ||= import('/booster3d.js?v=7')
+  .then((m) => (m.supported() ? (m.preload(), m) : null)).catch(() => null)
+  .then((m) => { if (!m) { B3D_FAIL = true; show2D(); } return m; }));
 async function upgrade3D(kind, open, d2, opener) {
   if (reduced()) return;
   const m = await load3D();
   const scene = $('#packzone .car-it.mid .pack-scene');
-  if (!m || !scene || (d2 && d2.touched())) return;
+  if (!m || !scene || (d2 && d2.touched())) { scene && show2D(scene); return; }
   const host = document.createElement('div');
   host.className = 'b3d';
   scene.appendChild(host);
   let c;
-  try { c = await m.mount(host, { kind }); } catch { host.remove(); return; }
+  try { c = await m.mount(host, { kind }); } catch { host.remove(); show2D(scene); return; }
   if (!host.isConnected || (d2 && d2.touched()) || PACKING) { c.dispose(); host.remove(); return; }
   if (B3D_CTRL && B3D_CTRL !== c) B3D_CTRL.dispose();
   B3D_CTRL = c;
   d2 && d2.abort();
   scene.classList.add('is3d');
+  scene.classList.remove('wait3d');
   c.canTear = () => false;
   if (open) packDrag3D(kind, c, opener);
 }
@@ -1267,9 +1273,10 @@ async function sides3D() {
     host.className = 'b3d';
     scene.appendChild(host);
     let c;
-    try { c = await m.mount(host, { kind: it.dataset.k, interactive: false }); } catch { host.remove(); continue; }
+    try { c = await m.mount(host, { kind: it.dataset.k, interactive: false }); } catch { host.remove(); show2D(scene); continue; }
     if (!host.isConnected || PACKING) { c.dispose(); host.remove(); continue; }
     scene.classList.add('is3d');
+    scene.classList.remove('wait3d');
   }
 }
 // ouverture du booster 3D : on déchire la languette du doigt (l'animation de Blender suit le doigt)
@@ -1449,24 +1456,8 @@ function revealStage(j, kind) {
     ghost.animate([{ transform: 'none' }, { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width})` }], { duration: 380, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' })
       .onfinish = () => { ghost.remove(); slot.style.visibility = ''; };
   };
-  // éclat de lumière à la couleur de la rareté quand la carte se retourne
-  const burst = (c, big) => {
-    const [x, y] = mid(center);
-    const n = { bronze: 0, silver: 22, gold: 60, legend: 110 }[c.tier];
-    sparks(x, y, GLOW[c.tier], big ? n * 1.6 : n, big ? 1.5 : 1);
-    if (c.tier === 'gold' || c.tier === 'legend') {
-      if (!reduced()) {
-        const ring = document.createElement('div');
-        ring.className = 'ring';
-        ring.style.setProperty('--glow', glowCss(GLOW[c.tier]));
-        if (c.tier === 'legend') ring.classList.add('rainbow');
-        center.appendChild(ring);
-        ring.animate([{ transform: 'scale(.3)', opacity: 1 }, { transform: 'scale(2.4)', opacity: 0 }], { duration: 800, easing: 'cubic-bezier(.1,.7,.3,1)' }).onfinish = () => ring.remove();
-      }
-      if (big) flash(x, y, GLOW[c.tier]);
-    }
-    if (big && c.tier === 'legend' && !reduced()) zone.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-8px,4px)' }, { transform: 'translate(7px,-5px)' }, { transform: 'translate(-4px,3px)' }, { transform: 'none' }], { duration: 380 });
-  };
+  // pas d'éclat quand la carte se retourne (Baptiste préfère sans)
+  const burst = () => {};
   const flipNormal = (f, c) => new Promise((r) => { f.classList.add('up'); setTimeout(() => burst(c, false), 220); setTimeout(r, 520); });
   // la dernière : elle tremble, puis tourne plusieurs fois sur elle-même avant de se poser
   const flipFinal = async (f, c) => {
