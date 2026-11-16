@@ -1301,3 +1301,8 @@ html:root { min-height: 100%; background-repeat: no-repeat; background-color: #0
 .b3d-canvas:active { cursor: grabbing; }
 .pack-scene.is3d .pack, .pack-scene.is3d .pack-shadow { visibility: hidden; }
 .pack-scene.is3d::after { content: ''; position: absolute; left: 50%; bottom: 0; width: 200px; height: 26px; margin-left: -100px; border-radius: 50%; background: radial-gradient(closest-side, rgba(13, 27, 61, .28), transparent); z-index: 2; }
+
+.car-it.side .b3d { pointer-events: none; }
+/* les boosters des côtés passent au-dessus de la zone 3D du milieu : un clic sur eux les sélectionne */
+.car-it.side { z-index: 3; }
+@media (max-width: 640px) { .car-it.side { z-index: 1; } }
