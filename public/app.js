@@ -1301,15 +1301,7 @@ function packDrag3D(kind, c, opener) {
     }
     CACHE.set('collection', { t: Date.now(), p: Promise.resolve(j), json: JSON.stringify(j) });
     const photos = preloadPhotos(j.fresh);
-    // la lumière jaillit du sachet à la couleur de la meilleure carte
-    const best = BEST(j.fresh || []), glow = GLOW[best], rare = best === 'legend' || best === 'gold';
-    const charging = c.charge(glowCss(glow), rare ? 1.7 : 1);
-    const [cx, cy] = c.tearCenter();
-    sparks(cx, cy, glow, best === 'legend' ? 120 : rare ? 80 : 45, 1.1, true);
-    await charging;
-    await sleep(rare ? 500 : 200);
-    flash(cx, cy, glow);
-    await sleep(170);
+    // pas d'explosion de lumière : seulement l'animation de Blender, puis les cartes
     await Promise.race([photos, sleep(1500)]);
     revealStage(j, kind);
   }
