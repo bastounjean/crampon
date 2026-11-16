@@ -10,10 +10,10 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-// un modèle par booster (la Légende reprend le classique, en irisé, en attendant le sien)
+// un modèle par booster, chacun avec l'animation d'ouverture de Blender
 // Les boosters Base et Or contiennent l'animation d'ouverture faite dans Blender (booster3d/arrachage.py) :
 // la languette est attachée à un squelette, et le doigt fait avancer l'animation.
-const MODELS = { base: '/visuels/booster-ouverture.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1' };
+const MODELS = { base: '/visuels/booster-ouverture.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1', legend: '/visuels/booster-legende-ouverture.glb?v=1' };
 // pas de trait de lumière pendant la déchirure : Baptiste veut voir seulement son animation
 const TEAR_LIGHT = false;
 const TEAR_END = 48 / 60; // part de l'animation où la déchirure atteint l'autre bout (FIN_DECHIRE / FIN dans arrachage.py)
@@ -88,7 +88,8 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const legend = kind === 'legend'; // la Légende irisée garde la pièce claire, qui fait briller ses reflets
+  // la Légende a maintenant son propre modèle Blender : même studio et même métal que les autres
+  const legend = kind === 'legend' && !MODELS.legend;
   const envScene = legend ? new RoomEnvironment() : blenderStudio();
   const envRT = pmrem.fromScene(envScene, 0.02);
   scene.environment = envRT.texture;
@@ -137,7 +138,7 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
     // Alu métallisé comme dans Blender (Métallique 0.9). L'export .glb a perdu ce réglage
     // (sa texture de métal est à 0 partout), on le remet ici.
     if (!legend) { m.metalnessMap = null; m.metalness = 0.88; }
-    if (kind === 'legend') { m.iridescence = 1; m.iridescenceIOR = 1.35; m.iridescenceThicknessRange = [180, 620]; m.metalness = 0.35; m.color = new THREE.Color(0.92, 0.94, 1); }
+    if (legend) { m.iridescence = 1; m.iridescenceIOR = 1.35; m.iridescenceThicknessRange = [180, 620]; m.metalness = 0.35; m.color = new THREE.Color(0.92, 0.94, 1); }
     o.material = m;
   });
 

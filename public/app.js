@@ -1239,7 +1239,7 @@ function preloadPhotos(cards) {
 // Pendant le chargement, l'ancien booster dessiné est caché (classe wait3d) ; il ne revient que si la 3D est impossible.
 let B3D = null, B3D_CTRL = null, B3D_FAIL = false;
 const show2D = (scene) => (scene ? [scene] : document.querySelectorAll('.pack-scene.wait3d')).forEach((s) => s.classList.remove('wait3d'));
-const load3D = () => (B3D ||= import('/booster3d.js?v=8')
+const load3D = () => (B3D ||= import('/booster3d.js?v=9')
   .then((m) => (m.supported() ? (m.preload(), m) : null)).catch(() => null)
   .then((m) => { if (!m) { B3D_FAIL = true; show2D(); } return m; }));
 async function upgrade3D(kind, open, d2, opener) {
