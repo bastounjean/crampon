@@ -1308,3 +1308,24 @@ html:root { min-height: 100%; background-repeat: no-repeat; background-color: #0
 @media (max-width: 640px) { .car-it.side { z-index: 1; } }
 /* l'ancien booster dessiné reste caché pendant que la 3D charge */
 .pack-scene.wait3d .pack, .pack-scene.wait3d .pack-shadow { visibility: hidden; }
+
+/* ═══════════ Fond « Stade de nuit » : ciel étoilé, projecteurs, tribunes avec flashs, pelouse en perspective ═══════════ */
+html:root { background: #071a4d; }
+body::after { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    /* projecteurs : la lampe et son halo */
+    radial-gradient(circle at 7% 16vh, #fff 0 5px, rgba(214, 228, 255, .75) 9px, rgba(130, 175, 255, .28) 6vw, rgba(90, 140, 255, .1) 16vw, transparent 30vw),
+    radial-gradient(circle at 93% 16vh, #fff 0 5px, rgba(214, 228, 255, .75) 9px, rgba(130, 175, 255, .28) 6vw, rgba(90, 140, 255, .1) 16vw, transparent 30vw),
+    /* leurs faisceaux qui tombent sur le terrain */
+    conic-gradient(from 128deg at 7% 16vh, transparent 0deg, rgba(200, 220, 255, .2) 12deg, transparent 28deg, transparent 360deg),
+    conic-gradient(from 204deg at 93% 16vh, transparent 0deg, rgba(200, 220, 255, .2) 16deg, transparent 28deg, transparent 360deg),
+    /* pelouse, puis tribunes juste derrière */
+    url(/visuels/stade-pelouse.svg) left 0 bottom 0 / 100% 34vh no-repeat,
+    url(/visuels/stade-tribunes.svg) left 0 bottom 34vh / auto 22vh repeat-x,
+    /* étoiles */
+    radial-gradient(1.5px 1.5px at 40px 30px, rgba(255, 255, 255, .7), transparent) 0 0 / 230px 150px,
+    radial-gradient(1px 1px at 150px 90px, rgba(255, 255, 255, .55), transparent) 0 0 / 310px 190px,
+    radial-gradient(1px 1px at 90px 160px, rgba(200, 220, 255, .5), transparent) 0 0 / 270px 230px,
+    /* ciel de nuit */
+    linear-gradient(180deg, #050f33 0%, #0a2466 40%, #0d3088 calc(100% - 56vh), #0b2a78 100%);
+}
