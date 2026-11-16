@@ -63,6 +63,9 @@ function blenderStudio() {
   return s;
 }
 
+// commence à télécharger les modèles tout de suite
+export function preload() { for (const k of Object.keys(MODELS)) loadModel(k).catch(() => {}); }
+
 export function supported() {
   try {
     const c = document.createElement('canvas');
