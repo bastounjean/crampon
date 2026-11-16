@@ -1308,3 +1308,4 @@ html:root { min-height: 100%; background-repeat: no-repeat; background-color: #0
 @media (max-width: 640px) { .car-it.side { z-index: 1; } }
 /* l'ancien booster dessiné reste caché pendant que la 3D charge */
 .pack-scene.wait3d .pack, .pack-scene.wait3d .pack-shadow { visibility: hidden; }
+.seg span { white-space: nowrap; }

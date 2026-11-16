@@ -355,6 +355,12 @@ const DAY_FMT = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric'
 function today() {
   return DAY_FMT.format(new Date());
 }
+// booster Argent gratuit toutes les 2 h : la tranche de 2 h en cours, heure de Paris (0 = 0 h-2 h … 11 = 22 h-24 h)
+const HOUR_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' });
+const FREE_EVERY = 2;
+function freeSlot(d = new Date()) {
+  return Math.floor((+HOUR_FMT.format(d) % 24) / FREE_EVERY);
+}
 // le jour de jeu (heure de Paris) d'un instant donné, par exemple la création d'une ligue
 const dayOfDate = (d) => DAY_FMT.format(new Date(d));
 function dayIndex(day) {
@@ -662,6 +668,6 @@ function catalog() {
 
 module.exports = {
   get PLAYERS() { return PLAYERS; }, BY_ID, LAUNCH, HINT_EVERY, MAX_HINTS, hintAt,
-  setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
+  setPool, fixDraws, nextHint, hintList, isDead, resolve, score, rarity, compare, askClue, heat, candidates, today, freeSlot, FREE_EVERY, dayOfDate, dayIndex, dayFromIndex, playerOfDay, hintText, revealCard, card, catalog, norm, suggest,
   collectCard, drawPack, deckTotals, duelPick, tierOf, BOOSTERS, SELL, SHOP, MAX_PRICE, REFERRAL, REWARD, UNLIMITED, unlimitedCoins,
 };

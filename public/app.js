@@ -530,10 +530,10 @@ function drawGame(lastN) {
 function packCta(st) {
   const p = st.packs;
   if (!p) return '';
-  const ready = (p.main ? 0 : 1) + (p.bonus === 'ready' ? 1 : 0);
-  const mini = (k, n) => `<span class="mini-booster">${boosterArt(k)}${n > 1 ? '<i>2</i>' : ''}</span>`;
+  const ready = freeReady(p);
+  const mini = (k, n) => `<span class="mini-booster">${boosterArt(k)}${n > 1 ? `<i>${n}</i>` : ''}</span>`;
   if (ready) {
-    const title = ready > 1 ? L('2 boosters à ouvrir', '2 boosters to open') : p.bonus === 'ready' ? L('Booster Or gagné !', 'Gold booster won!') : L('Ton booster du jour t’attend', "Today's booster is waiting");
+    const title = ready > 1 ? L(`${ready} boosters à ouvrir`, `${ready} boosters to open`) : p.bonus === 'ready' ? L('Booster Or gagné !', 'Gold booster won!') : p.daily === 'ready' ? L('Ton booster Or du jour t’attend', "Today's Gold booster is waiting") : L('Ton booster Argent t’attend', 'Your Silver booster is waiting');
     return `<a class="packcta" href="/collection" data-link>${mini(!p.main ? 'base' : 'gold', ready)}
       <span class="pc-t"><b>${title}</b><small>${L('Plus le joueur est connu, plus sa carte est rare.', 'The more famous the player, the rarer the card.')}</small></span>
       <span class="btn solid">${L('Ouvrir', 'Open')}</span></a>`;
@@ -552,13 +552,15 @@ function catchupBox(st) {
     <a class="btn solid" href="/jour/${c.day}" data-link>${L(`Jouer le n° ${c.number}`, `Play No. ${c.number}`)} · ${esc(fmtDate(c.day, { day: 'numeric', month: 'long' }))}</a></div>`;
 }
 
-function tick() {
+// compte à rebours jusqu'à la prochaine tranche de `period` secondes (heure de Paris) : minuit par défaut
+function tick(period = 86400) {
   const el = $('#cd');
   if (!el) return;
   const upd = () => {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
       .formatToParts(new Date()).map((p) => [p.type, +p.value || 0]));
-    let left = 86400 - (parts.hour * 3600 + parts.minute * 60 + parts.second);
+    let left = period - ((parts.hour * 3600 + parts.minute * 60 + parts.second) % period);
+    if (left === period && period < 86400) left = 0;
     if (left <= 0) { clearInterval(window.__tick); return route(); }
     const pad = (x) => String(x).padStart(2, '0');
     el.textContent = `${pad(Math.floor(left / 3600))}:${pad(Math.floor((left % 3600) / 60))}:${pad(left % 60)}`;
@@ -849,7 +851,9 @@ function colCard(c, lazy = false) {
 }
 const CARD_BACK = '<div class="fut pc back"><div class="fut-in"><i class="pc-logo big"></i><span>FoOotix</span></div></div>';
 const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }), { day: 'numeric', month: 'short' });
-const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'bonus' : null);
+const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.daily === 'ready' ? 'daily' : c.packs.bonus === 'ready' ? 'bonus' : null);
+const freeReady = (p) => (p.main ? 0 : 1) + (p.daily === 'ready' ? 1 : 0) + (p.bonus === 'ready' ? 1 : 0);
+const EVERY = (c) => ((c.packs && c.packs.every) || 2) * 3600;
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BEST = (cards) => TIERS.find((t) => cards.some((x) => x.tier === t)) || 'bronze';
@@ -941,7 +945,7 @@ async function pageCollection() {
 }
 const coinTag = (n) => `<span class="coins"><i class="coin"></i><b>${Number(n).toLocaleString('fr-FR')}</b></span>`;
 const BOOSTER = {
-  base: { name: L('Booster Base', 'Base booster'), line: L('5 cartes · la 5<sup>e</sup> au moins Argent', '5 cards · the 5th at least Silver'), peek: 3 },
+  base: { name: L('Booster Argent', 'Silver booster'), line: L('5 cartes · la 5<sup>e</sup> au moins Argent', '5 cards · the 5th at least Silver'), peek: 3 },
   gold: { name: L('Booster Or', 'Gold booster'), line: L('5 cartes · 1 Or garantie', '5 cards · 1 Gold guaranteed'), peek: 3 },
   legend: { name: L('Booster Légende', 'Legend booster'), line: L('1 carte · 1 Légende garantie', '1 card · 1 Legend guaranteed'), peek: 1 },
 };
@@ -963,7 +967,7 @@ function drawCollection(c) {
   const pct = Math.max(0.6, (c.cards.length / total) * 100);
   app.innerHTML = `${subTabs('/collection')}
     <div class="pagehead soft">
-      <div><div class="kicker">${L('Un booster gratuit par jour', 'One free booster a day')}</div><h1>${L('Boosters', 'Boosters')}</h1></div>
+      <div><div class="kicker">${L('Un booster Argent gratuit toutes les 2 h', 'A free Silver booster every 2 hours')}</div><h1>${L('Boosters', 'Boosters')}</h1></div>
     </div>
     ${c.user ? '' : `<p class="nudge">${L('Sans compte, ta collection ne vit que sur cet appareil, et tu ne peux ni vendre ni acheter. <a href="/compte" data-link>Crée un compte</a> pour tout débloquer.', 'Without an account, your collection only lives on this device and you can’t buy or sell. <a href="/compte" data-link>Create an account</a> to unlock everything.')}</p>`}
     <section class="packzone" id="packzone"></section>
@@ -998,6 +1002,7 @@ function drawCollection(c) {
 const KINDS = ['base', 'gold', 'legend'];
 function boosterState(c, k) {
   if (k === 'base') return c.packs.main ? { open: false, why: 'done' } : { open: true, opener: () => api('pack', {}) };
+  if (k === 'gold' && c.packs.daily === 'ready') return { open: true, free: true, opener: () => api('pack', { daily: true }) };
   if (k === 'gold' && c.packs.bonus === 'ready') return { open: true, free: true, opener: () => api('pack', { bonus: true }) };
   if (BOUGHT[k]) return { open: true, paid: true, opener: () => api('shop', { kind: k }) };
   return { open: false, why: 'buy' };
@@ -1014,17 +1019,17 @@ function drawChooser(c) {
   let act;
   if (st.open) act = `<p class="pack-hint">${L('Glisse le long du haut du booster pour le déchirer', 'Swipe along the top of the booster to tear it open')}</p>
       <button type="button" class="btn solid big" id="packbtn">${st.paid ? L('Ouvrir', 'Open') + ` · ${coinTag(pr.shop[SEL])}` : L('Ouvrir', 'Open')}</button>`;
-  else if (SEL === 'base') act = `<p class="pack-hint">${L('Prochain booster gratuit dans', 'Next free booster in')} <b id="cd" class="mono"></b></p>`;
+  else if (SEL === 'base') act = `<p class="pack-hint">${L('Prochain booster Argent gratuit dans', 'Next free Silver booster in')} <b id="cd" class="mono"></b></p>`;
   else if (!c.user) act = `<a class="btn solid big" href="/compte" data-link>${L('Crée un compte pour l’acheter', 'Create an account to buy it')}</a>`;
   else {
     const can = (c.coins || 0) >= pr.shop[SEL];
-    act = `${SEL === 'gold' ? `<p class="pack-hint muted">${c.packs.bonus === 'opened' ? L('Booster Or du jour déjà ouvert.', 'Today’s Gold booster is open.') : L('Gratuit si tu trouves le joueur du jour.', 'Free if you find the daily player.')} ${c.packs.bonus === 'locked' ? `<a href="/" data-link>${L('Jouer', 'Play')}</a>` : ''}</p>` : ''}
+    act = `${SEL === 'gold' ? `<p class="pack-hint muted">${c.packs.bonus === 'opened' ? L('Tes 2 boosters Or gratuits du jour sont ouverts.', 'Both of today’s free Gold boosters are open.') : L('Booster Or du jour ouvert. Trouve le joueur mystère pour en gagner un autre.', 'Today’s Gold booster is open. Find the mystery player to win another.')} ${c.packs.bonus === 'locked' ? `<a href="/" data-link>${L('Jouer', 'Play')}</a>` : ''}</p>` : ''}
       <button type="button" class="btn solid big" data-buy="${SEL}" ${can ? '' : 'disabled'}>${L('Acheter', 'Buy')} ${coinTag(pr.shop[SEL])}</button>
       ${can ? '' : `<p class="pack-hint muted">${L(`Il te manque ${pr.shop[SEL] - (c.coins || 0)} pièces. Revends des cartes ou regarde une vidéo.`, `You need ${pr.shop[SEL] - (c.coins || 0)} more coins. Sell cards or watch a video.`)}</p>`}`;
   }
   zone.innerHTML = `<div class="chooser">
-    <div class="daily"><div class="daily-segs">${seg(true, 'Base', c.packs.main ? 'done' : 'ready')}${seg(true, L('Or', 'Gold'), c.packs.bonus === 'opened' ? 'done' : c.packs.bonus === 'ready' ? 'ready' : 'locked')}</div>
-      <div class="daily-t"><b>${(c.packs.main ? 1 : 0) + (c.packs.bonus === 'opened' ? 1 : 0)}</b>/2 ${L('boosters gratuits aujourd’hui', 'free boosters today')}</div></div>
+    <div class="daily"><div class="daily-segs">${seg(true, L('Argent · 2 h', 'Silver · 2 h'), c.packs.main ? 'done' : 'ready')}${seg(true, L('Or du jour', 'Daily Gold'), c.packs.daily === 'ready' ? 'ready' : 'done')}${seg(true, L('Or mystère', 'Mystery Gold'), c.packs.bonus === 'opened' ? 'done' : c.packs.bonus === 'ready' ? 'ready' : 'locked')}</div>
+      <div class="daily-t">${freeReady(c.packs) ? `<b>${freeReady(c.packs)}</b> ${freeReady(c.packs) > 1 ? L('boosters gratuits à ouvrir', 'free boosters to open') : L('booster gratuit à ouvrir', 'free booster to open')}` : L('Tous tes boosters gratuits sont ouverts', 'All your free boosters are open')}</div></div>
     <div class="carousel">
       <button type="button" class="car-arrow l" data-go="-1" aria-label="${L('Booster précédent', 'Previous booster')}">‹</button>
       ${order.map((k, n) => n === 1
@@ -1045,7 +1050,7 @@ function drawChooser(c) {
   zone.querySelector('[data-buy]')?.addEventListener('click', (e) => { BOUGHT[e.currentTarget.dataset.buy] = true; drawChooser(c); });
   const opener = () => { if (st.paid) delete BOUGHT[SEL]; return st.opener(); };
   const d2 = st.open ? packDrag(SEL, opener) : null;
-  if (!st.open && SEL === 'base') tick();
+  if (!st.open && SEL === 'base') tick(EVERY(c));
   upgrade3D(SEL, st.open, d2, opener);
   sides3D();
   setTimeout(() => zone.querySelectorAll('.pack-scene.wait3d').forEach((sc) => show2D(sc)), 10000); // réseau très lent : on montre le dessin
@@ -1212,13 +1217,6 @@ function packShell(kind, live, side = false) {
       <div class="pack-top"></div>
     </div>
   </div>`;
-}
-function openedBox(c) {
-  const today = [...c.packs.mainCards, ...c.packs.bonusCards];
-  return `<div class="pack-done"><div class="kicker">${L('Boosters du jour ouverts', "Today's boosters are open")}</div>
-    <p>${L('Prochain booster gratuit dans', 'Next free booster in')} <b id="cd"></b></p>
-    ${c.packs.bonus === 'locked' ? `<p class="bonus-tip">${L('Trouve le joueur du jour pour gagner un booster Or.', 'Find the daily player to win a Gold booster.')} <a href="/" data-link>${L('Jouer', 'Play')}</a></p>` : ''}</div>
-    <div class="today-row">${today.map((x) => `<div class="tr-c"><span class="mini">${colCard(x)}</span><span class="tag ${x.isNew ? 'new' : ''}">${x.isNew ? L('Nouvelle', 'New') : L('Doublon', 'Duplicate')}</span></div>`).join('')}</div>`;
 }
 
 // glisser le pack : le haut se décolle et suit le doigt, puis se déchire au-delà de la moitié de la largeur

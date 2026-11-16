@@ -141,3 +141,9 @@ test('pièces illimitées : seulement les pseudos de la liste, sans tenir compte
   assert.strictEqual(G.unlimitedCoins('BAptiste', ''), false);
   assert.strictEqual(G.unlimitedCoins('Paul', 'BAptiste, paul'), true);
 });
+
+test('booster Argent : une tranche de 2 h, heure de Paris', () => {
+  assert.equal(G.freeSlot(new Date('2026-11-16T22:59:00Z')), 11); // 23 h 59 à Paris
+  assert.equal(G.freeSlot(new Date('2026-11-16T23:00:00Z')), 0); // minuit à Paris
+  assert.equal(G.freeSlot(new Date('2026-11-16T15:30:00Z')), 8); // 16 h 30 à Paris
+});
