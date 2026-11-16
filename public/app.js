@@ -1236,7 +1236,7 @@ function preloadPhotos(cards) {
 // ——— Booster en vraie 3D (modèle Blender) ———
 // Chargé à part, seulement ici. Sans WebGL ou si le modèle ne charge pas, on garde le booster dessiné.
 let B3D = null, B3D_CTRL = null;
-const load3D = () => (B3D ||= import('/booster3d.js?v=5').then((m) => (m.supported() ? m : null)).catch(() => null));
+const load3D = () => (B3D ||= import('/booster3d.js?v=6').then((m) => (m.supported() ? m : null)).catch(() => null));
 async function upgrade3D(kind, open, d2, opener) {
   if (reduced()) return;
   const m = await load3D();
@@ -1272,16 +1272,14 @@ async function sides3D() {
     scene.classList.add('is3d');
   }
 }
-// ouverture du booster 3D : on déchire la languette du doigt, un trait de lumière suit la déchirure
+// ouverture du booster 3D : on déchire la languette du doigt (l'animation de Blender suit le doigt)
 function packDrag3D(kind, c, opener) {
-  let done = false, k = 0, dir = 1, lastSpark = 0;
+  let done = false, k = 0, dir = 1;
   c.canTear = () => !done;
   c.onTear = (dx) => {
     k = Math.min(1, Math.abs(dx) / (c.width() * 0.4));
     dir = Math.sign(dx) || 1;
-    const [x, y] = c.setTear(k, dir);
-    const now = performance.now();
-    if (k > 0.04 && now - lastSpark > 60) { lastSpark = now; sparks(x, y, '#fff1b8', 7, 0.55, true); }
+    c.setTear(k, dir);
     if (k >= 1) open(dir);
   };
   c.onTearEnd = () => { if (!done && k < 1) { c.reset(); k = 0; } };
@@ -1292,8 +1290,6 @@ function packDrag3D(kind, c, opener) {
     $('.pack-hint') && ($('.pack-hint').style.visibility = 'hidden');
     $('#packbtn') && ($('#packbtn').style.visibility = 'hidden');
     const req = opener();
-    const [lx, ly] = c.tearCenter();
-    sparks(lx, ly, '#ffe9a8', 36, 0.8, true);
     let j;
     try {
       [j] = await Promise.all([req, c.fly(d), sleep(600)]);

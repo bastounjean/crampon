@@ -14,6 +14,8 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 // Le booster Or contient l'animation d'ouverture faite dans Blender (booster3d/arrachage.py) :
 // la languette est attachée à un squelette, et le doigt fait avancer l'animation.
 const MODELS = { base: '/visuels/booster.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1' };
+// pas de trait de lumière pendant la déchirure : Baptiste veut voir seulement son animation
+const TEAR_LIGHT = false;
 const TEAR_END = 48 / 60; // part de l'animation où la déchirure atteint l'autre bout (FIN_DECHIRE / FIN dans arrachage.py)
 const CUT = 0.885; // hauteur (0 = bas, 1 = haut) de la ligne de déchirure, juste sous la soudure du haut
 const loaded = {};
@@ -242,14 +244,14 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
       tab.position.z = ctr.z + k * 0.05 * size.y;
     }
     const x0 = dir > 0 ? left : right, x1 = x0 + dir * (right - left) * k;
-    line.visible = tip.visible = k > 0.01;
+    line.visible = tip.visible = TEAR_LIGHT && k > 0.01;
     line.position.set((x0 + x1) / 2, yCut, front + 0.002);
     line.scale.set(Math.max(1e-4, Math.abs(x1 - x0)), size.y * 0.035, 1);
     tip.position.set(x1, yCut, front + 0.01);
     tip.scale.setScalar(size.x * (0.35 + 0.25 * Math.sin(performance.now() / 60)));
     tipLight.position.set(x1, yCut, front + 0.05 * size.y);
-    tipLight.intensity = k > 0.01 ? 2.5 : 0;
-    leak.intensity = k * 3;
+    tipLight.intensity = TEAR_LIGHT && k > 0.01 ? 2.5 : 0;
+    leak.intensity = TEAR_LIGHT ? k * 3 : 0;
     return toScreen(x1, yCut, front);
   }
   const p = new THREE.Vector3();
