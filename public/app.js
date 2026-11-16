@@ -366,29 +366,51 @@ function clubPath(path, over) {
     ${found || over ? '' : `<p class="path-tip">${L('Chaque club trouvé prend sa place, dans l\'ordre de sa carrière.', 'Each club you find takes its place, in career order.')}</p>`}
   </div>`;
 }
+// Carte « photo » : le joueur en grand, teinté aux couleurs de la carte, la note et le poste en haut,
+// le nom en gros en bas et une capsule de verre avec ses infos. Vide au départ sur la page Jouer.
+function nameParts(n) {
+  const w = String(n || '').trim().split(/\s+/);
+  if (w.length < 2) return ['', w[0] || ''];
+  let k = w.length - 1;
+  while (k > 1 && PARTICLE.test(w[k - 1])) k--;
+  return [w.slice(0, k).join(' '), w.slice(k).join(' ')];
+}
+const FLAG = (nat) => (nat && nat.iso ? `<img class="pc-flag" src="https://flagcdn.com/w80/${esc(nat.iso)}.png" alt="${esc(nat.iso.toUpperCase())}" title="${esc(nat.name)}" onerror="this.remove()">` : '');
+function pcCard(o) {
+  const [first, last] = o.name ? nameParts(o.name) : ['', ''];
+  const long = last.length > 11 ? (last.length > 15 ? ' xl' : ' l') : '';
+  return `<div class="fut pc t-${o.tier}${o.cls ? ' ' + o.cls : ''}"><div class="fut-in">
+    <div class="pc-pic">${o.photo ? `<img src="${esc(o.photo)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
+    <div class="pc-tone"></div>
+    <div class="pc-top">
+      <b class="pc-rate">${o.rating}</b>
+      <div class="pc-pos"><span>${o.pos}</span><small>${o.sub}</small></div>
+      <i class="pc-logo" aria-hidden="true"></i>
+    </div>
+    <div class="pc-foot">
+      <div class="pc-first">${o.name ? esc(first) : ''}</div>
+      <div class="pc-last${long}">${o.name ? esc(last) : '<span class="ph">• • • • •</span>'}</div>
+      <div class="pc-lab">${o.lab}</div>
+      <div class="pc-val${o.valLen > 15 ? ' l' : ''}">${o.val}</div>
+      <dl class="pc-stats">${o.stats.map(([k, v, t]) => `<div${t ? ` title="${t}"` : ''}><dd>${v}</dd><dt>${k}</dt><i></i></div>`).join('')}</dl>
+    </div>
+  </div></div>`;
+}
 function fifaCard(c, rating, found, cls = '') {
   const v = (x, ph = '?') => (x == null || x === '' ? `<span class="ph">${ph}</span>` : esc(x));
-  const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '<span class="ph box">?</span>';
-  return `<div class="fut ${found ? 'done' : ''} ${cls}">
-    <div class="fut-in">
-      <div class="fut-side">
-        <div class="fut-rate">${rating}</div>
-        <div class="fut-pos">${v(c.pos)}</div>
-        <div class="fut-flag">${flag}</div>
-      </div>
-      <div class="fut-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
-      <div class="fut-name">${c.name ? esc(c.name) : '<span class="ph">• • • • • •</span>'}</div>
-      <dl class="fut-stats">
-        <div title="${L('Nationalité (passeport)', 'Nationality (passport)')}"><dt>NAT</dt><dd>${v(c.cit)}</dd></div>
-        <div title="${L('Sélection nationale (équipe pour laquelle il joue)', 'National team he plays for')}"><dt>${L('SÉL', 'TEAM')}</dt><dd>${v(c.nat?.name)}</dd></div>
-        <div><dt>${L('NÉ', 'BORN')}</dt><dd>${v(c.born)}</dd></div>
-        <div><dt>${L('CHAMP', 'LEAGUE')}</dt><dd>${v(c.leagues.join(' '))}</dd></div>
-        <div><dt>CONT</dt><dd>${v(c.cont)}</dd></div>
-        <div><dt>${L('STATUT', 'STATUS')}</dt><dd>${v(c.status)}</dd></div>
-      </dl>
-      <div class="fut-bo">${L("Ballon d'or : ", "Ballon d'Or: ")}${c.bo === null ? '<span class="ph">?</span>' : c.bo ? L('oui', 'yes') : L('non', 'no')}</div>
-    </div>
-  </div>`;
+  return pcCard({
+    tier: found ? 'gold' : 'mystery', cls: (found ? 'done ' : '') + cls, name: c.name, photo: c.photo, rating,
+    pos: v(c.pos), sub: v(c.status),
+    lab: L('Sélection', 'National team'),
+    val: c.nat && c.nat.name ? `${FLAG(c.nat)}<span class="pc-v">${esc(c.nat.name)}</span>` : '<span class="ph">?</span>', valLen: c.nat && c.nat.name ? c.nat.name.length : 0,
+    stats: [
+      [L('Passeport', 'Passport'), v(c.cit), L('Nationalité (passeport)', 'Nationality (passport)')],
+      [L('Né', 'Born'), v(c.born)],
+      [L('Champ.', 'League'), v(c.leagues.join(' '))],
+      [L('Cont.', 'Cont.'), v(c.cont)],
+      [L("B. d'or", "B. d'Or"), c.bo === null ? '<span class="ph">?</span>' : c.bo ? '★' : '–', L("Ballon d'or", "Ballon d'Or")],
+    ],
+  });
 }
 
 function drawGame(lastN) {
@@ -817,16 +839,15 @@ function cardName(n) {
 // même carte que sur la page Jouer, aux couleurs de sa rareté
 // carte de collection : épurée, la photo en grand, le nom, le club et la rareté
 function colCard(c) {
-  const flag = c.nat && c.nat.iso ? `<img src="https://flagcdn.com/w80/${esc(c.nat.iso)}.png" alt="${esc(c.nat.iso.toUpperCase())}" title="${esc(c.nat.name)}" onerror="this.replaceWith(this.alt)">` : '';
-  return `<div class="fut cmp t-${c.tier}"><div class="fut-in">
-    <div class="fut-side"><div class="fut-rate">${c.rating}</div><div class="fut-pos">${esc(c.pos || '')}</div><div class="fut-flag">${flag}</div></div>
-    <div class="cmp-pic">${c.photo ? `<img src="${esc(c.photo)}" alt="" loading="lazy" onerror="this.outerHTML=SILHOUETTE">` : SILHOUETTE}</div>
-    <div class="cmp-name">${esc(cardName(c.name))}</div>
-    <div class="cmp-sub">${esc(c.club || '')}</div>
-    <div class="cmp-tier"><i></i>${TIER_NAME[c.tier]}</div>
-  </div></div>`;
+  const d = (x) => esc(x == null || x === '' ? '–' : x);
+  return pcCard({
+    tier: c.tier, name: c.name, photo: c.photo, rating: c.rating,
+    pos: d(c.pos), sub: `${FLAG(c.nat)}${TIER_NAME[c.tier]}`,
+    lab: L('Club', 'Club'), val: `<span class="pc-v">${d(shortClub(c.club) || c.club)}</span>`, valLen: (shortClub(c.club) || c.club || '').length,
+    stats: [[L('Né', 'Born'), d(c.born)], [L('Champ.', 'League'), d((c.leagues || []).slice(0, 2).join(' '))], [L('Cont.', 'Cont.'), d(c.cont)], [L("B. d'or", "B. d'Or"), c.bo ? '★' : '–']],
+  });
 }
-const CARD_BACK = '<div class="fut back"><div class="fut-in"><b>FoO</b><span>FoOotix</span></div></div>';
+const CARD_BACK = '<div class="fut pc back"><div class="fut-in"><i class="pc-logo big"></i><span>FoOotix</span></div></div>';
 const packDate = () => fmtDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }), { day: 'numeric', month: 'short' });
 const nextPack = (c) => (!c.packs.main ? 'main' : c.packs.bonus === 'ready' ? 'bonus' : null);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
