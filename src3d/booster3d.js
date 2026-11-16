@@ -9,10 +9,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
-const MODEL_URL = '/visuels/booster.glb?v=1';
+// un modèle par booster (la Légende reprend le classique, en irisé, en attendant le sien)
+const MODELS = { base: '/visuels/booster.glb?v=1', gold: '/visuels/booster-or.glb?v=1' };
 const CUT = 0.885; // hauteur (0 = bas, 1 = haut) de la ligne de déchirure, juste sous la soudure du haut
-let modelPromise = null;
-const loadModel = () => (modelPromise ||= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(MODEL_URL));
+const loaded = {};
+const loadModel = (kind) => {
+  const url = MODELS[kind] || MODELS.base;
+  return (loaded[url] ||= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(url));
+};
 
 // texture ronde et douce pour les halos de lumière
 function glowTexture() {
@@ -39,7 +43,7 @@ export function supported() {
 
 // Monte le booster dans `host` (un élément positionné). Renvoie un contrôleur.
 export async function mount(host, { kind = 'base', interactive = true } = {}) {
-  const gltf = await loadModel();
+  const gltf = await loadModel(kind);
   const W = () => host.clientWidth, H = () => host.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -91,7 +95,7 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
     const m = o.material.clone();
     if (!(m instanceof THREE.MeshPhysicalMaterial)) Object.setPrototypeOf(m, THREE.MeshPhysicalMaterial.prototype);
     m.envMapIntensity = 1;
-    if (kind === 'gold') { m.color = new THREE.Color(1, 0.8, 0.42); m.metalness = 0.55; m.roughness = 0.25; }
+    if (kind === 'gold') { m.metalness = Math.max(m.metalness, 0.35); }
     if (kind === 'legend') { m.iridescence = 1; m.iridescenceIOR = 1.35; m.iridescenceThicknessRange = [180, 620]; m.metalness = 0.35; m.color = new THREE.Color(0.92, 0.94, 1); }
     o.material = m;
   });
