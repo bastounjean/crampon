@@ -1235,7 +1235,7 @@ function preloadPhotos(cards) {
 // ——— Booster en vraie 3D (modèle Blender) ———
 // Chargé à part, seulement ici. Sans WebGL ou si le modèle ne charge pas, on garde le booster dessiné.
 let B3D = null, B3D_CTRL = null;
-const load3D = () => (B3D ||= import('/booster3d.js?v=2').then((m) => (m.supported() ? m : null)).catch(() => null));
+const load3D = () => (B3D ||= import('/booster3d.js?v=4').then((m) => (m.supported() ? m : null)).catch(() => null));
 async function upgrade3D(kind, open, d2, opener) {
   if (reduced()) return;
   const m = await load3D();

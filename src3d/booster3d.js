@@ -34,6 +34,29 @@ function glowTexture() {
   return t;
 }
 
+// Studio sombre copié de la scène Blender (booster3d/booster.py) : fond presque noir et
+// les 4 lampes de Blender en panneaux lumineux. Le sachet est très métallique : sa couleur
+// vient surtout de ce qu'il reflète, d'où le studio sombre (une pièce blanche le délave).
+// Repère : Blender (x, y, z) → three.js (x, z − 0.7, −y), la caméra Blender regarde vers +Y.
+const STUDIO = [
+  // [largeur, hauteur, couleur, force, position]
+  [1.2, 1.2, 0xffeed9, 22, [-1.6, 1.3, 2.2]], // Key : principale, chaude, avant gauche
+  [2.0, 2.0, 0xcce0ff, 3, [2.0, 0.1, 1.8]], //   Fill : débouchage froid, avant droite
+  [0.4, 0.4, 0xffffff, 60, [1.2, 1.5, -1.0]], // Rim : contre-jour, derrière
+  [0.08, 2.0, 0xffffff, 40, [0.9, 0.9, 1.5]], // Strip : bande fine, la ligne de reflet sur les plis
+];
+function blenderStudio() {
+  const s = new THREE.Scene();
+  s.background = new THREE.Color(0.012, 0.012, 0.018);
+  for (const [w, h, color, k, pos] of STUDIO) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(...pos);
+    m.lookAt(0, 0, 0);
+    s.add(m);
+  }
+  return s;
+}
+
 export function supported() {
   try {
     const c = document.createElement('canvas');
@@ -49,29 +72,32 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(W(), H());
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMapping = THREE.AgXToneMapping; // le même rendu des couleurs que Blender
+  renderer.toneMappingExposure = 1;
   renderer.domElement.className = 'b3d-canvas';
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+  const legend = kind === 'legend'; // la Légende irisée garde la pièce claire, qui fait briller ses reflets
+  const envScene = legend ? new RoomEnvironment() : blenderStudio();
+  const envRT = pmrem.fromScene(envScene, 0.02);
   scene.environment = envRT.texture;
-  scene.environmentIntensity = 0.9;
+  scene.environmentIntensity = legend ? 0.9 : 1;
 
   const camera = new THREE.PerspectiveCamera(30, W() / H(), 0.1, 50);
   camera.position.set(0, 0, 3.4);
 
-  // lumières : une principale qui suit le pointeur, deux de contre-jour colorées
-  const key = new THREE.DirectionalLight(0xffffff, 2.2);
+  // lumières : une principale qui suit le pointeur, plus le débouchage et le contre-jour de Blender
+  // (la Légende garde ses contre-jours colorés)
+  const key = new THREE.DirectionalLight(legend ? 0xffffff : 0xffeed9, legend ? 2.2 : 1.6);
   key.position.set(1, 1.5, 3);
   scene.add(key);
-  const rimA = new THREE.DirectionalLight(kind === 'legend' ? 0xff5ea8 : 0x5ecbff, 1.6);
-  rimA.position.set(-3, 1, -1);
-  const rimB = new THREE.DirectionalLight(kind === 'legend' ? 0x5ecbff : kind === 'gold' ? 0xffd640 : 0xff6a4d, 1.4);
-  rimB.position.set(3, -1, -1);
-  scene.add(rimA, rimB, new THREE.AmbientLight(0xffffff, 0.25));
+  const rimA = new THREE.DirectionalLight(legend ? 0xff5ea8 : 0xcce0ff, legend ? 1.6 : 0.5);
+  rimA.position.set(legend ? -3 : 2, legend ? 1 : 0.1, legend ? -1 : 1.8);
+  const rimB = new THREE.DirectionalLight(legend ? 0x5ecbff : 0xffffff, legend ? 1.4 : 1.2);
+  rimB.position.set(legend ? 3 : 1.2, legend ? -1 : 1.5, -1);
+  scene.add(rimA, rimB, new THREE.AmbientLight(0xffffff, legend ? 0.25 : 0.05));
 
   // le modèle, posé droit et centré
   const src = gltf.scene.clone(true);
@@ -95,7 +121,9 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
     const m = o.material.clone();
     if (!(m instanceof THREE.MeshPhysicalMaterial)) Object.setPrototypeOf(m, THREE.MeshPhysicalMaterial.prototype);
     m.envMapIntensity = 1;
-    if (kind === 'gold') { m.metalness = Math.max(m.metalness, 0.35); }
+    // Alu métallisé comme dans Blender (Métallique 0.9). L'export .glb a perdu ce réglage
+    // (sa texture de métal est à 0 partout), on le remet ici.
+    if (!legend) { m.metalnessMap = null; m.metalness = 0.88; }
     if (kind === 'legend') { m.iridescence = 1; m.iridescenceIOR = 1.35; m.iridescenceThicknessRange = [180, 620]; m.metalness = 0.35; m.color = new THREE.Color(0.92, 0.94, 1); }
     o.material = m;
   });
