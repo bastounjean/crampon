@@ -11,9 +11,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // un modèle par booster (la Légende reprend le classique, en irisé, en attendant le sien)
-// Le booster Or contient l'animation d'ouverture faite dans Blender (booster3d/arrachage.py) :
+// Les boosters Base et Or contiennent l'animation d'ouverture faite dans Blender (booster3d/arrachage.py) :
 // la languette est attachée à un squelette, et le doigt fait avancer l'animation.
-const MODELS = { base: '/visuels/booster.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1' };
+const MODELS = { base: '/visuels/booster-ouverture.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1' };
 // pas de trait de lumière pendant la déchirure : Baptiste veut voir seulement son animation
 const TEAR_LIGHT = false;
 const TEAR_END = 48 / 60; // part de l'animation où la déchirure atteint l'autre bout (FIN_DECHIRE / FIN dans arrachage.py)
