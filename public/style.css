@@ -1249,3 +1249,47 @@ h1 { background: linear-gradient(180deg, #0d1b3d 40%, #1f4fb8); -webkit-backgrou
 .about { margin-top: 16px; border: 0; border-radius: 18px; background: #fff; box-shadow: 0 24px 60px rgba(4, 16, 52, .3); }
 .foot { margin-top: 16px; }
 html:root { min-height: 100%; background-repeat: no-repeat; background-color: #071f57; }
+
+/* ═══════════ Logos des clubs sur fond blanc ═══════════ */
+.path .on .crest, .path .dk .crest { background: #fff; border: 1px solid #dfe6f2; border-radius: 10px; box-shadow: 0 2px 6px rgba(13, 27, 61, .08); }
+.path .crest { border-radius: 10px; }
+
+/* ═══════════ Cartes légende : arc-en-ciel fixe + un seul reflet qui glisse (sans recalcul de l'image) ═══════════ */
+.fut.pc.t-legend, .fut.pc.t-legend .fut-in::before, .fut.pc.t-legend .pc-pic::after,
+.fut.pc.t-legend .pc-rate, .fut.pc.t-legend .pc-last, .fut.pc.t-legend .pc-val { animation: none; }
+.fut.pc.t-legend { background: linear-gradient(135deg, #ff5ea8, #ffb347 18%, #fff36b 34%, #6dffa8 52%, #5ecbff 70%, #a98bff 86%, #ff5ea8); }
+.fut.pc.t-legend .pc-rate, .fut.pc.t-legend .pc-last, .fut.pc.t-legend .pc-val { background-size: 100% 100%; }
+.fut.pc.t-legend .pc-tone { overflow: hidden; }
+.fut.pc.t-legend .pc-tone::after { content: ''; position: absolute; top: -20%; bottom: -20%; left: 0; width: 45%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 94, 168, .22) 30%, rgba(255, 243, 107, .3) 45%, rgba(94, 203, 255, .25) 60%, transparent);
+  transform: translateX(-120%) skewX(-12deg); animation: legendSheen 3.6s ease-in-out infinite; will-change: transform; }
+@keyframes legendSheen { 0% { transform: translateX(-120%) skewX(-12deg); } 60%, 100% { transform: translateX(260%) skewX(-12deg); } }
+.mini .fut.pc.t-legend .pc-tone::after { animation-duration: 5s; }
+@media (prefers-reduced-motion: reduce) { .fut.pc.t-legend .pc-tone::after { animation: none; display: none; } }
+
+/* ═══════════ Boosters réalistes : sachet en film métallisé froissé ═══════════ */
+.pack, .pack[class*="k-"] { filter: none; }
+.pack-shadow { width: 210px; margin-left: -105px; height: 26px; background: radial-gradient(closest-side, rgba(13, 27, 61, .35), transparent); }
+.pack[class*="k-"] .pack-body { background: #c3161a; }
+.pb-art { z-index: 0; }
+.pb-foil { position: absolute; inset: 0; pointer-events: none; z-index: 1; background: url(/visuels/foil.jpg) center / cover; mix-blend-mode: overlay; opacity: .85; }
+.k-gold .pb-foil { opacity: .7; } .k-legend .pb-foil { opacity: .75; }
+/* reflets du plastique : bandes brillantes + lumière qui suit l'inclinaison */
+.pack[class*="k-"] .pack-body::after, .pack[class*="k-"] .pack-top::after { z-index: 2; mix-blend-mode: soft-light;
+  background: radial-gradient(circle at var(--mx, 30%) var(--my, 25%), rgba(255, 255, 255, .85), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(105deg, transparent 18%, rgba(255, 255, 255, .55) 26%, transparent 33%, transparent 58%, rgba(255, 255, 255, .4) 66%, transparent 74%) var(--bx, 50%) 0 / 220% 100%; }
+.k-legend .pack-body::after { mix-blend-mode: overlay !important; background: radial-gradient(circle at var(--mx, 30%) var(--my, 25%), rgba(255, 255, 255, .8), transparent 40%), linear-gradient(115deg, transparent 15%, rgba(255, 94, 168, .45) 30%, rgba(255, 243, 107, .45) 42%, rgba(109, 255, 168, .45) 54%, rgba(94, 203, 255, .45) 66%, transparent 80%) var(--bx, 50%) var(--by, 50%) / 240% 240% !important; }
+/* soudures : film froissé à stries, bord dentelé */
+.pb-crimp, .pack[class*="k-"] .pack-top { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .22) 0 1px, rgba(255, 255, 255, .35) 1px 2px, transparent 2px 3px), linear-gradient(180deg, #ff6a4d 0%, #b5120f 45%, #ff5a40 62%, #7e090b 100%); }
+.k-gold .pb-crimp, .pack.k-gold .pack-top { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .18) 0 1px, rgba(255, 255, 255, .45) 1px 2px, transparent 2px 3px), linear-gradient(180deg, #fff1a6 0%, #c48a10 45%, #ffe27a 62%, #8a5a06 100%); }
+.k-legend .pb-crimp, .pack.k-legend .pack-top { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .14) 0 1px, rgba(255, 255, 255, .55) 1px 2px, transparent 2px 3px), linear-gradient(90deg, #ffc4e2, #fff0b8, #c9ffe0, #c4ecff, #e2d6ff); }
+.pack[class*="k-"] .pack-top { -webkit-mask: linear-gradient(#000 0 0) 0 100% / 100% calc(100% - 6px) no-repeat, conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) 0 0 / 8px 6px repeat-x;
+  mask: linear-gradient(#000 0 0) 0 100% / 100% calc(100% - 6px) no-repeat, conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) 0 0 / 8px 6px repeat-x; }
+.pack[class*="k-"] .pack-top::before { border-bottom-color: rgba(255, 255, 255, .35); }
+.pb-crimp { z-index: 1; height: 22px; }
+.pb-big { font-family: var(--cond); font-weight: 900; font-stretch: 62%; letter-spacing: .02em; }
+.pb-mid { font-family: var(--cond); font-weight: 900; font-stretch: 66%; }
+.pb-label { font-size: 11px; }
+.mini-booster svg { border: 0; }
+.mini-booster { border-radius: 2px; }
+.mini-booster .pb-foil { opacity: .6; }
