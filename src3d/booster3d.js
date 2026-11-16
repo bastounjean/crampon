@@ -8,9 +8,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 // un modèle par booster (la Légende reprend le classique, en irisé, en attendant le sien)
-const MODELS = { base: '/visuels/booster.glb?v=1', gold: '/visuels/booster-or.glb?v=1' };
+// Le booster Or contient l'animation d'ouverture faite dans Blender (booster3d/arrachage.py) :
+// la languette est attachée à un squelette, et le doigt fait avancer l'animation.
+const MODELS = { base: '/visuels/booster.glb?v=1', gold: '/visuels/booster-or-ouverture.glb?v=1' };
+const TEAR_END = 48 / 60; // part de l'animation où la déchirure atteint l'autre bout (FIN_DECHIRE / FIN dans arrachage.py)
 const CUT = 0.885; // hauteur (0 = bas, 1 = haut) de la ligne de déchirure, juste sous la soudure du haut
 const loaded = {};
 const loadModel = (kind) => {
@@ -100,7 +104,11 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
   scene.add(rimA, rimB, new THREE.AmbientLight(0xffffff, legend ? 0.25 : 0.05));
 
   // le modèle, posé droit et centré
-  const src = gltf.scene.clone(true);
+  const src = cloneSkinned(gltf.scene); // copie qui garde le squelette de la languette
+  const clip = gltf.animations && gltf.animations[0];
+  let skinned = null;
+  src.traverse((o) => { if (o.isSkinnedMesh && !skinned) skinned = o; });
+  const anim = clip && skinned ? { clip } : null;
   const root = new THREE.Group(); // tourne avec le doigt
   const model = new THREE.Group(); // recentre le modèle
   root.add(model);
@@ -128,14 +136,28 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
     o.material = m;
   });
 
-  // la languette : les triangles au-dessus de la ligne de déchirure deviennent une pièce à part
-  const yCut = box.min.y + size.y * CUT; // en coordonnées du monde (avant recentrage)
+  // la languette : soit animée dans Blender (squelette), soit découpée ici dans le modèle
+  let yCut = box.min.y + size.y * CUT; // en coordonnées du monde (avant recentrage)
+  let arm = null;
+  if (anim) {
+    skinned.frustumCulled = false;
+    yCut = new THREE.Box3().setFromObject(skinned).min.y;
+    arm = skinned.skeleton.bones[0];
+    while (arm.parent && arm.parent !== src && arm.parent.parent) arm = arm.parent; // le nœud du squelette
+    anim.mixer = new THREE.AnimationMixer(src);
+    anim.action = anim.mixer.clipAction(clip);
+    anim.action.setLoop(THREE.LoopOnce, 1);
+    anim.action.clampWhenFinished = true;
+    anim.action.play();
+    anim.dur = clip.duration;
+    anim.mixer.setTime(0);
+  }
   const tab = new THREE.Group(); // pivot de la languette
   const tabInner = new THREE.Group();
   tab.add(tabInner);
   model.add(tab);
   const meshes = [];
-  src.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  if (!anim) src.traverse((o) => { if (o.isMesh) meshes.push(o); });
   const v = new THREE.Vector3();
   for (const o of meshes) {
     const g = o.geometry;
@@ -211,10 +233,14 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
 
   // la languette suit la progression k (0 → 1) de la déchirure
   function setTear(k, dir = 1) {
+    if (anim) dir = 1; // l'animation de Blender part toujours du coin gauche
     if (dir !== st.dir) { st.dir = dir; setPivot(dir); }
     st.k = k;
-    tab.rotation.set(-k * 0.5, 0, dir * k * 0.55);
-    tab.position.z = ctr.z + k * 0.05 * size.y;
+    if (anim) anim.mixer.setTime(k * anim.dur * TEAR_END);
+    else {
+      tab.rotation.set(-k * 0.5, 0, dir * k * 0.55);
+      tab.position.z = ctr.z + k * 0.05 * size.y;
+    }
     const x0 = dir > 0 ? left : right, x1 = x0 + dir * (right - left) * k;
     line.visible = tip.visible = k > 0.01;
     line.position.set((x0 + x1) / 2, yCut, front + 0.002);
@@ -250,6 +276,23 @@ export async function mount(host, { kind = 'base', interactive = true } = {}) {
   // ouverture : la languette s'envole, la lumière jaillit à la couleur de la meilleure carte
   function fly(dir = st.dir) {
     setTear(1, dir);
+    if (anim) { // fin de l'animation de Blender (la languette part vers nous), puis elle s'envole
+      let t = 0;
+      const a0 = anim.dur * TEAR_END;
+      return new Promise((done) => {
+        st.flying = (dt) => {
+          t += dt;
+          anim.mixer.setTime(a0 + (anim.dur - a0) * Math.min(1, t / 0.35));
+          if (t > 0.3) {
+            arm.position.x += 0.9 * size.x * dt;
+            arm.position.y += 1.4 * size.y * dt;
+            arm.position.z += 1.2 * size.y * dt;
+          }
+          line.material.opacity = tip.material.opacity = Math.max(0, 1 - t * 2);
+          if (t > 0.8) { skinned.visible = false; st.flying = null; done(); }
+        };
+      });
+    }
     let t = 0, vx = dir * 1.6 * size.x, vy = 1.8 * size.y;
     return new Promise((done) => {
       st.flying = (dt) => {
