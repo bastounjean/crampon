@@ -24,7 +24,7 @@ module.exports = function routes({ app }) {
       yesterday ? dayStats(G.dayFromIndex(yIdx)) : null,
       after(() => side(req, 'user', () => publicUser(req))),
       after(() => side(req, 'days', () => myDays(req))),
-      past ? null : after(() => side(req, 'packs:' + day, () => packState(req, day))),
+      past ? null : after(() => side(req, 'packs:' + day + '@' + G.freeSlot(), () => packState(req, day))),
     ]);
     // le nom d'hier reste caché tant qu'on peut encore le chercher
     const yOpen = yesterday && DONE.has(mine[G.dayFromIndex(yIdx)]);
@@ -141,17 +141,26 @@ module.exports = function routes({ app }) {
     res.json({ days, user, total: G.PLAYERS.length, edition: { day, number: idx + 1 } });
   }));
 
-  // ——— Collection : un pack FoOotix par jour, à part du jeu ———
-  // Le pack bonus (gagné en trouvant le joueur du jour) est rangé sous le jour suivi de « #2 ».
+  // ——— Collection : les boosters gratuits, à part du jeu ———
+  // Chaque pack gratuit a une clé unique par joueur (colonne « day ») :
+  // - Argent : un toutes les 2 h, clé « jour@tranche » (tranche de 2 h, heure de Paris) ;
+  // - Or du jour : un par jour, clé « jour#or » ;
+  // - Or bonus (gagné en trouvant le joueur du jour) : clé « jour#2 ».
+  const SILVER = (day) => day + '@' + G.freeSlot();
+  const DAILY = (day) => day + '#or';
   const BONUS = (day) => day + '#2';
   async function packState(req, day = G.today()) {
     const [col, val] = owner(req);
     const [rows, g] = await Promise.all([
-      db.all(`SELECT day FROM packs WHERE ${col} = ? AND day IN (?, ?)`, val, day, BONUS(day)),
+      db.all(`SELECT day FROM packs WHERE ${col} = ? AND day IN (?, ?, ?)`, val, SILVER(day), DAILY(day), BONUS(day)),
       db.get(`SELECT status FROM games WHERE ${col} = ? AND day = ?`, val, day),
     ]);
     const has = new Set(rows.map((r) => r.day));
-    return { main: has.has(day), bonus: has.has(BONUS(day)) ? 'opened' : g && g.status === 'won' ? 'ready' : 'locked' };
+    return {
+      main: has.has(SILVER(day)), every: G.FREE_EVERY,
+      daily: has.has(DAILY(day)) ? 'opened' : 'ready',
+      bonus: has.has(BONUS(day)) ? 'opened' : g && g.status === 'won' ? 'ready' : 'locked',
+    };
   }
   // cartes que l'on possède : celles de ses packs (sauf revendues ou achetées par un autre), et celles achetées sur le marché
   const mine = (req) => (req.user
@@ -208,18 +217,16 @@ module.exports = function routes({ app }) {
       rewardsLeft(req),
     ]);
     const owned = new Map();
-    const today = { [day]: [], [BONUS(day)]: [] };
     for (const r of rows) {
       const pl = G.BY_ID[r.player_id];
       if (!pl) continue;
       const o = owned.get(pl.id) || { ...G.collectCard(pl), n: 0, listed: 0 };
       o.n++;
       owned.set(pl.id, o);
-      if (today[r.day]) today[r.day].push({ ...G.collectCard(pl), isNew: o.n === 1 });
     }
     for (const l of listed) { const o = owned.get(l.player_id); if (o) o.listed++; }
     return {
-      day, packs: { ...st, mainCards: today[day], bonusCards: today[BONUS(day)] }, cards: [...owned.values()], totals: G.deckTotals(),
+      day, packs: st, cards: [...owned.values()], totals: G.deckTotals(),
       coins: wallet, listings: listed.map((l) => ({ id: l.id, player: l.player_id, price: l.price })),
       prices: { sell: G.SELL, shop: G.SHOP, max: G.MAX_PRICE }, referral: refs, video,
     };
@@ -260,11 +267,14 @@ module.exports = function routes({ app }) {
   app.post('/api/pack', A(async (req, res) => {
     const [col, val] = owner(req);
     const day = G.today();
-    const bonus = !!(req.body || {}).bonus;
+    const body = req.body || {};
+    const which = body.bonus ? 'bonus' : body.daily ? 'daily' : 'main';
     forget(req);
-    if (bonus && (await packState(req, day)).bonus === 'locked') return res.status(400).json({ error: 'Trouve le joueur du jour pour gagner le pack bonus.' });
-    const fresh = await openPack(bonus ? BONUS(day) : day, col, val, bonus ? 'gold' : 'base');
-    res.json({ ...(await withNew(req, fresh)), opened: bonus ? 'bonus' : 'main', kind: bonus ? 'gold' : 'base', already: !fresh });
+    if (which === 'bonus' && (await packState(req, day)).bonus === 'locked') return res.status(400).json({ error: 'Trouve le joueur du jour pour gagner le pack bonus.' });
+    const key = which === 'bonus' ? BONUS(day) : which === 'daily' ? DAILY(day) : SILVER(day);
+    const kind = which === 'main' ? 'base' : 'gold';
+    const fresh = await openPack(key, col, val, kind);
+    res.json({ ...(await withNew(req, fresh)), opened: which, kind, already: !fresh });
   }));
 
   // ——— Pièces, boutique et marché (compte obligatoire) ———
