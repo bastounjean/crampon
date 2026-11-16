@@ -1330,3 +1330,16 @@ body::after { content: ''; position: fixed; inset: 0; z-index: -1; pointer-event
     /* ciel de nuit */
     linear-gradient(180deg, #050f33 0%, #0a2466 40%, #0d3088 calc(100% - 56vh), #0b2a78 100%);
 }
+
+/* ═══════════ Plus de page blanche : panneaux bleu clair posés sur le stade ═══════════ */
+html:root, html:root[data-theme] { --paper: #dce8ff; --paper-2: rgba(255, 255, 255, .55); --card: rgba(255, 255, 255, .6); --hair: #c2d4f2; --w-bg: #f4f8ff; }
+#app, .foot, .about { background: linear-gradient(180deg, #dce8ff 0%, #cbdcff 55%, #b9d0ff 100%);
+  box-shadow: 0 24px 60px rgba(4, 16, 52, .4), 0 0 0 1px rgba(255, 255, 255, .5), inset 0 1px 0 rgba(255, 255, 255, .8); }
+.hero .search { background: #dce8ff; }
+.daily, .subtabs { background: rgba(255, 255, 255, .5); }
+.btn { border-color: #b9cbec; background: rgba(255, 255, 255, .7); }
+.btn:hover:not(:disabled) { background: #fff; }
+.chip { border-color: #b9cbec; background: rgba(255, 255, 255, .7); }
+.earn-it { background: rgba(255, 255, 255, .6); box-shadow: inset 0 0 0 1px #c2d4f2, 0 8px 18px rgba(13, 27, 61, .08); }
+.seg { background: #cddcf5; border-color: #b9cbec; }
+.cp-bar { background: #cddcf5; }
