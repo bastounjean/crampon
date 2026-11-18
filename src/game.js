@@ -560,11 +560,12 @@ function card(p) {
 // ——— Collection : un pack par jour, 5 cartes. Plus un joueur est connu, plus sa carte est rare ———
 // Notoriété = nombre de pages Wikipédia. Le haut du classement donne les cartes légende (1 %), or (6 %),
 // argent (23 %), le reste est en bronze. Chaque carte tire d'abord sa rareté, puis un joueur de cette rareté.
+// weight : chances de tirer cette rareté pour une carte, sur 1000 (Légende 0,2 %, Or 4 %, Argent 25 %, Bronze 70,8 %).
 const TIERS = [
-  { id: 'legend', share: 0.01, weight: 1 },
-  { id: 'gold', share: 0.06, weight: 6 },
-  { id: 'silver', share: 0.23, weight: 23 },
-  { id: 'bronze', share: 0.70, weight: 70 },
+  { id: 'legend', share: 0.01, weight: 2 },
+  { id: 'gold', share: 0.06, weight: 40 },
+  { id: 'silver', share: 0.23, weight: 250 },
+  { id: 'bronze', share: 0.70, weight: 708 },
 ];
 let DECK = null;
 function deck() {
@@ -605,14 +606,16 @@ function collectCard(p) {
   };
 }
 // Trois boosters :
-//  - base (gratuit chaque jour) : 5 cartes, la 5e au moins Argent ;
-//  - gold (gagné en trouvant le joueur du jour, ou acheté) : 5 cartes, la 5e au moins Or ;
+//  - base / Argent (gratuit toutes les 2 h) : 5 cartes, la 5e au moins Argent ;
+//  - gold (gratuit chaque jour, gagné avec le joueur du jour, ou acheté) : 5 cartes, la 5e au moins Or ;
 //  - legend (acheté seulement) : 1 seule carte, forcément une Légende.
+// last : chances de la 5e carte, sur 1000. Une Légende tombe dans environ 1,3 % des boosters Argent
+// et 2,8 % des boosters Or.
 // rand(n) → entier de 0 à n-1. Les cartes sortent de la moins rare à la plus rare.
 const BOOSTERS = {
-  base: { size: 5, last: ['legend', 'gold', 'silver'] },
-  gold: { size: 5, last: ['legend', 'gold'] },
-  legend: { size: 1, last: ['legend'] },
+  base: { size: 5, last: { legend: 5, gold: 100, silver: 895 } },
+  gold: { size: 5, last: { legend: 20, gold: 980 } },
+  legend: { size: 1, last: { legend: 1 } },
 };
 // pièces : revente directe d'une carte à FoOotix, et prix des boosters en boutique
 const SELL = { bronze: 5, silver: 15, gold: 60, legend: 300 };
@@ -639,7 +642,7 @@ function drawPack(rand, kind = 'base') {
   const got = new Set();
   const out = [];
   for (let k = 0; k < b.size; k++) {
-    const tier = roll(k === b.size - 1 ? TIERS.filter((t) => b.last.includes(t.id)) : TIERS);
+    const tier = roll(k === b.size - 1 ? TIERS.filter((t) => b.last[t.id]).map((t) => ({ id: t.id, weight: b.last[t.id] })) : TIERS);
     let id;
     do id = d.byTier[tier][rand(d.byTier[tier].length)]; while (got.has(id));
     got.add(id);
