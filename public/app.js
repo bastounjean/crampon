@@ -827,7 +827,7 @@ let PACKING = false; // pack en cours d'ouverture : pas de rafraîchissement de 
 let COL_FILTER = 'all';
 const TIERS = ['legend', 'gold', 'silver', 'bronze'];
 const TIER_NAME = { legend: L('Légende', 'Legend'), gold: L('Or', 'Gold'), silver: L('Argent', 'Silver'), bronze: 'Bronze' };
-const ODDS = { bronze: 70, silver: 23, gold: 6, legend: 1 };
+const ODDS = { bronze: '70,8', silver: 25, gold: 4, legend: '0,2' };
 const PARTICLE = /^(de|da|di|del|della|van|von|der|den|dos|das|du|le|la|el|al|ter|ten|mac)$/i;
 // nom court comme sur une vraie carte : « Kevin De Bruyne » → « De Bruyne »
 function cardName(n) {

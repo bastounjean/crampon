@@ -147,3 +147,13 @@ test('booster Argent : une tranche de 2 h, heure de Paris', () => {
   assert.equal(G.freeSlot(new Date('2026-11-16T23:00:00Z')), 0); // minuit à Paris
   assert.equal(G.freeSlot(new Date('2026-11-16T15:30:00Z')), 8); // 16 h 30 à Paris
 });
+
+test('boosters : les Légendes restent rares', () => {
+  let seed = 11;
+  const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor((seed / 2147483648) * n); };
+  const N = 20000;
+  const rate = (kind) => { let n = 0; for (let i = 0; i < N; i++) if (G.drawPack(rand, kind).some((id) => G.tierOf(id) === 'legend')) n++; return n / N; };
+  const base = rate('base'), gold = rate('gold');
+  assert.ok(base > 0.005 && base < 0.025, `Argent : ${base}`);
+  assert.ok(gold > 0.015 && gold < 0.045, `Or : ${gold}`);
+});
