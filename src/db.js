@@ -146,7 +146,9 @@ if (PG) {
     ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false },
     max: 10,
     // une connexion neuve vers Neon coûte plusieurs allers-retours (TLS, mot de passe) : on les garde ouvertes
-    idleTimeoutMillis: 0,
+    // 4 min sans servir, puis on les ferme, pour que Neon puisse se mettre en veille (au bout de 5 min)
+    // et ne pas épuiser son crédit gratuit d'heures de calcul.
+    idleTimeoutMillis: 4 * 60 * 1000,
     keepAlive: true,
   });
   // deux connexions prêtes dès le démarrage
