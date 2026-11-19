@@ -1,0 +1,12 @@
+name: Sonde site
+on:
+  push:
+    branches: [claude/project-thread-cji4ai]
+jobs:
+  sonde:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in https://www.foootix.com/ https://www.foootix.com/api/health https://www.foootix.com/api/today https://crampon.onrender.com/api/health; do
+            echo "=== $u"; curl -s -m 90 -D - -o body.txt -w "\nCODE %{http_code} TIME %{time_total}\n" "$u" | head -20; head -c 600 body.txt; echo
+          done
