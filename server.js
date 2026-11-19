@@ -142,7 +142,11 @@ async function lockDraws() {
   }
   if (added) await load();
 }
-setInterval(() => lockDraws().catch((e) => console.warn('Tirages :', e.message)), 5 * 60 * 1000).unref();
-db.ready.then(() => lockDraws().catch((e) => console.warn('Tirages :', e.message)))
+// On ne relit la base que quand un nouveau jour commence : une requête toutes les 5 min
+// empêchait la base Neon de se mettre en veille et épuisait son crédit gratuit d'heures.
+let lockedDay = null;
+const lockToday = () => { const d = G.today(); return lockDraws().then(() => { lockedDay = d; }); };
+setInterval(() => { if (G.today() !== lockedDay) lockToday().catch((e) => console.warn('Tirages :', e.message)); }, 5 * 60 * 1000).unref();
+db.ready.then(() => lockToday().catch((e) => console.warn('Tirages :', e.message)))
   .then(() => app.listen(port, () => console.log(`FoOotix tourne sur http://localhost:${port}`)))
   .catch((e) => { console.error('Base de données injoignable :', e.message); process.exit(1); });

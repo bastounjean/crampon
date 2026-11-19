@@ -17,16 +17,22 @@ module.exports = function routes({ app }) {
   const ROOMS = new Map(); // code d'invitation → duel en attente du pote
   const meKey = (req) => (req.user ? 'u' + req.user.id : 'a' + req.aid);
   const meName = (req) => (req.user ? req.user.username : 'Invité ' + parseInt(req.aid.slice(0, 4), 16) % 1000);
+  let saved = true; let lastClean = 0;
   setInterval(() => {
     const now = Date.now();
     for (const [id, d] of DUELS) if (now - (d.seen || d.created) > 30 * 60 * 1000) DUELS.delete(id);
     for (const [c, id] of ROOMS) if (!DUELS.has(id)) ROOMS.delete(c);
     if (QUEUE && now - QUEUE.t > 30000) QUEUE = null;
-    db.run('DELETE FROM duels WHERE updated_at < ?', new Date(now - 2 * 3600 * 1000).toISOString()).catch((e) => console.warn('Duels :', e.message));
+    // ménage en base seulement s'il y a eu des duels depuis le dernier passage : une requête chaque minute
+    // empêchait la base Neon de se mettre en veille et épuisait son crédit gratuit d'heures.
+    if (saved && now - lastClean > 15 * 60 * 1000) {
+      saved = false; lastClean = now;
+      db.run('DELETE FROM duels WHERE updated_at < ?', new Date(now - 2 * 3600 * 1000).toISOString()).catch((e) => console.warn('Duels :', e.message));
+    }
   }, 60000).unref();
 
   // en base, le joueur à trouver est rangé par son identifiant
-  const save = (d) => db.run(`INSERT INTO duels (id, code, data, updated_at) VALUES (?, ?, ?, ?)
+  const save = (d) => (saved = true) && db.run(`INSERT INTO duels (id, code, data, updated_at) VALUES (?, ?, ?, ?)
     ON CONFLICT (id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
   d.id, d.code || null, JSON.stringify({ ...d, target: d.target.id }), db.now());
   const revive = (row) => {
